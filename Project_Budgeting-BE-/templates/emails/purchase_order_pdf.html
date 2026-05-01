@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purchase Order - {{ po.po_no }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 12px;
+            color: #333;
+            line-height: 1.5;
+            background-color: #fff;
+        }
+
+        .header {
+            background-color: #2c5aa0;
+            color: #fff;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            display: table;
+            width: 100%;
+        }
+
+        .header-left {
+            display: table-cell;
+            width: 50%;
+            vertical-align: middle;
+        }
+
+        .header-left h1 {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .header-right {
+            display: table-cell;
+            width: 50%;
+            text-align: right;
+            vertical-align: middle;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .section {
+            padding: 0 20px;
+            margin-bottom: 15px;
+        }
+
+        .section-title {
+            font-weight: bold;
+            font-size: 13px;
+            margin-bottom: 8px;
+            color: #2c5aa0;
+        }
+
+        .info-row {
+            margin-bottom: 3px;
+            font-size: 11px;
+        }
+
+        .info-row strong {
+            color: #333;
+            display: inline-block;
+            min-width: 100px;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 11px;
+        }
+
+        .items-table th {
+            background-color: #e8f0f8;
+            color: #2c5aa0;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: bold;
+            border: 1px solid #ccc;
+            font-size: 11px;
+        }
+
+        .items-table td {
+            padding: 10px 8px;
+            border: 1px solid #ccc;
+            vertical-align: top;
+        }
+
+        .items-table tbody tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        .amount-right {
+            text-align: right;
+        }
+
+        .totals-section {
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .totals-table {
+            float: right;
+            width: 300px;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .totals-table td {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+        }
+
+        .totals-table .label {
+            text-align: right;
+            font-weight: bold;
+            background-color: #f5f5f5;
+        }
+
+        .totals-table .amount {
+            text-align: right;
+            background-color: #fff;
+        }
+
+        .totals-table .total-row {
+            font-weight: bold;
+            background-color: #e8f0f8;
+            color: #2c5aa0;
+        }
+
+        .footer {
+            margin-top: 30px;
+            padding: 15px 20px;
+            font-size: 10px;
+            color: #666;
+            text-align: center;
+            border-top: 1px solid #ccc;
+        }
+
+        .clearfix::after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <h1>PURCHASE ORDER</h1>
+            <div>{{ po.po_no }}</div>
+        </div>
+        <div class="header-right">
+            <div><strong>Your Company Name</strong></div>
+            <div>Your Address</div>
+            <div>Your City, State ZIP</div>
+            <div>Phone: Your Phone</div>
+            <div>Email: your@email.com</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">VENDOR INFORMATION</div>
+        <div class="info-row"><strong>Vendor:</strong> {{ po.vendor.name }}</div>
+        {% if po.vendor.email %}
+        <div class="info-row"><strong>Email:</strong> {{ po.vendor.email }}</div>
+        {% endif %}
+        {% if po.vendor.phone %}
+        <div class="info-row"><strong>Phone:</strong> {{ po.vendor.phone }}</div>
+        {% endif %}
+    </div>
+
+    <div class="section">
+        <div class="section-title">ORDER DETAILS</div>
+        <div class="info-row"><strong>PO Number:</strong> {{ po.po_no }}</div>
+        <div class="info-row"><strong>Status:</strong> {{ po.get_status_display }}</div>
+        <div class="info-row"><strong>Issue Date:</strong> {{ po.issue_date|date:"M d, Y" }}</div>
+        {% if po.project %}
+        <div class="info-row"><strong>Project:</strong> {{ po.project.project_name }}</div>
+        {% endif %}
+        {% if po.quote %}
+        <div class="info-row"><strong>Quote Reference:</strong> {{ po.quote.quote_no }}</div>
+        {% endif %}
+    </div>
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 8%;">#</th>
+                <th style="width: 42%;">Description</th>
+                <th style="width: 15%; text-align: right;">Quantity</th>
+                <th style="width: 17%; text-align: right;">Unit Rate</th>
+                <th style="width: 18%; text-align: right;">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td style="text-align: center;">{{ forloop.counter }}</td>
+                <td>{{ item.description|truncatewords:15 }}</td>
+                <td class="amount-right">{{ item.quantity|floatformat:2 }}</td>
+                <td class="amount-right">${{ item.unit_rate|floatformat:2 }}</td>
+                <td class="amount-right">${{ item.amount|floatformat:2 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="totals-section clearfix">
+        <table class="totals-table">
+            <tr>
+                <td class="label">Subtotal:</td>
+                <td class="amount">${{ po.sub_total|floatformat:2 }}</td>
+            </tr>
+            <tr class="total-row">
+                <td class="label">Total Amount:</td>
+                <td class="amount">${{ po.total_amount|floatformat:2 }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="footer">
+        <p>Thank you for your business!</p>
+        <p>This is a computer-generated document. No signature required.</p>
+    </div>
+</body>
+</html>
