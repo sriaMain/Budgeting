@@ -80,7 +80,7 @@ export const useTaskTimer = (): UseTaskTimerReturn => {
         disconnectWebSocket();
 
         const token = store.getState().auth.accessToken;
-        const wsUrl = buildWebSocketUrl('/ws/timer/', token);
+        const wsUrl = buildWebSocketUrl('/ws/timer/', token ?? undefined);
 
         try {
             const socket = new WebSocket(wsUrl);
