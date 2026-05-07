@@ -278,8 +278,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
-print("Cloud Name:", os.environ.get("CLOUDINARY_CLOUD_NAME"))
-print("APiKey", os.environ.get("CLOUDINARY_API_KEY"))
+# print("Cloud Name:", os.environ.get("CLOUDINARY_CLOUD_NAME"))
+# print("APiKey", os.environ.get("CLOUDINARY_API_KEY"))
 CLOUDINARY_STORAGE = {
     'CLOUD_NAME': os.environ.get("CLOUDINARY_CLOUD_NAME"),
     'API_KEY':os.environ.get("CLOUDINARY_API_KEY"),
@@ -297,11 +297,11 @@ MEDIA_ROOT = BASE_DIR / 'media'  # Fallback/temp path
 # Don't set MEDIA_URL - let cloudinary_storage generate the correct URL automatically
 # The package will create URLs like: https://res.cloudinary.com/{cloud_name}/image/upload/{path}
  
-print("Using Cloudinary for media storage in production.")
+# print("Using Cloudinary for media storage in production.")
 
 
 # STATIC_URL = "/static/"
-# STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 # STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
