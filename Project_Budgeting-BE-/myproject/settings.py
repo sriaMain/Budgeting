@@ -40,6 +40,7 @@ ALLOWED_HOSTS = ["*"]
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:8000",
+    "https://project.nxsys.in",
     # "https://t847rjkh-3000.inc1.devtunnels.ms",
     # "https://t847rjkh-5173.inc1.devtunnels.ms/",
 ]
@@ -49,6 +50,7 @@ CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:8000",
+    "https://project.nxsys.in",
     # "https://t847rjkh-3000.inc1.devtunnels.ms",
     # "https://t847rjkh-5173.inc1.devtunnels.ms/",
 ]
