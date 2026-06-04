@@ -5,7 +5,7 @@ from django.urls import path, include
 from .views import (ProjectAPIView, ProjectBudgetAPIView, StopTaskTimerAPIView, TaskAPIView, TaskTimerStateAPIView,
  TimesheetAPIView, TimesheetEntryAPIView, SubmitTimesheetAPIView, StartTaskTimerAPIView,
   PauseTaskTimerAPIView, PendingExtraHoursAPIView, ReviewExtraHoursAPIView, RequestExtraHoursAPIView, ExtraHoursHistoryAPIView,
-  TaskStatusChoicesView, ServiceUsersAPIView, TaskGroupedByStatusAPIView, TimesheetWeeklySummaryAPIView, TimesheetEmployeeAPIView)
+  TaskStatusChoicesView, ServiceUsersAPIView, TaskGroupedByStatusAPIView, TimesheetWeeklySummaryAPIView, TimesheetEmployeeAPIView, ProjectStatusChoicesView, ProjectNamesAPIView)
 
 
 urlpatterns = [
@@ -29,6 +29,8 @@ urlpatterns = [
     path("tasks/extra-hours/history/",  ExtraHoursHistoryAPIView.as_view()), #view approved/rejected extra hours requests
     path("tasks/extra-hours/<request_id>/review/", ReviewExtraHoursAPIView.as_view()), #review extra hours requests
     path('task-status-choices/', TaskStatusChoicesView.as_view(), name='task-status-choices'), #get task status choices
+    path('project-status-choices/', ProjectStatusChoicesView.as_view(), name='project-status-choices'),
+    path('project-names/', ProjectNamesAPIView.as_view(), name='project-names'),
     path('tasks/grouped-by-status/', TaskGroupedByStatusAPIView.as_view(), name='tasks-grouped-by-status'),
     path("tasks/<int:task_id>/timer/state/",TaskTimerStateAPIView.as_view(),name="task-timer-state"),
 

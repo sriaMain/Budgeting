@@ -32,9 +32,12 @@ class DashboardMetricsAPIView(APIView):
 
     def get(self, request):
         # 🔹 Cache (60 seconds)
-        cached_data = cache.get("dashboard_metrics")
-        if cached_data:
-            return Response(cached_data)
+        try:
+            cached_data = cache.get("dashboard_metrics")
+            if cached_data:
+                return Response(cached_data)
+        except Exception:
+            cached_data = None
 
         # 1️⃣ Budget → ProjectBudget.total_budget (only active projects)
         total_budget = ProjectBudget.objects.filter(
@@ -110,7 +113,10 @@ class DashboardMetricsAPIView(APIView):
         }
 
         serializer = DashboardMetricsSerializer(data)
-        cache.set("dashboard_metrics", serializer.data, timeout=60)
+        try:
+            cache.set("dashboard_metrics", serializer.data, timeout=60)
+        except Exception:
+            pass
 
         return Response(serializer.data)
 
@@ -213,3 +219,44 @@ class FinancialReportExport(APIView):
 
         wb.save(response)
         return response
+
+from django.http import HttpResponse
+from .export_utils import generate_excel_from_data, generate_pdf_from_data
+from .services import get_all_tab_data, get_financial_tab_data, get_project_tab_data, get_payment_tab_data, get_po_invoice_tab_data
+
+class ReportExportAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, section):
+        print(f"ReportExportAPIView HIT! section={section}")
+        filters = {
+            "from_date": request.query_params.get("date_from"),
+            "to_date": request.query_params.get("date_to"),
+            "status": request.query_params.get("status"),
+        }
+        fmt = request.query_params.get("export_format", "excel")
+
+        if section == "all":
+            data_res = get_all_tab_data(filters)
+        elif section == "financial":
+            data_res = get_financial_tab_data(filters)
+        elif section == "project":
+            data_res = get_project_tab_data(filters)
+        elif section == "payment":
+            data_res = get_payment_tab_data(filters)
+        elif section == "po-invoice":
+            data_res = get_po_invoice_tab_data(filters)
+        else:
+            return Response({"error": "Invalid section"}, status=400)
+
+        if fmt == "pdf":
+            output = generate_pdf_from_data(data_res, section)
+            response = HttpResponse(output, content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="report_{section}.pdf"'
+        else:
+            output = generate_excel_from_data(data_res, section)
+            response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = f'attachment; filename="report_{section}.xlsx"'
+
+        return response

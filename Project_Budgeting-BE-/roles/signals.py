@@ -6,4 +6,8 @@ from .models import Role
 @receiver(post_save, sender=Role)
 @receiver(post_delete, sender=Role)
 def clear_roles_cache(sender, **kwargs):
-    cache.delete("roles_list_v1")
+    try:
+        cache.delete("roles_list_v1")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Cache delete failed in signal: {e}")

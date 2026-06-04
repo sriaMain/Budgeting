@@ -114,8 +114,15 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
 
   // Data States
   const [roles, setRoles] = useState<Role[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const filteredRoles = roles.filter(role =>
+    role.role_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    role.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    role.id.toString().includes(searchQuery)
+  );
 
   // Fetch Roles
   useEffect(() => {
@@ -204,7 +211,7 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                   Manage Roles
                 </button>
               )}
-              
+
               {/* Modules - For both admin and manager */}
               <button
                 onClick={() => setActiveTab('modules')}
@@ -218,7 +225,7 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
               >
                 Modules
               </button>
-              
+
               {/* Manage Users - Only for admin */}
               {userRole === 'admin' && (
                 <button
@@ -247,7 +254,9 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                     <div className="relative flex-grow md:flex-grow-0">
                       <input
                         type="text"
-                        placeholder="Search"
+                        placeholder="Search roles..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
                         className="pl-4 pr-10 py-2 border border-gray-400 rounded-md bg-white w-full md:w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                       <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 w-5 h-5" />
@@ -306,8 +315,8 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                                   <td className="py-6 px-6"><div className="h-8 w-8 bg-gray-200 rounded-full mx-auto"></div></td>
                                 </tr>
                               ))
-                            ) : roles.length > 0 ? (
-                              roles.map((role) => (
+                            ) : filteredRoles.length > 0 ? (
+                              filteredRoles.map((role) => (
                                 <tr key={role.id} className="hover:bg-gray-50 transition-colors group">
                                   <td className="py-6 px-6 font-medium text-gray-500">#{role.id}</td>
                                   <td className="py-6 px-6 align-top">
@@ -335,7 +344,7 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                             ) : (
                               <tr>
                                 <td colSpan={4} className="py-12 text-center text-gray-500">
-                                  No roles found. Click "Add Role" to create one.
+                                  {searchQuery ? "No roles match your search." : 'No roles found. Click "Add Role" to create one.'}
                                 </td>
                               </tr>
                             )}
@@ -356,8 +365,8 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                               </div>
                             </div>
                           ))
-                        ) : roles.length > 0 ? (
-                          roles.map((role) => (
+                        ) : filteredRoles.length > 0 ? (
+                          filteredRoles.map((role) => (
                             <div
                               key={role.id}
                               className="bg-gray-50 rounded-lg border border-gray-200 p-4 shadow-sm"
@@ -409,7 +418,7 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                           ))
                         ) : (
                           <div className="text-center py-12 text-gray-500">
-                            No roles found. Click "Add Role" to create one.
+                            {searchQuery ? "No roles match your search." : 'No roles found. Click "Add Role" to create one.'}
                           </div>
                         )}
                       </div>

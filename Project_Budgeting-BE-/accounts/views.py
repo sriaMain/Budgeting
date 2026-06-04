@@ -223,7 +223,10 @@ class UserCreateView(APIView):
         try:
             serializer.is_valid(raise_exception=True)
             user = serializer.save()
-            cache.delete("users_list")  # Invalidate user list cache
+            try:
+                cache.delete("users_list")  # Invalidate user list cache
+            except Exception as cache_err:
+                logger.warning(f"Failed to delete cache: {cache_err}")
 
             return Response(
                 {
@@ -267,9 +270,12 @@ class UserListView(APIView):
             #     return Response({"error": "Permission denied"}, status=403)
 
             cache_key = "users_list"
-            cached = cache.get(cache_key)
-            if cached:
-                return Response(cached, status=200)
+            try:
+                cached = cache.get(cache_key)
+                if cached:
+                    return Response(cached, status=200)
+            except Exception as cache_err:
+                logger.warning(f"Cache get failed: {cache_err}")
 
             qs = User.objects.filter().prefetch_related(
                 Prefetch("roles")
@@ -285,7 +291,11 @@ class UserListView(APIView):
 
             serializer = UserListSerializer(qs, many=True)
 
-            cache.set(cache_key, serializer.data, timeout=self.CACHE_TIMEOUT)
+            try:
+                cache.set(cache_key, serializer.data, timeout=self.CACHE_TIMEOUT)
+            except Exception as cache_err:
+                logger.warning(f"Cache set failed: {cache_err}")
+                
             # cache.delete("users_list")
             return Response(serializer.data, status=200)
 
@@ -365,7 +375,10 @@ class UserDetailVieW(APIView):
                 
                 user.roles.set(role_ids)
 
-            cache.delete("users_list")
+            try:
+                cache.delete("users_list")
+            except Exception as cache_err:
+                logger.warning(f"Failed to delete cache: {cache_err}")
 
             return Response(serializer.data, status=200)
 
@@ -491,9 +504,12 @@ class VendorListCreateView(APIView):
 
             result.append({
                 "id": vendor.id,
+                "name": vendor.name,
+                "vendor_type": vendor.vendor_type,
                 "vendor_name": vendor.name,
                 "email": vendor.email,
                 "phone": vendor.phone,
+                "created_at": vendor.created_at,
                 "projects": project_list,
                 "purchase_orders": po_list,
                 "bills": bill_list,

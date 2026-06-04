@@ -18,7 +18,9 @@ from .serializers import (
 from .permission import HasPermissionCode
 from django.core.cache import cache
 from django.utils import timezone
+import logging
 
+logger = logging.getLogger(__name__)
 
 # constants.py (or at top of views.py)
 ROLES_ACTIVE_CACHE_KEY = "roles_list_active_v1"
@@ -28,7 +30,11 @@ class PermissionTreeView(APIView):
     permission_classes = [AllowAny]
     def get(self, request):
         cache_key = "permission_tree_v1"
-        data = cache.get(cache_key)
+        try:
+            data = cache.get(cache_key)
+        except Exception as e:
+            logger.warning(f"Cache get failed: {e}")
+            data = None
 
         # ========== CACHE HIT ==========
         if data:
@@ -40,7 +46,10 @@ class PermissionTreeView(APIView):
         categories = PermissionCategory.objects.get_structured_permissions()
         serialized = PermissionCategorySerializer(categories, many=True).data
 
-        cache.set(cache_key, serialized, timeout=3600)
+        try:
+            cache.set(cache_key, serialized, timeout=3600)
+        except Exception as e:
+            logger.warning(f"Cache set failed: {e}")
 
         response = Response(serialized, status=status.HTTP_200_OK)
         response['X-Cache'] = 'MISS'
@@ -56,7 +65,11 @@ class CacheTestView(APIView):
 
     def get(self, request):
         cache_key = "cache_test_v1"
-        value = cache.get(cache_key)
+        try:
+            value = cache.get(cache_key)
+        except Exception as e:
+            logger.warning(f"Cache get failed: {e}")
+            value = None
 
         if value:
             resp = Response({"cache_key": cache_key, "value": value, "status": "HIT"}, status=status.HTTP_200_OK)
@@ -65,7 +78,10 @@ class CacheTestView(APIView):
 
         now = timezone.now().isoformat()
         # short timeout for easy testing
-        cache.set(cache_key, now, timeout=30)
+        try:
+            cache.set(cache_key, now, timeout=30)
+        except Exception as e:
+            logger.warning(f"Cache set failed: {e}")
         resp = Response({"cache_key": cache_key, "value": now, "status": "MISS"}, status=status.HTTP_200_OK)
         resp['X-Cache'] = 'MISS'
         return resp
@@ -92,7 +108,11 @@ class RoleListCreateView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        data = cache.get(ROLES_ACTIVE_CACHE_KEY)
+        try:
+            data = cache.get(ROLES_ACTIVE_CACHE_KEY)
+        except Exception as e:
+            logger.warning(f"Cache get failed: {e}")
+            data = None
 
         if data:
             response = Response(data, status=status.HTTP_200_OK)
@@ -104,7 +124,10 @@ class RoleListCreateView(APIView):
 
         serialized = RoleListSerializer(roles, many=True).data
 
-        cache.set(ROLES_ACTIVE_CACHE_KEY, serialized, timeout=3600)
+        try:
+            cache.set(ROLES_ACTIVE_CACHE_KEY, serialized, timeout=3600)
+        except Exception as e:
+            logger.warning(f"Cache set failed: {e}")
 
         response = Response(serialized, status=status.HTTP_200_OK)
         response["X-Cache"] = "MISS"
@@ -164,7 +187,10 @@ class RoleDetailView(APIView):
         updated_role = serializer.save()
 
         # ✅ Invalidate cache immediately after update
-        cache.delete(ROLES_ACTIVE_CACHE_KEY)
+        try:
+            cache.delete(ROLES_ACTIVE_CACHE_KEY)
+        except Exception as e:
+            logger.warning(f"Cache delete failed: {e}")
 
         return Response(
             RoleDetailSerializer(updated_role).data,
@@ -179,7 +205,10 @@ class RoleDetailView(APIView):
         serializer.is_valid(raise_exception=True)
 
         updated = serializer.save()
-        cache.delete("roles_list_v1")  # Invalidate cache
+        try:
+            cache.delete("roles_list_v1")  # Invalidate cache
+        except Exception as e:
+            logger.warning(f"Cache delete failed: {e}")
         return Response(
             RoleDetailSerializer(updated).data,
             status=status.HTTP_200_OK

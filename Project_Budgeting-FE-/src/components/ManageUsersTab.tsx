@@ -10,10 +10,19 @@ import axiosInstance from '../utils/axiosInstance';
 import type { Role, Module, User, UserDisplay } from '../types';
 import { Toast } from './Toast';
 import { parseApiErrors } from '../utils/parseApiErrors';
+import companyLogo from '../assets/company-logo.png';
 
 const ManageUsersTab: React.FC = () => {
   const [view, setView] = useState<'list' | 'form'>('list');
   const [users, setUsers] = useState<UserDisplay[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredUsers = users.filter(u =>
+    u.first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    u.last_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    u.position?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
   const [roles, setRoles] = useState<Role[]>([]);
   const [modules, setModules] = useState<Module[]>([]); // New State for Modules
   const [isLoading, setIsLoading] = useState(true);
@@ -96,15 +105,15 @@ const ManageUsersTab: React.FC = () => {
     }
 
     // Determine Module ID for the dropdown
-    // If user.module is a string (name), find the ID. If it's already an ID, use it.
     let currentModuleId = '';
-    if (user.module) {
+    if (user.modules && user.modules.length > 0) {
+      currentModuleId = String(user.modules[0]);
+    } else if (user.module) {
       // Try to find by name match first if it's a string
       const foundModuleByName = modules.find(m => m.product_service_name === user.module);
       if (foundModuleByName) {
         currentModuleId = String(foundModuleByName.id);
       } else {
-        // Assume it might be an ID
         currentModuleId = String(user.module);
       }
     }
@@ -165,8 +174,9 @@ const ManageUsersTab: React.FC = () => {
       formDataToSend.append('position', formData.position);
 
       // Append Module ID
-      // If formData.module is set (contains the ID string), append it.
       if (formData.module) {
+        formDataToSend.append('modules', formData.module);
+        // Fallback for custom views if they expect module
         formDataToSend.append('module', formData.module);
       }
 
@@ -322,6 +332,8 @@ const ManageUsersTab: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Search users..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full md:w-64"
                 />
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -337,7 +349,7 @@ const ManageUsersTab: React.FC = () => {
 
           {/* Table */}
           <ReusableTable
-            data={users}
+            data={filteredUsers}
             columns={columns}
             keyField="id"
             isLoading={isLoading}
@@ -382,13 +394,20 @@ const ManageUsersTab: React.FC = () => {
                 Profile
               </button>
               <div className="ml-11 text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                SRIA INFOTECH
+                SRIA INFOTECH PVT LTD
               </div>
 
-              <button className="flex items-center gap-3 px-4 py-3 text-gray-500 hover:bg-gray-50 font-medium rounded-lg transition-colors">
-                <Building2 size={18} />
-                Company data and logo
-              </button>
+              <div className="mt-4 flex flex-col items-center text-center p-4 bg-gray-50/50 rounded-xl border border-gray-100">
+                <img
+                  src={companyLogo}
+                  alt="Sria Infotech"
+                  className="w-20 h-auto object-contain mb-3 drop-shadow-sm mix-blend-multiply"
+                />
+                <button className="flex items-center gap-2 text-gray-600 hover:text-blue-600 font-medium text-sm transition-colors">
+                  <Building2 size={16} />
+                  <span>Company data and logo</span>
+                </button>
+              </div>
             </div>
 
             {/* Main Content Area */}

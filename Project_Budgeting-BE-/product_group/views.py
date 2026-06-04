@@ -9,7 +9,7 @@ from .serializers import ProductGroupSerializer, ProductServicesSerializer, Quot
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.core.mail import send_mail
 from django.conf import settings
@@ -21,7 +21,7 @@ from Project.models import Project
 
 class ProductGroupListCreateView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request, pk=None):
         # If pk is provided → return single product group
@@ -72,7 +72,7 @@ class ProductGroupListCreateView(APIView):
 
 class ProductServicesView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     # Similar methods for Product_Services can be implemented here
     def get(self, request, pk=None):
@@ -141,7 +141,6 @@ class ProductGroupWithModulesListView(APIView):
         groups = ProductGroup.objects.all()
         serializer = ProductGroupWithModulesSerializer(groups, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-from rest_framework.permissions import AllowAny
 class PipelineDataAPIView(APIView):
     permission_classes = [AllowAny]
     # def get(self, request):

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/Button';
 import { InputField } from '../components/InputField';
-import { Search, Filter, Plus, ChevronDown, MoreHorizontal, Wallet, PieChart, TrendingUp } from 'lucide-react';
+import { Search, Filter, Plus, ChevronDown, MoreHorizontal, Wallet, PieChart, TrendingUp, X } from 'lucide-react';
 import { CreateProjectModal } from '../components/CreateProjectModal';
 import axiosInstance from '../utils/axiosInstance';
 
@@ -100,16 +100,67 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 		totalHours: 0
 	});
 
-	const [filterStatus, setFilterStatus] = useState<'all' | 'active'>('all');
+	const [filterStatus, setFilterStatus] = useState('All');
+	const [statusChoices, setStatusChoices] = useState<{value: string, label: string}[]>([]);
 	const [showMyProjects, setShowMyProjects] = useState(false);
+	
+	const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+	const [advancedFilters, setAdvancedFilters] = useState({
+		project_name: '',
+		min_budget: '',
+		max_budget: '',
+		start_date: '',
+		end_date: ''
+	});
+	const [appliedFilters, setAppliedFilters] = useState({
+		project_name: '',
+		min_budget: '',
+		max_budget: '',
+		start_date: '',
+		end_date: ''
+	});
 
 	useEffect(() => {
-		fetchProjects();
+		fetchStatusChoices();
 	}, []);
+
+	// Derive available project names from currently loaded company groups
+	const projectNames = Array.from(
+		new Set(companyGroups.flatMap(company => company.projects.map(p => p.project_name)))
+	).sort();
+
+	useEffect(() => {
+		const timeoutId = setTimeout(() => {
+			fetchProjects();
+		}, 500);
+		return () => clearTimeout(timeoutId);
+	}, [searchQuery, filterStatus, appliedFilters]);
+
+	const fetchStatusChoices = async () => {
+		try {
+			const response = await axiosInstance.get('project-status-choices/');
+			setStatusChoices(response.data.status_choices || []);
+		} catch (error) {
+			console.error('Error fetching status choices:', error);
+		}
+	};
 
 	const fetchProjects = async () => {
 		try {
-			const response = await axiosInstance.get('projects/');
+			const params = new URLSearchParams();
+			if (searchQuery) {
+				params.append('search', searchQuery);
+			}
+			if (filterStatus && filterStatus !== 'All') {
+				params.append('status', filterStatus);
+			}
+			if (appliedFilters.project_name) params.append('project_name', appliedFilters.project_name);
+			if (appliedFilters.min_budget) params.append('min_budget', appliedFilters.min_budget);
+			if (appliedFilters.max_budget) params.append('max_budget', appliedFilters.max_budget);
+			if (appliedFilters.start_date) params.append('start_date', appliedFilters.start_date);
+			if (appliedFilters.end_date) params.append('end_date', appliedFilters.end_date);
+			
+			const response = await axiosInstance.get(`projects/?${params.toString()}`);
 
 			// Handle the nested structure: response.data.Projects is an array of companies
 			if (response.data && response.data.Projects && Array.isArray(response.data.Projects)) {
@@ -172,15 +223,13 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 	// Filter company groups based on search query and status filters
 	const filteredCompanyGroups = companyGroups.map(company => {
 		const filteredProjects = company.projects.filter(project => {
+			// The backend handles search and status filtering,
+			// but we can apply them here as a safety measure for company name matching.
 			const matchesSearch = project.project_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
 				company.company_name.toLowerCase().includes(searchQuery.toLowerCase());
 
-			const matchesStatus = filterStatus === 'all' ||
-				(filterStatus === 'active' &&
-					(project.status.toLowerCase() === 'in_progress' ||
-						project.status.toLowerCase() === 'in progress'));
+			const matchesStatus = filterStatus === 'All' || project.status === filterStatus;
 
-			// Mock "My Projects" filter - effectively showing all for now as we don't have user assignment in list view
 			const matchesMyProjects = !showMyProjects || true;
 
 			return matchesSearch && matchesStatus && matchesMyProjects;
@@ -220,20 +269,21 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 								New
 							</button>
 							<div className="h-8 w-[1px] bg-gray-200 mx-2"></div>
+							<div className="relative">
+								<select
+									value={filterStatus}
+									onChange={(e) => setFilterStatus(e.target.value)}
+									className="px-4 py-2 pr-8 appearance-none bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors"
+								>
+									<option value="All">All Statuses</option>
+									{statusChoices.map(choice => (
+										<option key={choice.value} value={choice.value}>{choice.label}</option>
+									))}
+								</select>
+								<ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none w-4 h-4" />
+							</div>
 							<button
-								onClick={() => setShowMyProjects(!showMyProjects)}
-								className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${showMyProjects ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'}`}
-							>
-								My Projects
-							</button>
-							<button
-								onClick={() => setFilterStatus(prev => prev === 'all' ? 'active' : 'all')}
-								className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${filterStatus === 'active' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
-							>
-								Status: {filterStatus === 'active' ? 'Active Projects' : 'All Projects'}
-							</button>
-							<button
-								onClick={() => alert('Advanced filters coming soon')}
+								onClick={() => setIsFilterModalOpen(true)}
 								className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium flex items-center gap-2 border border-gray-200 whitespace-nowrap"
 							>
 								<Filter size={16} />
@@ -354,6 +404,93 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 				}}
 				hideBudgetTab={true}
 			/>
+
+			{isFilterModalOpen && (
+				<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+					<div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+						<div className="p-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
+							<h2 className="text-lg font-semibold text-gray-900">Advanced Filters</h2>
+							<button onClick={() => setIsFilterModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100">
+								<X size={20} />
+							</button>
+						</div>
+						<div className="p-4 overflow-y-auto space-y-4">
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
+								<select
+									value={advancedFilters.project_name}
+									onChange={(e) => setAdvancedFilters(prev => ({ ...prev, project_name: e.target.value }))}
+									className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+								>
+									<option value="">All Projects</option>
+									{projectNames.map((name, idx) => (
+										<option key={idx} value={name}>{name}</option>
+									))}
+								</select>
+							</div>
+							<div className="grid grid-cols-2 gap-4">
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-1">Min Budget</label>
+									<InputField
+										type="number"
+										value={advancedFilters.min_budget}
+										onChange={(e) => setAdvancedFilters(prev => ({ ...prev, min_budget: e.target.value }))}
+										placeholder="0"
+									/>
+								</div>
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-1">Max Budget</label>
+									<InputField
+										type="number"
+										value={advancedFilters.max_budget}
+										onChange={(e) => setAdvancedFilters(prev => ({ ...prev, max_budget: e.target.value }))}
+										placeholder="Any"
+									/>
+								</div>
+							</div>
+							<div className="grid grid-cols-2 gap-4">
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-1">Start Date From</label>
+									<InputField
+										type="date"
+										value={advancedFilters.start_date}
+										onChange={(e) => setAdvancedFilters(prev => ({ ...prev, start_date: e.target.value }))}
+									/>
+								</div>
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-1">End Date To</label>
+									<InputField
+										type="date"
+										value={advancedFilters.end_date}
+										onChange={(e) => setAdvancedFilters(prev => ({ ...prev, end_date: e.target.value }))}
+									/>
+								</div>
+							</div>
+						</div>
+						<div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50 mt-auto">
+							<Button variant="secondary" onClick={() => {
+								const emptyFilters = {
+									project_name: '',
+									min_budget: '',
+									max_budget: '',
+									start_date: '',
+									end_date: ''
+								};
+								setAdvancedFilters(emptyFilters);
+								setAppliedFilters(emptyFilters);
+							}}>
+								Clear All
+							</Button>
+							<Button onClick={() => {
+								setAppliedFilters(advancedFilters);
+								setIsFilterModalOpen(false);
+							}}>
+								Apply Filters
+							</Button>
+						</div>
+					</div>
+				</div>
+			)}
 		</Layout>
 	);
 }

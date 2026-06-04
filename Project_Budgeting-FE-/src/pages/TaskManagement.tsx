@@ -126,7 +126,7 @@ const formatElapsedTime = (totalSeconds: number): string => {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  
+
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
 
@@ -140,6 +140,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
   const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editingStatusTaskId, setEditingStatusTaskId] = useState<number | null>(null);
+  const [users, setUsers] = useState<any[]>([]);
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('');
+  const [statusChoices, setStatusChoices] = useState<{ value: string, label: string }[]>([]);
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [projectStats, setProjectStats] = useState({
     totalActiveProjects: 0,
     overdueTasks: 0,
@@ -169,7 +173,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [timesheetSearch, setTimesheetSearch] = useState('');
   const [timesheetDate, setTimesheetDate] = useState(new Date());
-  
+
   // Admin Timesheet State
   const [weeklySummary, setWeeklySummary] = useState<any>(null);
   const [isLoadingWeeklySummary, setIsLoadingWeeklySummary] = useState(false);
@@ -203,14 +207,14 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     const newDate = new Date(timesheetDate);
     newDate.setDate(newDate.getDate() + (direction * 7));
     setTimesheetDate(newDate);
-    
+
     // Calculate Sunday of the new week for the API parameter
     const day = newDate.getDay();
     const diff = newDate.getDate() - day; // Sunday is day 0
     const sunday = new Date(newDate);
     sunday.setDate(diff);
     const weekStart = sunday.toISOString().split('T')[0];
-    
+
     // Fetch timesheet for the new week
     fetchTimesheet(weekStart);
   };
@@ -243,7 +247,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
         if (data.task_id) {
           // Update task state based on WebSocket event with comprehensive data
-          setTasks(prevTasks => 
+          setTasks(prevTasks =>
             prevTasks.map(task => {
               if (task.id === data.task_id) {
                 // Use all data from WebSocket for accurate state
@@ -253,7 +257,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                   started_at: data.started_at,
                   total_seconds: data.total_seconds || task.total_seconds || 0,
                 };
-                
+
                 // Update consumed_hours if provided
                 if (data.consumed_hours !== undefined) {
                   updatedTask.consumed_hours = data.consumed_hours;
@@ -261,7 +265,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                 if (data.remaining_hours !== undefined) {
                   updatedTask.remaining_hours = data.remaining_hours;
                 }
-                
+
                 return updatedTask;
               }
               return task;
@@ -325,6 +329,42 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     return () => clearInterval(interval);
   }, [tasks]);
 
+  // Fetch users and status choices on mount
+  React.useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await axiosInstance.get('accounts/users/');
+        if (response.status === 200) {
+          setUsers(Array.isArray(response.data) ? response.data : []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch users:', error);
+      }
+    };
+
+    const fetchStatusChoices = async () => {
+      try {
+        const response = await axiosInstance.get('task-status-choices/');
+        if (response.status === 200) {
+          if (response.data && response.data.status_choices) {
+            const formattedChoices = response.data.status_choices.map((s: string) => ({
+              value: s,
+              label: s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+            }));
+            setStatusChoices(formattedChoices);
+          } else if (Array.isArray(response.data)) {
+            setStatusChoices(response.data);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch status choices:', error);
+      }
+    };
+
+    fetchUsers();
+    fetchStatusChoices();
+  }, []);
+
   // Fetch tasks for list view
   React.useEffect(() => {
     if (activeTab === 'list') {
@@ -333,12 +373,16 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     } else if (activeTab === 'board') {
       fetchGroupedTasks();
     }
-  }, [activeTab]);
+  }, [activeTab, selectedAssigneeId, selectedStatus]);
 
   const fetchTasks = async () => {
     setIsLoadingTasks(true);
     try {
-      const response = await axiosInstance.get('tasks/');
+      const params: any = {};
+      if (selectedAssigneeId) params.assigned_to = selectedAssigneeId;
+      if (selectedStatus) params.status = selectedStatus;
+
+      const response = await axiosInstance.get('tasks/', { params });
       if (response.status === 200 && response.data) {
         // Map the nested API response structure to flat task array
         const allTasks: Task[] = [];
@@ -376,7 +420,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
           }
         });
         setTasks(allTasks);
-        
+
         // Initialize elapsed times for running tasks
         const initialElapsedTimes: Record<number, number> = {};
         allTasks.forEach(task => {
@@ -390,14 +434,14 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
           }
         });
         setElapsedTimes(initialElapsedTimes);
-        
+
         // Calculate stats from tasks
         const unassigned = allTasks.filter(t => !t.assigned_to).length;
         const overdue = allTasks.filter(t => {
           if (!t.due_date) return false;
           return new Date(t.due_date) < new Date() && t.status !== 'completed';
         }).length;
-        
+
         setProjectStats(prev => ({ ...prev, overdueTasks: overdue, unassignedTasks: unassigned }));
       }
     } catch (error) {
@@ -423,7 +467,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
             totalProjects += activeProjects.length;
           }
         });
-        
+
         setProjectStats(prev => ({ ...prev, totalActiveProjects: totalProjects }));
       }
     } catch (error) {
@@ -435,7 +479,11 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
   const fetchGroupedTasks = async () => {
     setIsLoadingBoard(true);
     try {
-      const response = await axiosInstance.get('tasks/grouped-by-status/');
+      const params: any = {};
+      if (selectedAssigneeId) params.assigned_to = selectedAssigneeId;
+      if (selectedStatus) params.status = selectedStatus;
+
+      const response = await axiosInstance.get('tasks/grouped-by-status/', { params });
       if (response.status === 200 && response.data) {
         setGroupedTasks(response.data);
       }
@@ -483,7 +531,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
       const response = await axiosInstance.post(`tasks/extra-hours/${requestId}/review/`, {
         action: 'approve'
       });
-      
+
       if (response.status === 200 || response.status === 201) {
         toast.success('Request approved successfully');
         // Refresh the pending requests list
@@ -509,7 +557,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
       const response = await axiosInstance.post(`tasks/extra-hours/${requestId}/review/`, {
         action: 'reject'
       });
-      
+
       if (response.status === 200 || response.status === 201) {
         toast.success('Request rejected successfully');
         // Refresh the pending requests list
@@ -575,7 +623,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
       }
     } catch (error: any) {
       console.error('Failed to fetch weekly summary:', error);
-      const errorMessage = error.response?.data?.error || error.response?.data?. message || 'Failed to load weekly summary';
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to load weekly summary';
       toast.error(errorMessage);
     } finally {
       setIsLoadingWeeklySummary(false);
@@ -718,7 +766,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
         console.log('Timer started successfully:', response.data);
         // Update task with data from response
         if (response.data) {
-          setTasks(prevTasks => 
+          setTasks(prevTasks =>
             prevTasks.map(task => {
               if (task.id === taskId) {
                 return {
@@ -751,7 +799,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
         console.log('Timer paused successfully:', response.data);
         // Update task with consumed hours from response
         if (response.data) {
-          setTasks(prevTasks => 
+          setTasks(prevTasks =>
             prevTasks.map(task => {
               if (task.id === taskId) {
                 return {
@@ -784,7 +832,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
       if (response.status === 200 || response.status === 201) {
         // Update task with consumed hours from response
         if (response.data) {
-          setTasks(prevTasks => 
+          setTasks(prevTasks =>
             prevTasks.map(task => {
               if (task.id === taskId) {
                 return {
@@ -811,7 +859,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
   const handleTimerToggle = async (taskId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     const task = tasks.find(t => t.id === taskId);
-    
+
     if (!task) return;
 
     try {
@@ -879,7 +927,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                 {tab === 'list' ? 'Task List' : tab === 'board' ? 'Task Board' : 'Timesheet'}
               </button>
             ))}
-            
+
             {/* Additional Time Requests tab - only for admin and manager */}
             {(userRole === 'admin' || userRole === 'manager') && (
               <button
@@ -913,19 +961,42 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                   </button>
                 )}
 
-                <button className="flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors">
+                {/* <button className="flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors">
                   <Search size={16} />
                   View All Tasks
-                </button>
+                </button> */}
 
-                <button className="flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors">
-                  <Filter size={16} />
-                  Filter By Assignees
-                </button>
+                <div className="relative">
+                  <select
+                    value={selectedAssigneeId}
+                    onChange={(e) => setSelectedAssigneeId(e.target.value)}
+                    className="flex items-center gap-2 border border-gray-300 text-gray-700 pl-8 pr-8 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors appearance-none bg-white cursor-pointer"
+                  >
+                    <option value="">All Assignees</option>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>{u.username || u.first_name || u.email}</option>
+                    ))}
+                  </select>
+                  <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                </div>
 
-                <button className="border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors">
+                <div className="relative">
+                  <select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    className="flex items-center gap-2 border border-gray-300 text-gray-700 pl-8 pr-8 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors appearance-none bg-white cursor-pointer"
+                  >
+                    <option value="">All Statuses</option>
+                    {statusChoices.map(s => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+                  <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                </div>
+
+                {/* <button className="border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors">
                   Group By Project
-                </button>
+                </button> */}
               </div>
             </div>
           )}
@@ -997,11 +1068,11 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                   >
                                     <Edit2 size={14} />
                                   </button>
-                                  
+
                                   {editingStatusTaskId === task.id && (
                                     <>
-                                      <div 
-                                        className="fixed inset-0 z-10 cursor-default" 
+                                      <div
+                                        className="fixed inset-0 z-10 cursor-default"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           setEditingStatusTaskId(null);
@@ -1015,9 +1086,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                               e.stopPropagation();
                                               updateTaskStatus(task.id, choice);
                                             }}
-                                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 capitalize transition-colors border-b border-gray-50 last:border-0 ${
-                                              task.status === choice ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
-                                            }`}
+                                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 capitalize transition-colors border-b border-gray-50 last:border-0 ${task.status === choice ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                                              }`}
                                           >
                                             {choice.replace('_', ' ')}
                                           </button>
@@ -1108,9 +1178,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
                                 {/* Timer Field (Dynamic elapsed time) - Hidden when needs extra hours or pending approval */}
                                 {!task.needs_extra_hours && !task.has_extra_hours_request && (
-                                  <div className={`px-2 py-1.5 rounded-lg border text-xs font-mono min-w-[70px] text-center transition-all ${
-                                    task.is_stopped 
-                                      ? 'bg-red-50 border-red-200 text-red-600 font-semibold' 
+                                  <div className={`px-2 py-1.5 rounded-lg border text-xs font-mono min-w-[70px] text-center transition-all ${task.is_stopped
+                                      ? 'bg-red-50 border-red-200 text-red-600 font-semibold'
                                       : task.running
                                         ? 'bg-green-50 border-green-200 text-green-700 font-bold'
                                         : 'bg-gray-50 border-gray-200 text-gray-500'
@@ -1127,25 +1196,25 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                   // Show for tasks that were auto-stopped by the system (time ran out)
                                   (task.is_stopped && task.stop_reason === 'AUTO')
                                 ) && (
-                                  task.has_extra_hours_request ? (
-                                    // Show "Pending Approval" badge if request already sent
-                                    <div className="px-3 py-1.5 bg-yellow-100 border border-yellow-300 text-yellow-800 text-xs font-medium rounded-lg whitespace-nowrap">
-                                      Pending Approval
-                                    </div>
-                                  ) : (
-                                    // Show "Request Additional Time" button if no request sent yet
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setExceededTaskId(task.id);
-                                      }}
-                                      className="px-3 py-1.5 bg-orange-600 text-white text-xs font-medium rounded-lg hover:bg-orange-700 transition-colors whitespace-nowrap"
-                                      title="Request additional time for this task"
-                                    >
-                                      Timer Consumed - Request Additional Time
-                                    </button>
-                                  )
-                                )}
+                                    task.has_extra_hours_request ? (
+                                      // Show "Pending Approval" badge if request already sent
+                                      <div className="px-3 py-1.5 bg-yellow-100 border border-yellow-300 text-yellow-800 text-xs font-medium rounded-lg whitespace-nowrap">
+                                        Pending Approval
+                                      </div>
+                                    ) : (
+                                      // Show "Request Additional Time" button if no request sent yet
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExceededTaskId(task.id);
+                                        }}
+                                        className="px-3 py-1.5 bg-orange-600 text-white text-xs font-medium rounded-lg hover:bg-orange-700 transition-colors whitespace-nowrap"
+                                        title="Request additional time for this task"
+                                      >
+                                        Timer Consumed - Request Additional Time
+                                      </button>
+                                    )
+                                  )}
                               </div>
                             </td>
                           )}
@@ -1388,13 +1457,13 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                           >
                             <ChevronRight size={18} />
                           </button>
-                          
+
                           {/* Week Picker Dropdown */}
                           {showWeekPicker && (
                             <>
                               {/* Backdrop */}
-                              <div 
-                                className="fixed inset-0 z-10" 
+                              <div
+                                className="fixed inset-0 z-10"
                                 onClick={() => setShowWeekPicker(false)}
                               />
                               {/* Dropdown Content */}
@@ -1412,7 +1481,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                       for (let y = currentYear; y >= currentYear - 5; y--) {
                                         years.push(y);
                                       }
-                                      
+
                                       return (
                                         <div>
                                           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
@@ -1442,23 +1511,23 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                       const diff = yearStart.getDate() - day;
                                       const firstSunday = new Date(yearStart);
                                       firstSunday.setDate(diff);
-                                      
+
                                       let currentWeekStart = new Date(firstSunday);
                                       const yearEnd = new Date(adminSelectedYear, 11, 31);
-                                      
+
                                       while (currentWeekStart.getFullYear() <= adminSelectedYear) {
                                         const weekEnd = new Date(currentWeekStart);
                                         weekEnd.setDate(currentWeekStart.getDate() + 6);
-                                        
+
                                         if (currentWeekStart.getFullYear() === adminSelectedYear || weekEnd.getFullYear() === adminSelectedYear) {
-                                          const isSelected = 
+                                          const isSelected =
                                             timesheetDate.toISOString().split('T')[0] >= currentWeekStart.toISOString().split('T')[0] &&
                                             timesheetDate.toISOString().split('T')[0] <= weekEnd.toISOString().split('T')[0];
-                                          
-                                          const isCurrent = 
+
+                                          const isCurrent =
                                             new Date().toISOString().split('T')[0] >= currentWeekStart.toISOString().split('T')[0] &&
                                             new Date().toISOString().split('T')[0] <= weekEnd.toISOString().split('T')[0];
-                                          
+
                                           weeks.push({
                                             sunday: new Date(currentWeekStart),
                                             label: getWeekRange(currentWeekStart),
@@ -1466,11 +1535,11 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                             isCurrent
                                           });
                                         }
-                                        
+
                                         currentWeekStart.setDate(currentWeekStart.getDate() + 7);
                                         if (weeks.length > 60) break; // Safety limit
                                       }
-                                      
+
                                       return (
                                         <div>
                                           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
@@ -1494,9 +1563,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                                   setShowWeekPicker(false);
                                                   setAdminSelectedYear(null);
                                                 }}
-                                                className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 ${
-                                                  week.isSelected ? 'bg-gray-100' : ''
-                                                }`}
+                                                className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 ${week.isSelected ? 'bg-gray-100' : ''
+                                                  }`}
                                               >
                                                 <div className="text-sm text-gray-900">
                                                   {week.label}
@@ -1588,51 +1656,50 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                             {weeklySummary.data
-                              .filter((record: any) => 
-                                !timesheetSearch || 
+                              .filter((record: any) =>
+                                !timesheetSearch ||
                                 record.employee.name.toLowerCase().includes(timesheetSearch.toLowerCase()) ||
                                 record.employee.username.toLowerCase().includes(timesheetSearch.toLowerCase())
                               )
                               .map((record: any) => (
-                              <tr
-                                key={record.employee.id}
-                                onClick={() => {
-                                  setSelectedEmployeeId(record.employee.id);
-                                  setSelectedEmployeeName(record.employee.name);
-                                  setTimesheetStep('detail');
-                                  const sunday = new Date(timesheetDate);
-                                  sunday.setDate(timesheetDate.getDate() - timesheetDate.getDay());
-                                  fetchEmployeeTimesheet(record.employee.id, weeklySummary.week.start);
-                                }}
-                                className="hover:bg-gray-50/80 cursor-pointer transition-colors group"
-                              >
-                                <td className="px-8 py-5">
-                                  <div className="flex flex-col">
-                                    <span className="text-sm font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{record.employee.name}</span>
-                                    <span className="text-xs text-gray-400 font-medium">{record.employee.username}</span>
-                                  </div>
-                                </td>
-                                <td className="px-6 py-5 text-center">
-                                  <span className="text-sm font-bold text-gray-900 font-mono">{record.total_formatted || '00:00:00'}</span>
-                                </td>
-                                <td className="px-6 py-5">
-                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
-                                    record.status === 'approved' 
-                                      ? 'bg-green-100 text-green-800' 
-                                      : record.status === 'submitted'
-                                        ? 'bg-blue-100 text-blue-800'
-                                        : 'bg-yellow-100 text-yellow-800'
-                                  }`}>
-                                    {record.status}
-                                  </span>
-                                </td>
-                                <td className="px-8 py-5 text-right">
-                                  <span className="text-sm font-medium text-gray-500">
-                                    {new Date(record.last_updated).toLocaleString()}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
+                                <tr
+                                  key={record.employee.id}
+                                  onClick={() => {
+                                    setSelectedEmployeeId(record.employee.id);
+                                    setSelectedEmployeeName(record.employee.name);
+                                    setTimesheetStep('detail');
+                                    const sunday = new Date(timesheetDate);
+                                    sunday.setDate(timesheetDate.getDate() - timesheetDate.getDay());
+                                    fetchEmployeeTimesheet(record.employee.id, weeklySummary.week.start);
+                                  }}
+                                  className="hover:bg-gray-50/80 cursor-pointer transition-colors group"
+                                >
+                                  <td className="px-8 py-5">
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{record.employee.name}</span>
+                                      <span className="text-xs text-gray-400 font-medium">{record.employee.username}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-5 text-center">
+                                    <span className="text-sm font-bold text-gray-900 font-mono">{record.total_formatted || '00:00:00'}</span>
+                                  </td>
+                                  <td className="px-6 py-5">
+                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${record.status === 'approved'
+                                        ? 'bg-green-100 text-green-800'
+                                        : record.status === 'submitted'
+                                          ? 'bg-blue-100 text-blue-800'
+                                          : 'bg-yellow-100 text-yellow-800'
+                                      }`}>
+                                      {record.status}
+                                    </span>
+                                  </td>
+                                  <td className="px-8 py-5 text-right">
+                                    <span className="text-sm font-medium text-gray-500">
+                                      {new Date(record.last_updated).toLocaleString()}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
                           </tbody>
                         </table>
                       </div>
@@ -1697,7 +1764,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                         >
                           <ChevronRight size={18} />
                         </button>
-                        
+
                         {/* Week Picker Dropdown */}
                         {showEmployeeWeekPicker && (
                           <>
@@ -1716,7 +1783,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                     for (let y = currentYear; y >= currentYear - 5; y--) {
                                       years.push(y);
                                     }
-                                    
+
                                     return (
                                       <div>
                                         <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
@@ -1746,22 +1813,22 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                     const diff = yearStart.getDate() - day;
                                     const firstSunday = new Date(yearStart);
                                     firstSunday.setDate(diff);
-                                    
+
                                     let currentWeekStart = new Date(firstSunday);
-                                    
+
                                     while (currentWeekStart.getFullYear() <= employeeSelectedYear) {
                                       const weekEnd = new Date(currentWeekStart);
                                       weekEnd.setDate(currentWeekStart.getDate() + 6);
-                                      
+
                                       if (currentWeekStart.getFullYear() === employeeSelectedYear || weekEnd.getFullYear() === employeeSelectedYear) {
-                                        const isSelected = 
+                                        const isSelected =
                                           timesheetDate.toISOString().split('T')[0] >= currentWeekStart.toISOString().split('T')[0] &&
                                           timesheetDate.toISOString().split('T')[0] <= weekEnd.toISOString().split('T')[0];
-                                        
-                                        const isCurrent = 
+
+                                        const isCurrent =
                                           new Date().toISOString().split('T')[0] >= currentWeekStart.toISOString().split('T')[0] &&
                                           new Date().toISOString().split('T')[0] <= weekEnd.toISOString().split('T')[0];
-                                        
+
                                         weeks.push({
                                           sunday: new Date(currentWeekStart),
                                           label: getWeekRange(currentWeekStart),
@@ -1769,11 +1836,11 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                           isCurrent
                                         });
                                       }
-                                      
+
                                       currentWeekStart.setDate(currentWeekStart.getDate() + 7);
                                       if (weeks.length > 60) break;
                                     }
-                                    
+
                                     return (
                                       <div>
                                         <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
@@ -1799,9 +1866,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                                 setShowEmployeeWeekPicker(false);
                                                 setEmployeeSelectedYear(null);
                                               }}
-                                              className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 ${
-                                                week.isSelected ? 'bg-gray-100' : ''
-                                              }`}
+                                              className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 ${week.isSelected ? 'bg-gray-100' : ''
+                                                }`}
                                             >
                                               <div className="text-sm text-gray-900">
                                                 {week.label}
@@ -1826,68 +1892,122 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
                     {/* Render the same timesheet grid as employee view */}
                     {isLoadingTimesheet ? (
-                       <div className="flex justify-center items-center h-64">
-                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                       </div>
+                      <div className="flex justify-center items-center h-64">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                      </div>
                     ) : !timesheetData ? (
-                       <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-                         <p>{timesheetError || 'No timesheet data available.'}</p>
-                       </div>
+                      <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+                        <p>{timesheetError || 'No timesheet data available.'}</p>
+                      </div>
                     ) : (
-                        <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                          <table className="w-full text-left border-collapse">
-                            <thead>
-                              <tr className="bg-gray-50/80 border-b border-gray-200">
-                                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase w-1/3">Task</th>
-                                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => {
-                                  const start = new Date(timesheetData.timesheet.week_start);
-                                  const current = new Date(start);
-                                  current.setDate(start.getDate() + i);
-                                  return (
-                                    <th key={day} className="px-2 py-4 text-xs font-bold text-gray-500 uppercase text-center w-[8%]">
-                                      <div className="flex flex-col items-center">
-                                        <span>{day}</span>
-                                        <span className="text-[10px] opacity-60 font-medium mt-0.5">{current.getDate()}</span>
-                                      </div>
-                                    </th>
-                                  );
-                                })}
-                                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-right w-24">Total</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {(() => {
-                                const rows: Record<number, any> = {};
-                                const hoursFormatted: Record<number, Record<string, string>> = {};
-                                
-                                timesheetData.timesheet.entries.forEach((entry: any) => {
-                                   if (!rows[entry.task]) {
-                                      const t = timesheetData.tasks?.find((task: any) => task.id === entry.task);
-                                      rows[entry.task] = {
-                                         id: entry.task,
-                                         title: t ? t.title : `Task #${entry.task}`,
-                                         hours: {},
-                                         total: 0
-                                      };
-                                      hoursFormatted[entry.task] = {};
-                                   }
-                                   const h = parseFloat(entry.hours);
-                                   rows[entry.task].hours[entry.date] = h;
-                                   rows[entry.task].total += h;
-                                   hoursFormatted[entry.task][entry.date] = entry.hours_formatted || '00:00:00';
-                                });
-                                
-                                if (Object.keys(rows).length === 0) {
-                                   return (
-                                     <tr>
-                                       <td colSpan={9} className="px-6 py-12 text-center text-gray-500 bg-white">
-                                         No time logged for this week yet.
-                                       </td>
-                                     </tr>
-                                   );
-                                }
+                      <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-gray-50/80 border-b border-gray-200">
+                              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase w-1/3">Task</th>
+                              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => {
+                                const start = new Date(timesheetData.timesheet.week_start);
+                                const current = new Date(start);
+                                current.setDate(start.getDate() + i);
+                                return (
+                                  <th key={day} className="px-2 py-4 text-xs font-bold text-gray-500 uppercase text-center w-[8%]">
+                                    <div className="flex flex-col items-center">
+                                      <span>{day}</span>
+                                      <span className="text-[10px] opacity-60 font-medium mt-0.5">{current.getDate()}</span>
+                                    </div>
+                                  </th>
+                                );
+                              })}
+                              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-right w-24">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {(() => {
+                              const rows: Record<number, any> = {};
+                              const hoursFormatted: Record<number, Record<string, string>> = {};
 
-                                // Helper to format seconds to HH:MM:SS
+                              timesheetData.timesheet.entries.forEach((entry: any) => {
+                                if (!rows[entry.task]) {
+                                  const t = timesheetData.tasks?.find((task: any) => task.id === entry.task);
+                                  rows[entry.task] = {
+                                    id: entry.task,
+                                    title: t ? t.title : `Task #${entry.task}`,
+                                    hours: {},
+                                    total: 0
+                                  };
+                                  hoursFormatted[entry.task] = {};
+                                }
+                                const h = parseFloat(entry.hours);
+                                rows[entry.task].hours[entry.date] = h;
+                                rows[entry.task].total += h;
+                                hoursFormatted[entry.task][entry.date] = entry.hours_formatted || '00:00:00';
+                              });
+
+                              if (Object.keys(rows).length === 0) {
+                                return (
+                                  <tr>
+                                    <td colSpan={9} className="px-6 py-12 text-center text-gray-500 bg-white">
+                                      No time logged for this week yet.
+                                    </td>
+                                  </tr>
+                                );
+                              }
+
+                              // Helper to format seconds to HH:MM:SS
+                              const formatSeconds = (totalHours: number) => {
+                                const totalSeconds = Math.round(totalHours * 3600);
+                                const hours = Math.floor(totalSeconds / 3600);
+                                const minutes = Math.floor((totalSeconds % 3600) / 60);
+                                const seconds = totalSeconds % 60;
+                                return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                              };
+
+                              return Object.values(rows).map((row: any) => (
+                                <tr key={row.id} className="hover:bg-gray-50/50 transition-colors bg-white">
+                                  <td className="px-6 py-5">
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-bold text-gray-900">{row.title}</span>
+                                    </div>
+                                  </td>
+                                  {Array.from({ length: 7 }).map((_, i) => {
+                                    const start = new Date(timesheetData.timesheet.week_start);
+                                    const current = new Date(start);
+                                    current.setDate(start.getDate() + i);
+                                    const dateStr = current.toISOString().split('T')[0];
+                                    const hours = row.hours[dateStr] || 0;
+                                    const formatted = hoursFormatted[row.id][dateStr] || '-';
+
+                                    return (
+                                      <td key={i} className="px-2 py-5 text-center">
+                                        <div className={`text-sm font-medium font-mono ${hours > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                                          {hours > 0 ? formatted : '-'}
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
+                                  <td className="px-6 py-5 text-right bg-gray-50/30">
+                                    <span className="text-sm font-bold text-blue-600 font-mono">{formatSeconds(row.total)}</span>
+                                  </td>
+                                </tr>
+                              ));
+                            })()}
+                          </tbody>
+                          <tfoot className="bg-gray-50/80 border-t border-gray-200">
+                            <tr>
+                              <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Total</td>
+                              {Array.from({ length: 7 }).map((_, i) => {
+                                const start = new Date(timesheetData.timesheet.week_start);
+                                const current = new Date(start);
+                                current.setDate(start.getDate() + i);
+                                const dateStr = current.toISOString().split('T')[0];
+
+                                let dailyTotal = 0;
+                                timesheetData.timesheet.entries.forEach((entry: any) => {
+                                  if (entry.date === dateStr) {
+                                    dailyTotal += parseFloat(entry.hours);
+                                  }
+                                });
+
                                 const formatSeconds = (totalHours: number) => {
                                   const totalSeconds = Math.round(totalHours * 3600);
                                   const hours = Math.floor(totalSeconds / 3600);
@@ -1896,80 +2016,26 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
                                 };
 
-                                return Object.values(rows).map((row: any) => (
-                                   <tr key={row.id} className="hover:bg-gray-50/50 transition-colors bg-white">
-                                     <td className="px-6 py-5">
-                                       <div className="flex flex-col">
-                                         <span className="text-sm font-bold text-gray-900">{row.title}</span>
-                                       </div>
-                                     </td>
-                                     {Array.from({ length: 7 }).map((_, i) => {
-                                        const start = new Date(timesheetData.timesheet.week_start);
-                                        const current = new Date(start);
-                                        current.setDate(start.getDate() + i);
-                                        const dateStr = current.toISOString().split('T')[0];
-                                        const hours = row.hours[dateStr] || 0;
-                                        const formatted = hoursFormatted[row.id][dateStr] || '-';
-                                        
-                                        return (
-                                           <td key={i} className="px-2 py-5 text-center">
-                                             <div className={`text-sm font-medium font-mono ${hours > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
-                                               {hours > 0 ? formatted : '-'}
-                                             </div>
-                                           </td>
-                                        );
-                                     })}
-                                     <td className="px-6 py-5 text-right bg-gray-50/30">
-                                       <span className="text-sm font-bold text-blue-600 font-mono">{formatSeconds(row.total)}</span>
-                                     </td>
-                                   </tr>
-                                ));
-                               })()}
-                            </tbody>
-                            <tfoot className="bg-gray-50/80 border-t border-gray-200">
-                              <tr>
-                                <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Total</td>
-                                 {Array.from({ length: 7 }).map((_, i) => {
-                                    const start = new Date(timesheetData.timesheet.week_start);
-                                    const current = new Date(start);
-                                    current.setDate(start.getDate() + i);
-                                    const dateStr = current.toISOString().split('T')[0];
-                                    
-                                    let dailyTotal = 0;
-                                    timesheetData.timesheet.entries.forEach((entry: any) => {
-                                       if (entry.date === dateStr) {
-                                          dailyTotal += parseFloat(entry.hours);
-                                       }
-                                    });
-
-                                    const formatSeconds = (totalHours: number) => {
-                                      const totalSeconds = Math.round(totalHours * 3600);
-                                      const hours = Math.floor(totalSeconds / 3600);
-                                      const minutes = Math.floor((totalSeconds % 3600) / 60);
-                                      const seconds = totalSeconds % 60;
-                                      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-                                    };
-
-                                    return (
-                                       <td key={i} className="px-2 py-4 text-center text-xs font-bold text-gray-900 font-mono">
-                                          {dailyTotal > 0 ? formatSeconds(dailyTotal) : '-'}
-                                       </td>
-                                    );
-                                 })}
-                                 <td className="px-6 py-4 text-right text-xs font-bold text-blue-700 font-mono">
-                                    {(() => {
-                                      const total = timesheetData.timesheet.entries.reduce((acc: number, curr: any) => acc + parseFloat(curr.hours), 0);
-                                      const totalSeconds = Math.round(total * 3600);
-                                      const hours = Math.floor(totalSeconds / 3600);
-                                      const minutes = Math.floor((totalSeconds % 3600) / 60);
-                                      const seconds = totalSeconds % 60;
-                                      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-                                    })()}
-                                 </td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
+                                return (
+                                  <td key={i} className="px-2 py-4 text-center text-xs font-bold text-gray-900 font-mono">
+                                    {dailyTotal > 0 ? formatSeconds(dailyTotal) : '-'}
+                                  </td>
+                                );
+                              })}
+                              <td className="px-6 py-4 text-right text-xs font-bold text-blue-700 font-mono">
+                                {(() => {
+                                  const total = timesheetData.timesheet.entries.reduce((acc: number, curr: any) => acc + parseFloat(curr.hours), 0);
+                                  const totalSeconds = Math.round(total * 3600);
+                                  const hours = Math.floor(totalSeconds / 3600);
+                                  const minutes = Math.floor((totalSeconds % 3600) / 60);
+                                  const seconds = totalSeconds % 60;
+                                  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                                })()}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
                     )}
                   </div>
                 )}
@@ -1984,18 +2050,17 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900 mb-1">My Timesheet</h2>
                     {timesheetData?.timesheet?.status && (
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
-                        timesheetData.timesheet.status === 'approved' 
-                          ? 'bg-green-100 text-green-800' 
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${timesheetData.timesheet.status === 'approved'
+                          ? 'bg-green-100 text-green-800'
                           : timesheetData.timesheet.status === 'submitted'
                             ? 'bg-blue-100 text-blue-800'
                             : 'bg-yellow-100 text-yellow-800'
-                      }`}>
+                        }`}>
                         {timesheetData.timesheet.status}
                       </span>
                     )}
                   </div>
-                  
+
                   <div className="relative flex items-center bg-gray-50 border border-gray-200 rounded-lg p-1">
                     <button
                       onClick={() => shiftWeek(-1)}
@@ -2022,7 +2087,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                     >
                       <ChevronRight size={18} />
                     </button>
-                    
+
                     {/* Week Picker Dropdown */}
                     {showUserWeekPicker && (
                       <>
@@ -2041,7 +2106,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                 for (let y = currentYear; y >= currentYear - 5; y--) {
                                   years.push(y);
                                 }
-                                
+
                                 return (
                                   <div>
                                     <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
@@ -2071,22 +2136,22 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                 const diff = yearStart.getDate() - day;
                                 const firstSunday = new Date(yearStart);
                                 firstSunday.setDate(diff);
-                                
+
                                 let currentWeekStart = new Date(firstSunday);
-                                
+
                                 while (currentWeekStart.getFullYear() <= userSelectedYear) {
                                   const weekEnd = new Date(currentWeekStart);
                                   weekEnd.setDate(currentWeekStart.getDate() + 6);
-                                  
+
                                   if (currentWeekStart.getFullYear() === userSelectedYear || weekEnd.getFullYear() === userSelectedYear) {
-                                    const isSelected = 
+                                    const isSelected =
                                       timesheetDate.toISOString().split('T')[0] >= currentWeekStart.toISOString().split('T')[0] &&
                                       timesheetDate.toISOString().split('T')[0] <= weekEnd.toISOString().split('T')[0];
-                                    
-                                    const isCurrent = 
+
+                                    const isCurrent =
                                       new Date().toISOString().split('T')[0] >= currentWeekStart.toISOString().split('T')[0] &&
                                       new Date().toISOString().split('T')[0] <= weekEnd.toISOString().split('T')[0];
-                                    
+
                                     weeks.push({
                                       sunday: new Date(currentWeekStart),
                                       label: getWeekRange(currentWeekStart),
@@ -2094,11 +2159,11 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                       isCurrent
                                     });
                                   }
-                                  
+
                                   currentWeekStart.setDate(currentWeekStart.getDate() + 7);
                                   if (weeks.length > 60) break;
                                 }
-                                
+
                                 return (
                                   <div>
                                     <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
@@ -2123,9 +2188,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                             setShowUserWeekPicker(false);
                                             setUserSelectedYear(null);
                                           }}
-                                          className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 ${
-                                            week.isSelected ? 'bg-gray-100' : ''
-                                          }`}
+                                          className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 ${week.isSelected ? 'bg-gray-100' : ''
+                                            }`}
                                         >
                                           <div className="text-sm text-gray-900">
                                             {week.label}
@@ -2147,74 +2211,128 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                 </div>
 
                 {isLoadingTimesheet ? (
-                   <div className="flex justify-center items-center h-64">
-                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                   </div>
+                  <div className="flex justify-center items-center h-64">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  </div>
                 ) : !timesheetData ? (
-                   <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-                     <p>{timesheetError || 'No timesheet data available.'}</p>
-                     <button 
-                        onClick={() => fetchTimesheet()}
-                        className="mt-4 px-4 py-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                     >
-                        Retry
-                     </button>
-                   </div>
+                  <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+                    <p>{timesheetError || 'No timesheet data available.'}</p>
+                    <button
+                      onClick={() => fetchTimesheet()}
+                      className="mt-4 px-4 py-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      Retry
+                    </button>
+                  </div>
                 ) : (
-                    <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-gray-50/80 border-b border-gray-200">
-                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase w-1/3">Task</th>
-                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => {
-                              const start = new Date(timesheetData.timesheet.week_start);
-                              const current = new Date(start);
-                              current.setDate(start.getDate() + i);
-                              return (
-                                <th key={day} className="px-2 py-4 text-xs font-bold text-gray-500 uppercase text-center w-[8%]">
-                                  <div className="flex flex-col items-center">
-                                    <span>{day}</span>
-                                    <span className="text-[10px] opacity-60 font-medium mt-0.5">{current.getDate()}</span>
-                                  </div>
-                                </th>
-                              );
-                            })}
-                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-right w-24">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {(() => {
-                            const rows: Record<number, any> = {};
-                            const hoursFormatted: Record<number, Record<string, string>> = {};
-                            
-                            timesheetData.timesheet.entries.forEach((entry: any) => {
-                               if (!rows[entry.task]) {
-                                  const t = timesheetData.tasks?.find((task: any) => task.id === entry.task);
-                                  rows[entry.task] = {
-                                     id: entry.task,
-                                     title: t ? t.title : `Task #${entry.task}`,
-                                     hours: {},
-                                     total: 0
-                                  };
-                                  hoursFormatted[entry.task] = {};
-                               }
-                               const h = parseFloat(entry.hours);
-                               rows[entry.task].hours[entry.date] = h;
-                               rows[entry.task].total += h;
-                               hoursFormatted[entry.task][entry.date] = entry.hours_formatted || '00:00:00';
-                            });
-                            
-                            if (Object.keys(rows).length === 0) {
-                               return (
-                                 <tr>
-                                   <td colSpan={9} className="px-6 py-12 text-center text-gray-500 bg-white">
-                                     No time logged for this week yet.
-                                   </td>
-                                 </tr>
-                               );
-                            }
+                  <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50/80 border-b border-gray-200">
+                          <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase w-1/3">Task</th>
+                          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => {
+                            const start = new Date(timesheetData.timesheet.week_start);
+                            const current = new Date(start);
+                            current.setDate(start.getDate() + i);
+                            return (
+                              <th key={day} className="px-2 py-4 text-xs font-bold text-gray-500 uppercase text-center w-[8%]">
+                                <div className="flex flex-col items-center">
+                                  <span>{day}</span>
+                                  <span className="text-[10px] opacity-60 font-medium mt-0.5">{current.getDate()}</span>
+                                </div>
+                              </th>
+                            );
+                          })}
+                          <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-right w-24">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {(() => {
+                          const rows: Record<number, any> = {};
+                          const hoursFormatted: Record<number, Record<string, string>> = {};
 
-                            // Helper to format seconds to HH:MM:SS
+                          timesheetData.timesheet.entries.forEach((entry: any) => {
+                            if (!rows[entry.task]) {
+                              const t = timesheetData.tasks?.find((task: any) => task.id === entry.task);
+                              rows[entry.task] = {
+                                id: entry.task,
+                                title: t ? t.title : `Task #${entry.task}`,
+                                hours: {},
+                                total: 0
+                              };
+                              hoursFormatted[entry.task] = {};
+                            }
+                            const h = parseFloat(entry.hours);
+                            rows[entry.task].hours[entry.date] = h;
+                            rows[entry.task].total += h;
+                            hoursFormatted[entry.task][entry.date] = entry.hours_formatted || '00:00:00';
+                          });
+
+                          if (Object.keys(rows).length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={9} className="px-6 py-12 text-center text-gray-500 bg-white">
+                                  No time logged for this week yet.
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          // Helper to format seconds to HH:MM:SS
+                          const formatSeconds = (totalHours: number) => {
+                            const totalSeconds = Math.round(totalHours * 3600);
+                            const hours = Math.floor(totalSeconds / 3600);
+                            const minutes = Math.floor((totalSeconds % 3600) / 60);
+                            const seconds = totalSeconds % 60;
+                            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                          };
+
+                          return Object.values(rows).map((row: any) => (
+                            <tr key={row.id} className="hover:bg-gray-50/50 transition-colors bg-white">
+                              <td className="px-6 py-5">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-bold text-gray-900">{row.title}</span>
+                                </div>
+                              </td>
+                              {Array.from({ length: 7 }).map((_, i) => {
+                                const start = new Date(timesheetData.timesheet.week_start);
+                                const current = new Date(start);
+                                current.setDate(start.getDate() + i);
+                                const dateStr = current.toISOString().split('T')[0];
+                                const hours = row.hours[dateStr] || 0;
+                                const formatted = hoursFormatted[row.id][dateStr] || '-';
+
+                                return (
+                                  <td key={i} className="px-2 py-5 text-center">
+                                    <div className={`text-sm font-medium font-mono ${hours > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                                      {hours > 0 ? formatted : '-'}
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                              <td className="px-6 py-5 text-right bg-gray-50/30">
+                                <span className="text-sm font-bold text-blue-600 font-mono">{formatSeconds(row.total)}</span>
+                              </td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                      <tfoot className="bg-gray-50/80 border-t border-gray-200">
+                        <tr>
+                          <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Total</td>
+                          {Array.from({ length: 7 }).map((_, i) => {
+                            const start = new Date(timesheetData.timesheet.week_start);
+                            const current = new Date(start);
+                            current.setDate(start.getDate() + i);
+                            const dateStr = current.toISOString().split('T')[0];
+
+                            let dailyTotal = 0;
+                            timesheetData.timesheet.entries.forEach((entry: any) => {
+                              if (entry.date === dateStr) {
+                                dailyTotal += parseFloat(entry.hours);
+                              }
+                            });
+
                             const formatSeconds = (totalHours: number) => {
                               const totalSeconds = Math.round(totalHours * 3600);
                               const hours = Math.floor(totalSeconds / 3600);
@@ -2223,80 +2341,26 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
                             };
 
-                            return Object.values(rows).map((row: any) => (
-                               <tr key={row.id} className="hover:bg-gray-50/50 transition-colors bg-white">
-                                 <td className="px-6 py-5">
-                                   <div className="flex flex-col">
-                                     <span className="text-sm font-bold text-gray-900">{row.title}</span>
-                                   </div>
-                                 </td>
-                                 {Array.from({ length: 7 }).map((_, i) => {
-                                    const start = new Date(timesheetData.timesheet.week_start);
-                                    const current = new Date(start);
-                                    current.setDate(start.getDate() + i);
-                                    const dateStr = current.toISOString().split('T')[0];
-                                    const hours = row.hours[dateStr] || 0;
-                                    const formatted = hoursFormatted[row.id][dateStr] || '-';
-                                    
-                                    return (
-                                       <td key={i} className="px-2 py-5 text-center">
-                                         <div className={`text-sm font-medium font-mono ${hours > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
-                                           {hours > 0 ? formatted : '-'}
-                                         </div>
-                                       </td>
-                                    );
-                                 })}
-                                 <td className="px-6 py-5 text-right bg-gray-50/30">
-                                   <span className="text-sm font-bold text-blue-600 font-mono">{formatSeconds(row.total)}</span>
-                                 </td>
-                               </tr>
-                            ));
-                          })()}
-                        </tbody>
-                        <tfoot className="bg-gray-50/80 border-t border-gray-200">
-                          <tr>
-                            <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Total</td>
-                             {Array.from({ length: 7 }).map((_, i) => {
-                                const start = new Date(timesheetData.timesheet.week_start);
-                                const current = new Date(start);
-                                current.setDate(start.getDate() + i);
-                                const dateStr = current.toISOString().split('T')[0];
-                                
-                                let dailyTotal = 0;
-                                timesheetData.timesheet.entries.forEach((entry: any) => {
-                                   if (entry.date === dateStr) {
-                                      dailyTotal += parseFloat(entry.hours);
-                                   }
-                                });
-
-                                const formatSeconds = (totalHours: number) => {
-                                  const totalSeconds = Math.round(totalHours * 3600);
-                                  const hours = Math.floor(totalSeconds / 3600);
-                                  const minutes = Math.floor((totalSeconds % 3600) / 60);
-                                  const seconds = totalSeconds % 60;
-                                  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-                                };
-
-                                return (
-                                   <td key={i} className="px-2 py-4 text-center text-xs font-bold text-gray-900 font-mono">
-                                      {dailyTotal > 0 ? formatSeconds(dailyTotal) : '-'}
-                                   </td>
-                                );
-                             })}
-                             <td className="px-6 py-4 text-right text-xs font-bold text-blue-700 font-mono">
-                                {(() => {
-                                  const total = timesheetData.timesheet.entries.reduce((acc: number, curr: any) => acc + parseFloat(curr.hours), 0);
-                                  const totalSeconds = Math.round(total * 3600);
-                                  const hours = Math.floor(totalSeconds / 3600);
-                                  const minutes = Math.floor((totalSeconds % 3600) / 60);
-                                  const seconds = totalSeconds % 60;
-                                  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-                                })()}
-                             </td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
+                            return (
+                              <td key={i} className="px-2 py-4 text-center text-xs font-bold text-gray-900 font-mono">
+                                {dailyTotal > 0 ? formatSeconds(dailyTotal) : '-'}
+                              </td>
+                            );
+                          })}
+                          <td className="px-6 py-4 text-right text-xs font-bold text-blue-700 font-mono">
+                            {(() => {
+                              const total = timesheetData.timesheet.entries.reduce((acc: number, curr: any) => acc + parseFloat(curr.hours), 0);
+                              const totalSeconds = Math.round(total * 3600);
+                              const hours = Math.floor(totalSeconds / 3600);
+                              const minutes = Math.floor((totalSeconds % 3600) / 60);
+                              const seconds = totalSeconds % 60;
+                              return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                            })()}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 )}
               </div>
             )}
@@ -2309,16 +2373,15 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
             {/* Header with View Tabs */}
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Additional Time Requests</h2>
-              
+
               {/* View Tabs */}
               <div className="flex gap-4 border-b border-gray-200">
                 <button
                   onClick={() => setRequestsView('pending')}
-                  className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${
-                    requestsView === 'pending'
+                  className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${requestsView === 'pending'
                       ? 'text-blue-600 border-b-2 border-blue-600'
                       : 'text-gray-500 hover:text-gray-700'
-                  }`}
+                    }`}
                 >
                   Pending ({pendingRequests.length})
                 </button>
@@ -2329,11 +2392,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                       fetchRequestHistory();
                     }
                   }}
-                  className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${
-                    requestsView === 'history'
+                  className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${requestsView === 'history'
                       ? 'text-blue-600 border-b-2 border-blue-600'
                       : 'text-gray-500 hover:text-gray-700'
-                  }`}
+                    }`}
                 >
                   History ({requestHistory.length})
                 </button>
@@ -2397,11 +2459,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                   }
                                 }}
                                 disabled={isLoadingTaskDetails}
-                                className={`text-sm font-semibold transition-colors text-left ${
-                                  isLoadingTaskDetails 
-                                    ? 'text-gray-400 cursor-wait' 
+                                className={`text-sm font-semibold transition-colors text-left ${isLoadingTaskDetails
+                                    ? 'text-gray-400 cursor-wait'
                                     : 'text-blue-600 hover:text-blue-800 hover:underline'
-                                }`}
+                                  }`}
                               >
                                 {request.task}
                               </button>
@@ -2521,11 +2582,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                   }
                                 }}
                                 disabled={!record.task_id || isLoadingTaskDetails}
-                                className={`text-sm font-semibold transition-colors text-left ${
-                                  !record.task_id || isLoadingTaskDetails
-                                    ? 'text-gray-400 cursor-not-allowed' 
+                                className={`text-sm font-semibold transition-colors text-left ${!record.task_id || isLoadingTaskDetails
+                                    ? 'text-gray-400 cursor-not-allowed'
                                     : 'text-blue-600 hover:text-blue-800 hover:underline'
-                                }`}
+                                  }`}
                               >
                                 {record.task}
                               </button>
@@ -2549,11 +2609,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               </span>
                             </td>
                             <td className="px-6 py-4 text-center">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
-                                record.status === 'approved' 
-                                  ? 'bg-green-100 text-green-800' 
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${record.status === 'approved'
+                                  ? 'bg-green-100 text-green-800'
                                   : 'bg-red-100 text-red-800'
-                              }`}>
+                                }`}>
                                 {record.status}
                               </span>
                             </td>
@@ -2595,7 +2654,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
       {exceededTaskId && (() => {
         const exceededTask = tasks.find(t => t.id === exceededTaskId);
         if (!exceededTask) return null;
-        
+
         return (
           <RequestExtraHoursModal
             isOpen={true}

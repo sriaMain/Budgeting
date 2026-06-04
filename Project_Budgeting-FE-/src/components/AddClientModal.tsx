@@ -90,6 +90,7 @@ export function AddClientModal({ isOpen, onClose, onClientAdded }: AddClientModa
     const payload = {
       ...formData,
       tags: formData.selectedTags,
+      country_code: '+91',
     };
 
     try {

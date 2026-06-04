@@ -19,12 +19,14 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
 
     const [isEditing, setIsEditing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [modules, setModules] = useState<any[]>([]);
     const [userId, setUserId] = useState<number | null>(null);
     const [formData, setFormData] = useState({
         first_name: '',
         last_name: '',
         email: email || '',
         position: '',
+        module: '',
         charges_per_hour: '',
         languages: [] as string[],
         profile_picture: null as string | null,
@@ -40,20 +42,40 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
 
     const fetchUserProfile = async () => {
         try {
-            // Get all users and find the current user by email/username
-            const response = await axiosInstance.get('/accounts/users/');
-            const users = response.data;
+            // Fetch users and modules
+            const [usersRes, modulesRes] = await Promise.all([
+                axiosInstance.get('/accounts/users/'),
+                axiosInstance.get('/product-services/')
+            ]);
+            
+            const users = usersRes.data;
+            const fetchedModules = modulesRes.data;
+            setModules(fetchedModules);
 
             // Find current user by email
             const currentUser = users.find((user: any) => user.email === email);
 
             if (currentUser) {
                 setUserId(currentUser.id);
+                
+                let currentModuleId = '';
+                if (currentUser.modules && currentUser.modules.length > 0) {
+                    currentModuleId = String(currentUser.modules[0]);
+                } else if (currentUser.module) {
+                    const foundModuleByName = fetchedModules.find((m: any) => m.product_service_name === currentUser.module);
+                    if (foundModuleByName) {
+                        currentModuleId = String(foundModuleByName.id);
+                    } else {
+                        currentModuleId = String(currentUser.module);
+                    }
+                }
+
                 setFormData({
                     first_name: currentUser.first_name || '',
                     last_name: currentUser.last_name || '',
                     email: currentUser.email || '',
                     position: currentUser.position || '',
+                    module: currentModuleId,
                     charges_per_hour: currentUser.charges_per_hour ? String(currentUser.charges_per_hour) : '',
                     languages: Array.isArray(currentUser.languages) ? currentUser.languages : [],
                     profile_picture: currentUser.profile_picture,
@@ -104,6 +126,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
             formDataToSend.append('last_name', formData.last_name);
             formDataToSend.append('email', formData.email);
             formDataToSend.append('position', formData.position);
+
+            if (formData.module) {
+                formDataToSend.append('modules', formData.module);
+                formDataToSend.append('module', formData.module);
+            }
 
             if (formData.charges_per_hour) {
                 formDataToSend.append('charges_per_hour', formData.charges_per_hour);
@@ -218,6 +245,28 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                             className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm"
                                             placeholder="Position"
                                         />
+                                    </FormRow>
+
+                                    {/* Module Dropdown */}
+                                    <FormRow label="Module" required>
+                                        <div className="relative">
+                                            <select
+                                                required
+                                                value={formData.module}
+                                                onChange={(e) => setFormData({ ...formData, module: e.target.value })}
+                                                className={`w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm bg-white cursor-pointer appearance-none ${!formData.module ? 'text-gray-400' : 'text-gray-900'}`}
+                                            >
+                                                <option value="" disabled>Select Module</option>
+                                                {modules.map((mod: any) => (
+                                                    <option key={mod.id} value={mod.id}>
+                                                        {mod.product_service_name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500">
+                                                <ChevronDown size={14} />
+                                            </div>
+                                        </div>
                                     </FormRow>
 
                                     {/* Charges */}
@@ -341,6 +390,19 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                 <div className="flex-1">
                                     <label className="text-sm font-medium text-gray-500">Position</label>
                                     <p className="text-lg text-gray-900 mt-1">{formData.position || 'N/A'}</p>
+                                </div>
+                            </div>
+
+                            {/* Module */}
+                            <div className="flex items-start gap-4">
+                                <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                                    <Briefcase size={20} className="text-indigo-600" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="text-sm font-medium text-gray-500">Module</label>
+                                    <p className="text-lg text-gray-900 mt-1">
+                                        {modules.find(m => String(m.id) === formData.module)?.product_service_name || 'N/A'}
+                                    </p>
                                 </div>
                             </div>
 

@@ -1,7 +1,7 @@
-const DEFAULT_API_ORIGIN = "http://127.0.0.1:8000";
+const DEFAULT_API_ORIGIN = "http://127.0.0.1:8001";
 const inferredApiOrigin =
   typeof window !== "undefined"
-    ? `http://${window.location.hostname}:8000`
+    ? `http://${window.location.hostname}:8001`
     : DEFAULT_API_ORIGIN;
 
 const rawApiOrigin = import.meta.env.VITE_API_BASE_URL || inferredApiOrigin;

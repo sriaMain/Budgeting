@@ -203,4 +203,8 @@ class RBACUserMixin(models.Model):
         """
         Invalidate cache manually (admin/use case/method override)
         """
-        cache.delete(self.__get_cache_key())
+        try:
+            cache.delete(self.__get_cache_key())
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Cache delete failed in clear_permission_cache: {e}")

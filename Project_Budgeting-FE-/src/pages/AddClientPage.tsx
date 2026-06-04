@@ -99,6 +99,7 @@ export function AddClientPage({ client, onSave, onCancel }: AddClientProps) {
       ...formData,
       // send only tag IDs to the API
       tags: formData.selectedTags,
+      country_code: '+91',
     };
 
     try {

@@ -136,7 +136,9 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
         const payload = {
             ...formData,
             company: companyId,
-            company_name: companyName
+            company_name: companyName,
+            country_code: '+91',
+            input_mobile: formData.poc_mobile
         };
 
         try {

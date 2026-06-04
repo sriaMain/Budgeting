@@ -14,17 +14,27 @@ from django_redis import get_redis_connection
 redis_conn = get_redis_connection("default")
 
 def get_active_timer(user_id):
-    task_id = redis_conn.get(f"active_timer:{user_id}")
-    start_time = redis_conn.get(f"timer_start:{user_id}")
-    return task_id, start_time
+    try:
+        task_id = redis_conn.get(f"active_timer:{user_id}")
+        start_time = redis_conn.get(f"timer_start:{user_id}")
+        return task_id, start_time
+    except Exception as e:
+        print(f"Warning: Redis connection failed: {e}")
+        return None, None
 
 def set_active_timer(user_id, task_id, start_time):
-    redis_conn.set(f"active_timer:{user_id}", task_id)
-    redis_conn.set(f"timer_start:{user_id}", start_time.isoformat())
+    try:
+        redis_conn.set(f"active_timer:{user_id}", task_id)
+        redis_conn.set(f"timer_start:{user_id}", start_time.isoformat())
+    except Exception as e:
+        print(f"Warning: Redis connection failed: {e}")
 
 def clear_active_timer(user_id):
-    redis_conn.delete(f"active_timer:{user_id}")
-    redis_conn.delete(f"timer_start:{user_id}")
+    try:
+        redis_conn.delete(f"active_timer:{user_id}")
+        redis_conn.delete(f"timer_start:{user_id}")
+    except Exception as e:
+        print(f"Warning: Redis connection failed: {e}")
 
 
 def format_seconds(seconds):

@@ -777,7 +777,7 @@ class TimesheetSerializer(serializers.ModelSerializer):
             qs = qs.filter(task__isnull=False)
 
         # Local import to avoid circulars
-        from .utils import format_seconds
+        from .utils.timer import format_seconds
 
         out = []
         for e in qs:

@@ -36,6 +36,13 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
   const [view, setView] = useState<"list" | "form">("list");
   const [isLoading, setIsLoading] = useState(false);
   const [modules, setModules] = useState<ModuleItem[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredModules = modules.filter(m =>
+    m.product_service_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    m.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    m.product_group?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // Form State
   const [formData, setFormData] = useState({
@@ -407,6 +414,8 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                 <input
                   type="text"
                   placeholder="Search modules..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full md:w-64"
                 />
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -430,7 +439,7 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
 
           {/* Reusable Table Implementation */}
           <ReusableTable
-            data={modules}
+            data={filteredModules}
             columns={columns}
             keyField="id"
             isLoading={isLoading}

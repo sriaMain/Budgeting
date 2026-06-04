@@ -64,7 +64,12 @@ class ProjectAPIView(APIView):
         # 🔹 Query params
         search = request.query_params.get("search", "").strip()
         status_param = request.query_params.get("status", "").strip()
-        budget_param = request.query_params.get("budget", "").strip()
+        
+        project_name_filter = request.query_params.get("project_name", "").strip()
+        min_budget = request.query_params.get("min_budget", "").strip()
+        max_budget = request.query_params.get("max_budget", "").strip()
+        start_date = request.query_params.get("start_date", "").strip()
+        end_date = request.query_params.get("end_date", "").strip()
 
         # 🔹 Base queryset (IMPORTANT)
         projects = Project.objects.select_related("client", "budget")
@@ -76,11 +81,26 @@ class ProjectAPIView(APIView):
         if status_param:
             projects = projects.filter(status__icontains=status_param)
 
-        if budget_param:
-            projects = projects.filter(
-                Q(budget__total_budget__icontains=budget_param) |
-                Q(budget__currency__icontains=budget_param)
-            )
+        if project_name_filter:
+            projects = projects.filter(project_name__iexact=project_name_filter)
+            
+        if min_budget:
+            try:
+                projects = projects.filter(budget__total_budget__gte=float(min_budget))
+            except ValueError:
+                pass
+                
+        if max_budget:
+            try:
+                projects = projects.filter(budget__total_budget__lte=float(max_budget))
+            except ValueError:
+                pass
+                
+        if start_date:
+            projects = projects.filter(start_date__gte=start_date)
+            
+        if end_date:
+            projects = projects.filter(end_date__lte=end_date)
 
         # 🔹 Group by company
         company_map = {}
@@ -413,6 +433,14 @@ class TaskAPIView(APIView):
             tasks = Task.objects.prefetch_related('time_entries').filter(assigned_to=user)
         else:
             tasks = Task.objects.none()
+
+        assigned_to_param = request.query_params.get("assigned_to")
+        if assigned_to_param:
+            tasks = tasks.filter(assigned_to_id=assigned_to_param)
+
+        status_param = request.query_params.get("status")
+        if status_param:
+            tasks = tasks.filter(status=status_param)
 
         # Group tasks by project for all cases
         from .utils.timer import get_active_timer
@@ -987,9 +1015,14 @@ class StartTaskTimerAPIView(APIView):
         # Check Redis to see if this was a "stop" or just a "pause"
         # If timesheet exists but no "stop" marker in Redis, allow restart (it was paused)
         from django_redis import get_redis_connection
-        redis_conn = get_redis_connection("default")
-        stop_marker_key = f"task_stopped:{user.id}:{task_id}:{today}"
-        stop_marker = redis_conn.get(stop_marker_key)
+        try:
+            redis_conn = get_redis_connection("default")
+            stop_marker_key = f"task_stopped:{user.id}:{task_id}:{today}"
+            stop_marker = redis_conn.get(stop_marker_key)
+        except Exception as e:
+            print(f"Warning: Redis connection failed while checking stop marker: {e}")
+            stop_marker_key = f"task_stopped:{user.id}:{task_id}:{today}"
+            stop_marker = None
         
         print(f"DEBUG START: Task {task_id}, User {user.id}, Date {today}")
         print(f"DEBUG START: Stop marker key: {stop_marker_key}")
@@ -1099,20 +1132,23 @@ class StartTaskTimerAPIView(APIView):
 
         # 🔥 WebSocket Event
         channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            f"user_{user.id}",
-            {
-                "type": "timer_event",
-                "data": {
-                    "event": "TIMER_STARTED",  # start OR resume
-                    "task_id": task.id,
-                    "started_at": timer.start_time.isoformat(),
-                    "total_seconds": prev_seconds,
-                    "formatted_time": seconds_to_hms(total_seconds),
-                    "running": True
+        try:
+            async_to_sync(channel_layer.group_send)(
+                f"user_{user.id}",
+                {
+                    "type": "timer_event",
+                    "data": {
+                        "event": "TIMER_STARTED",  # start OR resume
+                        "task_id": task.id,
+                        "started_at": timer.start_time.isoformat(),
+                        "total_seconds": prev_seconds,
+                        "formatted_time": seconds_to_hms(total_seconds),
+                        "running": True
+                    }
                 }
-            }
-        )
+            )
+        except Exception as e:
+            print(f"WebSocket send failed: {e}")
 
         return Response(
             {
@@ -1277,47 +1313,53 @@ class PauseTaskTimerAPIView(APIView):
         prev_seconds = int(prev_seconds)
 
         # 🔥 WebSocket Event for timer paused
-        from .utils import format_seconds as format_seconds_obj
+        from .utils.timer import format_seconds as format_seconds_obj
         
         formatted_obj = format_seconds_obj(prev_seconds)
 
         channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            f"user_{user.id}",
-            {
-                "type": "timer_event",
-                "data": {
-                    "event": "TIMER_PAUSED",
-                    "task_id": task.id,
-                    "started_at": timer.start_time.isoformat() if timer.start_time else None,
-                    "total_seconds": prev_seconds,
-                    "session_seconds": elapsed_seconds,
-                    "running": False,
-                    "formatted_time": formatted_obj
+        try:
+            async_to_sync(channel_layer.group_send)(
+                f"user_{user.id}",
+                {
+                    "type": "timer_event",
+                    "data": {
+                        "event": "TIMER_PAUSED",
+                        "task_id": task.id,
+                        "started_at": timer.start_time.isoformat() if timer.start_time else None,
+                        "total_seconds": prev_seconds,
+                        "session_seconds": elapsed_seconds,
+                        "running": False,
+                        "formatted_time": formatted_obj
+                    }
                 }
-            }
-        )
+            )
+        except Exception as e:
+            print(f"WebSocket send failed: {e}")
 
         # 🔥 Check if allocated hours exceeded and send alert
         consumed_hours = float(task.consumed_hours)
         allocated_hours = float(task.allocated_hours)
         
         if consumed_hours > allocated_hours:
-            async_to_sync(channel_layer.group_send)(
-                f"user_{user.id}",
-                {
-                    "type": "timer_event",
-                    "data": {
-                        "event": "HOURS_EXCEEDED",
-                        "task_id": task.id,
-                        "task_title": task.title,
-                        "allocated_hours": allocated_hours,
-                        "consumed_hours": consumed_hours,
-                        "exceeded_by": round(consumed_hours - allocated_hours, 2),
-                        "message": f"Task '{task.title}' has exceeded allocated hours"
+            try:
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{user.id}",
+                    {
+                        "type": "timer_event",
+                        "data": {
+                            "event": "HOURS_EXCEEDED",
+                            "task_id": task.id,
+                            "task_title": task.title,
+                            "allocated_hours": allocated_hours,
+                            "consumed_hours": consumed_hours,
+                            "exceeded_by": round(consumed_hours - allocated_hours, 2),
+                            "message": f"Task '{task.title}' has exceeded allocated hours"
+                        }
                     }
-                }
-            )
+                )
+            except Exception as e:
+                print(f"WebSocket send failed: {e}")
 
         return Response({
             "message": "Timer paused and timesheet updated",
@@ -1441,13 +1483,16 @@ class StopTaskTimerAPIView(APIView):
         
         # 🔴 Mark task as STOPPED (not just paused) - cannot restart today
         from django_redis import get_redis_connection
-        redis_conn = get_redis_connection("default")
-        today = timezone.now().date()
-        redis_conn.setex(
-            f"task_stopped:{user.id}:{task_id}:{today}",
-            86400,  # Expire at end of day (24 hours)
-            "1"
-        )
+        try:
+            redis_conn = get_redis_connection("default")
+            today = timezone.now().date()
+            redis_conn.setex(
+                f"task_stopped:{user.id}:{task_id}:{today}",
+                86400,  # Expire at end of day (24 hours)
+                "1"
+            )
+        except Exception as e:
+            print(f"Warning: Redis connection failed while setting stop marker: {e}")
 
         # 🔥 Calculate accumulated time from previous logs
         task = Task.objects.get(id=task_id)
@@ -1476,46 +1521,52 @@ class StopTaskTimerAPIView(APIView):
         formatted_exceeded = format_seconds_obj(exceeded_by_seconds)
 
         channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            f"user_{user.id}",
-            {
-                "type": "timer_event",
-                "data": {
-                    "event": "TASK_COMPLETED",
-                    "task_id": task.id,
-                    "is_stopped": True,
-                    "stop_reason": "COMPLETED",
-                    "stopped_at": timezone.now().isoformat(),
-                    "allocated_hours": allocated_hours,
-                    "total_seconds": prev_seconds,
-                    "remaining_seconds": remaining_seconds,
-                    "remaining_formatted": formatted_remaining["formatted"],
-                    "formatted_time": formatted_total,
-                    "running": False,
-                    "message": "Task completed successfully before allocated time."
-                }
-            }
-        )
-
-        # 🔥 Check if allocated hours exceeded and send alert
-        consumed_hours = float(entry.task.consumed_hours)
-        
-        if consumed_hours > allocated_hours:
+        try:
             async_to_sync(channel_layer.group_send)(
                 f"user_{user.id}",
                 {
                     "type": "timer_event",
                     "data": {
-                        "event": "HOURS_EXCEEDED",
+                        "event": "TASK_COMPLETED",
                         "task_id": task.id,
-                        "task_title": task.title,
+                        "is_stopped": True,
+                        "stop_reason": "COMPLETED",
+                        "stopped_at": timezone.now().isoformat(),
                         "allocated_hours": allocated_hours,
-                        "consumed_hours": consumed_hours,
-                        "exceeded_by": round(consumed_hours - allocated_hours, 2),
-                        "message": f"Task '{task.title}' has exceeded allocated hours"
+                        "total_seconds": prev_seconds,
+                        "remaining_seconds": remaining_seconds,
+                        "remaining_formatted": formatted_remaining["formatted"],
+                        "formatted_time": formatted_total,
+                        "running": False,
+                        "message": "Task completed successfully before allocated time."
                     }
                 }
             )
+        except Exception as e:
+            print(f"WebSocket send failed: {e}")
+
+        # 🔥 Check if allocated hours exceeded and send alert
+        consumed_hours = float(entry.task.consumed_hours)
+        
+        if consumed_hours > allocated_hours:
+            try:
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{user.id}",
+                    {
+                        "type": "timer_event",
+                        "data": {
+                            "event": "HOURS_EXCEEDED",
+                            "task_id": task.id,
+                            "task_title": task.title,
+                            "allocated_hours": allocated_hours,
+                            "consumed_hours": consumed_hours,
+                            "exceeded_by": round(consumed_hours - allocated_hours, 2),
+                            "message": f"Task '{task.title}' has exceeded allocated hours"
+                        }
+                    }
+                )
+            except Exception as e:
+                print(f"WebSocket send failed: {e}")
 
         response_payload = {
             "message": "Timer stopped and timesheet updated",
@@ -1819,6 +1870,21 @@ class TaskStatusChoicesView(APIView):
         status_choices = [choice[0] for choice in Task.STATUS_CHOICES]
         return Response({"status_choices": status_choices})
 
+class ProjectStatusChoicesView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        status_choices = [{"value": choice[0], "label": choice[1]} for choice in Project.STATUS_CHOICES]
+        return Response({"status_choices": status_choices})
+
+class ProjectNamesAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        project_names = list(Project.objects.values_list('project_name', flat=True))
+        return Response({"project_names": project_names})
+
 from collections import defaultdict
 
 
@@ -1828,6 +1894,12 @@ class TaskGroupedByStatusAPIView(APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
+        user = request.user
+        
+        is_employee = user.roles.filter(role_name="Employee").exists()
+        is_manager = user.roles.filter(role_name__in=["Manager", "Project Manager"]).exists()
+        is_admin = user.roles.filter(role_name="Admin").exists()
+
         # 1️⃣ Define all possible statuses explicitly
         status_keys = dict(Task.STATUS_CHOICES).keys()
 
@@ -1840,18 +1912,57 @@ class TaskGroupedByStatusAPIView(APIView):
             for status in status_keys
         }
 
-        # 3️⃣ Fetch tasks assigned to the logged-in user (optimized)
-        queryset = (
-            Task.objects
-            .filter(assigned_to=request.user)
-            .select_related("project", "assigned_to", "created_by", "modified_by")
-            .prefetch_related("time_entries")
-        )
+        # 3️⃣ Fetch tasks based on roles
+        queryset = Task.objects.select_related("project", "assigned_to", "created_by", "modified_by").prefetch_related("time_entries")
+        
+        if is_admin or is_manager:
+            pass # See all tasks
+        elif is_employee:
+            queryset = queryset.filter(assigned_to=user)
+        else:
+            queryset = queryset.none()
+            
+        project_id = request.query_params.get("project_id")
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+            
+        assigned_to_param = request.query_params.get("assigned_to")
+        if assigned_to_param:
+            queryset = queryset.filter(assigned_to_id=assigned_to_param)
+
+        status_param = request.query_params.get("status")
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+
+        from .utils.timer import get_active_timer
+        from django.utils import timezone
+        
+        redis_task, redis_start = get_active_timer(user.id)
+        active_task_id = int(redis_task) if redis_task else None
+        
+        start_time = None
+        if active_task_id and redis_start:
+            # Handle if redis_start is already string or bytes
+            redis_start_str = redis_start.decode() if isinstance(redis_start, bytes) else redis_start
+            start_time = timezone.datetime.fromisoformat(redis_start_str)
 
         # 4️⃣ Populate response
         for task in queryset:
-            serialized = TaskSerializer(task).data
-            response_data[task.status]["tasks"].append(serialized)
+            data = TaskSerializer(task, context={"request": request}).data
+            
+            consumed_hours = float(data["consumed_hours"]) if data["consumed_hours"] is not None else 0.0
+            allocated_hours = float(data["allocated_hours"]) if data.get("allocated_hours") else 0.0
+            
+            if active_task_id == task.id and start_time:
+                elapsed_seconds = int((timezone.now() - start_time).total_seconds())
+                running_hours = elapsed_seconds / 3600
+                consumed_hours += running_hours
+                data["consumed_hours"] = consumed_hours
+                data["remaining_hours"] = max(allocated_hours - consumed_hours, 0)
+                
+            data["needs_extra_hours"] = consumed_hours > allocated_hours
+
+            response_data[task.status]["tasks"].append(data)
             response_data[task.status]["count"] += 1
 
         return Response(response_data)

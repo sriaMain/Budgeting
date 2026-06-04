@@ -171,8 +171,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
 
             const statusParam = filters?.status ? `&status=${filters.status}` : '';
 
-            // Fetch all APIs in parallel
-            const [metricsResponse, financeResponse, financialResponse, projectResponse, paymentResponse, poInvoiceResponse] = await Promise.all([
+            // Fetch all APIs in parallel using allSettled to prevent one failure from blocking all
+            const results = await Promise.allSettled([
                 axiosInstance.get('dashboard/metrics/'),
                 axiosInstance.get(`finance/overview/?section=all${dateParams}`),
                 axiosInstance.get(`finance/overview/?section=financial_reports${dateParams}${statusParam}`),
@@ -181,12 +181,12 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                 axiosInstance.get(`finance/overview/?section=po_invoice_reports${dateParams}`)
             ]);
 
-            setMetrics(metricsResponse.data);
-            setFinanceOverview(financeResponse.data);
-            setFinancialReports(financialResponse.data);
-            setProjectReports(projectResponse.data);
-            setPaymentReports(paymentResponse.data);
-            setPOInvoiceReports(poInvoiceResponse.data);
+            if (results[0].status === 'fulfilled') setMetrics(results[0].value.data);
+            if (results[1].status === 'fulfilled') setFinanceOverview(results[1].value.data);
+            if (results[2].status === 'fulfilled') setFinancialReports(results[2].value.data);
+            if (results[3].status === 'fulfilled') setProjectReports(results[3].value.data);
+            if (results[4].status === 'fulfilled') setPaymentReports(results[4].value.data);
+            if (results[5].status === 'fulfilled') setPOInvoiceReports(results[5].value.data);
         } catch (error) {
             console.error('Error fetching data:', error);
         } finally {
@@ -219,8 +219,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
     }, []);
 
 
-    // Handle Excel Export based on selected report type from filter
-    const handleExportExcel = async () => {
+    // Handle Export based on selected report type from filter
+    const handleExport = async (format: 'excel' | 'pdf') => {
         if (!selectedReportType) {
             alert('Please select a report type from the filter');
             return;
@@ -242,30 +242,32 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
             if (selectedStatus) {
                 params.append('status', selectedStatus);
             }
+            params.append('export_format', format);
 
             const queryString = params.toString() ? `?${params.toString()}` : '';
+            const ext = format === 'excel' ? 'xlsx' : 'pdf';
 
             switch (selectedReportType) {
                 case 'Financial Reports':
                     exportUrl = `reports/financial/export/${queryString}`;
-                    fileName = `financial_report${selectedStatus ? `_${selectedStatus}` : ''}${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.xlsx`;
+                    fileName = `financial_report${selectedStatus ? `_${selectedStatus}` : ''}${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.${ext}`;
                     break;
                 case 'Project Reports':
                     exportUrl = `reports/project/export/${queryString}`;
-                    fileName = `project_report${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.xlsx`;
+                    fileName = `project_report${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.${ext}`;
                     break;
                 case 'Payment Reports':
                     exportUrl = `reports/payment/export/${queryString}`;
-                    fileName = `payment_report${selectedStatus ? `_${selectedStatus}` : ''}${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.xlsx`;
+                    fileName = `payment_report${selectedStatus ? `_${selectedStatus}` : ''}${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.${ext}`;
                     break;
                 case 'PO & Invoice Reports':
                     exportUrl = `reports/po-invoice/export/${queryString}`;
-                    fileName = `po_invoice_report${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.xlsx`;
+                    fileName = `po_invoice_report${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.${ext}`;
                     break;
                 case 'All':
                 default:
                     exportUrl = `reports/all/export/${queryString}`;
-                    fileName = `all_reports${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.xlsx`;
+                    fileName = `all_reports${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.${ext}`;
                     break;
             }
 
@@ -274,9 +276,11 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
             });
 
             // Create a blob URL and trigger download
-            const blob = new Blob([response.data], {
-                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            });
+            const blobType = format === 'excel' 
+                ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                : 'application/pdf';
+                
+            const blob = new Blob([response.data], { type: blobType });
             const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
@@ -286,8 +290,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
             document.body.removeChild(link);
             window.URL.revokeObjectURL(url);
         } catch (error) {
-            console.error('Error exporting Excel:', error);
-            alert('Failed to export Excel file. Please try again.');
+            console.error(`Error exporting ${format}:`, error);
+            alert(`Failed to export ${format.toUpperCase()} file. Please try again.`);
         } finally {
             setExportLoading(false);
         }
@@ -620,7 +624,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                                     row.project_status === 'in_progress' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
                                                         'bg-gray-50 text-gray-700 border border-gray-100'
                                                 }`}>
-                                                {row.project_status.replace('_', ' ')}
+                                                {row.project_status?.replace('_', ' ') || ''}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-sm text-gray-700 font-semibold">{formatCurrency(row.budget)}</td>
@@ -815,7 +819,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                                 row.type === 'Payment' ? 'text-indigo-600' :
                                                     'text-amber-600'
                                             }`}>
-                                            {row.type === 'Project' ? row.status.replace('_', ' ') : row.status}
+                                            {row.type === 'Project' ? row.status?.replace('_', ' ') || '' : row.status}
                                         </span>
                                     </td>
                                 </tr>
@@ -980,16 +984,20 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
 
                             <div className="h-8 w-px bg-gray-200 mx-1 hidden md:block"></div>
                             <button
-                                onClick={handleExportExcel}
+                                onClick={() => handleExport('excel')}
                                 disabled={exportLoading}
                                 className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <FileSpreadsheet size={16} className="text-emerald-600" />
                                 {exportLoading ? 'Exporting...' : 'Export Excel'}
                             </button>
-                            <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm">
+                            <button 
+                                onClick={() => handleExport('pdf')}
+                                disabled={exportLoading}
+                                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
                                 <Download size={16} className="text-rose-600" />
-                                Export PDF
+                                {exportLoading ? 'Exporting...' : 'Export PDF'}
                             </button>
                         </div>
                     </div>

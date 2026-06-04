@@ -53,7 +53,8 @@ export interface User {
   last_name: string;
   email: string;
   position: string;
-  module: string | number;
+  module?: string | number;
+  modules?: number[];
   charges_per_hour: number | null;
   roles: number[];
   languages: string[];
