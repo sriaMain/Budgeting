@@ -1313,7 +1313,7 @@ class PauseTaskTimerAPIView(APIView):
         prev_seconds = int(prev_seconds)
 
         # 🔥 WebSocket Event for timer paused
-        from .utils import format_seconds as format_seconds_obj
+        from .utils.timer import format_seconds as format_seconds_obj
         
         formatted_obj = format_seconds_obj(prev_seconds)
 
