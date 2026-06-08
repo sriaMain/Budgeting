@@ -397,6 +397,22 @@ class UserDetailVieW(APIView):
             logger.error(f"UserDetailView PUT Error: {str(e)}", exc_info=True)
             return Response({"error": "Internal server error", "details": str(e)}, status=500)
     
+    def delete(self, request, id):
+        try:
+            user = User.objects.get(id=id)
+            user.is_active = False
+            user.save(update_fields=['is_active'])
+            try:
+                cache.delete("users_list")
+            except Exception as cache_err:
+                logger.warning(f"Failed to delete cache: {cache_err}")
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"UserDetailView DELETE Error: {str(e)}", exc_info=True)
+            return Response({"error": "Internal server error", "details": str(e)}, status=500)
+    
 
 class CurrencyListAPIView(APIView):
     permission_classes = [AllowAny]

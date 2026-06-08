@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Layout } from '../components/Layout';
-import { Search, Plus, Edit3, AlertCircle, RefreshCw, X, ArrowLeft } from 'lucide-react';
+import { Search, Plus, Edit3, AlertCircle, RefreshCw, X, ArrowLeft, Trash2 } from 'lucide-react';
 import type { Role, Permission } from '../types';
 import axiosInstance from '../utils/axiosInstance';
 import AddRoleForm from '../components/AddRoleForm';
@@ -160,6 +160,17 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
       setRoles([]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDeleteRole = async (role: Role) => {
+    if (window.confirm(`Are you sure you want to delete role ${role.role_name}?`)) {
+      try {
+        await axiosInstance.delete(`/roles/roles/${role.id}/`);
+        fetchRoles();
+      } catch (error) {
+        console.error("Failed to delete role", error);
+      }
     }
   };
 
@@ -331,13 +342,22 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                                     <PermissionsCell permissions={role.permissions || []} />
                                   </td>
                                   <td className="py-6 px-6 text-center align-top">
-                                    <button
-                                      onClick={() => { setEditingRole(role); setCurrentView('add-role'); }}
-                                      className="p-2 text-green-600 hover:text-green-800 transition-colors bg-green-50 hover:bg-green-100 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/40"
-                                      aria-label={`Edit role ${role.role_name}`}
-                                    >
-                                      <Edit3 size={18} />
-                                    </button>
+                                    <div className="flex items-center justify-center gap-2">
+                                      <button
+                                        onClick={() => { setEditingRole(role); setCurrentView('add-role'); }}
+                                        className="p-2 text-green-600 hover:text-green-800 transition-colors bg-green-50 hover:bg-green-100 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/40"
+                                        aria-label={`Edit role ${role.role_name}`}
+                                      >
+                                        <Edit3 size={18} />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteRole(role)}
+                                        className="p-2 text-red-600 hover:text-red-800 transition-colors bg-red-50 hover:bg-red-100 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500/40"
+                                        aria-label={`Delete role ${role.role_name}`}
+                                      >
+                                        <Trash2 size={18} />
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               ))
@@ -377,13 +397,22 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                                   <h3 className="font-bold text-gray-900 text-lg mb-1">{role.role_name}</h3>
                                   <p className="text-xs text-gray-500">ID: #{role.id}</p>
                                 </div>
-                                <button
-                                  onClick={() => { setEditingRole(role); setCurrentView('add-role'); }}
-                                  className="p-2 text-green-600 hover:text-green-800 transition-colors bg-green-50 hover:bg-green-100 rounded-lg shadow-sm"
-                                  aria-label={`Edit role ${role.role_name}`}
-                                >
-                                  <Edit3 size={18} />
-                                </button>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => { setEditingRole(role); setCurrentView('add-role'); }}
+                                    className="p-2 text-green-600 hover:text-green-800 transition-colors bg-green-50 hover:bg-green-100 rounded-lg shadow-sm"
+                                    aria-label={`Edit role ${role.role_name}`}
+                                  >
+                                    <Edit3 size={18} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteRole(role)}
+                                    className="p-2 text-red-600 hover:text-red-800 transition-colors bg-red-50 hover:bg-red-100 rounded-lg shadow-sm"
+                                    aria-label={`Delete role ${role.role_name}`}
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                </div>
                               </div>
 
                               {/* Description */}

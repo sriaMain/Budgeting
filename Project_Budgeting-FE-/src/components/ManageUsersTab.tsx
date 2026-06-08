@@ -16,16 +16,41 @@ const ManageUsersTab: React.FC = () => {
   const [view, setView] = useState<'list' | 'form'>('list');
   const [users, setUsers] = useState<UserDisplay[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-
-  const filteredUsers = users.filter(u =>
-    u.first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.last_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.position?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [moduleFilter, setModuleFilter] = useState("all");
   const [roles, setRoles] = useState<Role[]>([]);
-  const [modules, setModules] = useState<Module[]>([]); // New State for Modules
+  const [modules, setModules] = useState<Module[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const filteredUsers = users.filter(u => {
+    const searchLower = (searchQuery || "").toLowerCase();
+    const matchesSearch = !searchLower || (
+      (u.first_name || "").toString().toLowerCase().includes(searchLower) ||
+      (u.last_name || "").toString().toLowerCase().includes(searchLower) ||
+      (u.email || "").toString().toLowerCase().includes(searchLower) ||
+      (u.position || "").toString().toLowerCase().includes(searchLower)
+    );
+    
+    const matchesStatus = statusFilter === "all" ? true : (statusFilter === "active" ? u.is_active : !u.is_active);
+    
+    let matchesModule = true;
+    if (moduleFilter !== "all" && Array.isArray(modules) && modules.length > 0) {
+      let currentModuleId = '';
+      if (Array.isArray(u.modules) && u.modules.length > 0) {
+        currentModuleId = String(u.modules[0]);
+      } else if (u.module) {
+        const foundModuleByName = modules.find(m => m?.product_service_name === u.module || m?.id === u.module);
+        if (foundModuleByName) {
+          currentModuleId = String(foundModuleByName.id);
+        } else {
+          currentModuleId = String(u.module);
+        }
+      }
+      matchesModule = currentModuleId === moduleFilter;
+    }
+
+    return matchesSearch && matchesStatus && matchesModule;
+  });
 
   // Form State
   // We use a specific state for the form to handle UI logic (like selectedRoleId as a string)
@@ -139,7 +164,7 @@ const ManageUsersTab: React.FC = () => {
   const handleDelete = async (user: UserDisplay) => {
     if (window.confirm(`Are you sure you want to delete ${user.first_name}?`)) {
       try {
-        await axiosInstance.delete(`/users/${user.id}/`);
+        await axiosInstance.delete(`/accounts/users/${user.id}/`);
         setUsers(prev => prev.filter(u => u.id !== user.id));
       } catch (error) {
         console.error("Failed to delete user", error);
@@ -325,19 +350,52 @@ const ManageUsersTab: React.FC = () => {
       {view === 'list' ? (
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <h2 className="text-2xl font-bold text-gray-800">Manage Users</h2>
-            <div className="flex items-center gap-4 w-full md:w-auto">
-              <div className="relative flex-grow md:flex-grow-0">
+          <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+            <h2 className="text-2xl font-bold text-gray-800 whitespace-nowrap">Manage Users</h2>
+            <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
+              {/* Status Filter */}
+              <div className="relative">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white text-sm"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
+              </div>
+
+              {/* Module Filter */}
+              <div className="relative">
+                <select
+                  value={moduleFilter}
+                  onChange={(e) => setModuleFilter(e.target.value)}
+                  className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white text-sm max-w-[200px]"
+                >
+                  <option value="all">All Modules</option>
+                  {modules.map((mod) => (
+                    <option key={mod.id} value={String(mod.id)}>
+                      {mod.product_service_name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
+              </div>
+
+              {/* Search */}
+              <div className="relative flex-grow xl:flex-grow-0">
                 <input
                   type="text"
                   placeholder="Search users..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full md:w-64"
+                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full xl:w-64"
                 />
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               </div>
+              
               <button
                 onClick={() => { setFormData(initialFormState); setErrors({}); setView('form'); }}
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold shadow-sm transition-all whitespace-nowrap"

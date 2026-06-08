@@ -183,6 +183,17 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
     }
   };
 
+  const handleDelete = async (item: ModuleItem) => {
+    if (window.confirm(`Are you sure you want to delete module ${item.product_service_name}?`)) {
+      try {
+        await axiosInstance.delete(`/product-services/${item.id}/`);
+        fetchData();
+      } catch (error) {
+        console.error("Failed to delete module", error);
+      }
+    }
+  };
+
   const columns: Column<ModuleItem>[] = [
     {
       header: "Module Name",
@@ -465,6 +476,7 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
               });
               setView("form");
             }}
+            onDelete={handleDelete}
           />
         </div>
       ) : (

@@ -95,7 +95,15 @@ export const ReusableTable = <T extends any>({
                             <Edit3 size={16} />
                           </button>
                         )}
-
+                        {onDelete && (
+                          <button
+                            onClick={() => onDelete(item)}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </div>
                     </td>
 
@@ -134,15 +142,26 @@ export const ReusableTable = <T extends any>({
                         // First column as main heading
                         <div className="flex items-start justify-between mb-2">
                           <h3 className="font-bold text-gray-900 text-lg flex-1">{value}</h3>
-                          {onEdit && (
-                            <button
-                              onClick={() => onEdit(item)}
-                              className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="Edit"
-                            >
-                              <Edit3 size={18} />
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {onEdit && (
+                              <button
+                                onClick={() => onEdit(item)}
+                                className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                <Edit3 size={18} />
+                              </button>
+                            )}
+                            {onDelete && (
+                              <button
+                                onClick={() => onDelete(item)}
+                                className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ) : (
                         // Other columns as labeled fields
