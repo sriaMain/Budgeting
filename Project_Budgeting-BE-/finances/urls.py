@@ -1,0 +1,57 @@
+# urls.py
+from django.urls import path
+from . import views
+from django.http import HttpResponse
+
+from .views import (DownloadAttachmentView, ProjectAttachmentView, QuotationDetailView, InvoiceListView, InvoiceDetailView,
+                    GenerateInvoiceView, RecordPaymentView, InvoicePaymentListView,  
+                    DownloadInvoicePDFView, SendInvoiceEmailView, CancelInvoiceView,
+                    InvoiceStatusChoicesAPIView,InvoiceShareableLinkView, PublicInvoiceView, InvoiceStatisticsView, DownloadInvoicePDFView,PublicInvoicePDFView,ShareInvoiceLinkView,
+                    ProjectPaymentAPIView, ProjectPaymentSummaryAPIView, ProjectPaymentsListAPIView,
+                    PurchaseOrderCreateAPIView, QuotePurchaseOrderListAPIView, PurchaseOrderDetailAPIView,ProjectPurchaseOrderListAPIView,SendPurchaseOrderEmailView,DownloadPurchaseOrderView,
+                    PurchaseOrderStatusUpdateAPIView, VendorBillCreateAPIView, VendorBillListAPIView,VendorBillByNumberAPIView,
+                    OutgoingPaymentCreateAPIView, VendorBillPaymentListAPIView, ProjectOutgoingPaymentsAPIView, ExpenseAPIView, ProjectExpenseListAPIView, ExpenseCategoryAPIView,ExpensePaymentAPIView)
+
+urlpatterns = [
+path("test/", lambda r: HttpResponse("FINANCES OK")),
+
+path("quotations/<int:pk>/", QuotationDetailView.as_view()),
+path("invoices/status-choices/",InvoiceStatusChoicesAPIView.as_view(),name="invoice-status-choices"),
+path("invoices/", InvoiceListView.as_view()),
+path("invoices/<int:invoice_id>/", InvoiceDetailView.as_view()),
+path("invoices/generate/", GenerateInvoiceView.as_view()),
+path("invoices/<int:invoice_id>/payment/", RecordPaymentView.as_view()),
+path("invoices/<int:invoice_id>/payments/", InvoicePaymentListView.as_view()),
+path("invoices/<int:invoice_id>/send-email/", SendInvoiceEmailView.as_view()),
+path("invoices/<int:invoice_id>/cancel/", CancelInvoiceView.as_view()),
+path("invoices/<int:invoice_id>/share/", InvoiceShareableLinkView.as_view()),
+path("invoices/view/<int:invoice_id>/<str:token>/", PublicInvoiceView.as_view()),
+path("invoices/statistics/", InvoiceStatisticsView.as_view()),
+path("invoices/<int:invoice_id>/download/", DownloadInvoicePDFView.as_view()),
+path("public/invoice/<str:token>/", PublicInvoicePDFView.as_view()),
+path("invoices/<int:invoice_id>/share-link/", ShareInvoiceLinkView.as_view()),
+path("projects/<int:project_id>/payments/", ProjectPaymentAPIView.as_view()),
+path("projects/<int:project_id>/payments/summary/", ProjectPaymentSummaryAPIView.as_view()),
+path("projects/<int:project_id>/payments-list/", ProjectPaymentsListAPIView.as_view()),
+path("purchase-orders/", PurchaseOrderCreateAPIView.as_view()),
+path("purchase-orders/<int:po_id>/", PurchaseOrderDetailAPIView.as_view()),
+path("purchase-orders/<int:po_id>/send-email/", SendPurchaseOrderEmailView.as_view()),
+path("purchase-orders/<int:po_id>/download/", DownloadPurchaseOrderView.as_view(), name="download-purchase-order"),
+path("purchase-orders/<int:po_id>/status/", PurchaseOrderStatusUpdateAPIView.as_view()),
+path("projects/<int:project_no>/purchase-orders/", ProjectPurchaseOrderListAPIView.as_view()),
+path("quotes/<int:quote_id>/purchase-orders/", QuotePurchaseOrderListAPIView.as_view()),
+path("vendor-bills/", VendorBillCreateAPIView.as_view()),
+path("vendor-bills/list/", VendorBillListAPIView.as_view()),
+path("vendor-bills/<str:bill_no>/",VendorBillByNumberAPIView.as_view(),name="vendor-bill-by-number"),
+path("vendor-bills/<int:bill_id>/payments/", OutgoingPaymentCreateAPIView.as_view()),
+path("vendor-bills/<int:bill_id>/payments/list/", VendorBillPaymentListAPIView.as_view()),
+path("projects/<int:project_id>/outgoing-payments/", ProjectOutgoingPaymentsAPIView.as_view()),
+path("projects/<int:project_id>/attachments/",ProjectAttachmentView.as_view(),name="project-attachments",),
+path("attachments/<int:attachment_id>/",ProjectAttachmentView.as_view(),name="delete-attachment",),
+path("attachments/<int:attachment_id>/download/",DownloadAttachmentView.as_view(),name="download-attachment",),
+path('expenses/', ExpenseAPIView.as_view(),name='expenses'),
+path('expenses/<int:pk>/', ExpenseAPIView.as_view(),name='expense-detail'),
+path('expenses/<int:pk>/payments/', ExpensePaymentAPIView.as_view(),name='expense-payments'),
+path('projects/<int:project_id>/expenses/', ProjectExpenseListAPIView.as_view(),name='project-expenses'),
+path('expenses/categories/', ExpenseCategoryAPIView.as_view(),name='expense-categories'),
+]

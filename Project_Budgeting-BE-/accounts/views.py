@@ -1,0 +1,581 @@
+
+from rest_framework import generics, permissions, status
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError
+import jwt
+from datetime import datetime, timezone
+from django.contrib.auth import logout
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from django.db import IntegrityError
+from rest_framework.exceptions import ValidationError as DRFValidationError
+from django.db.models import Q, Prefetch
+from django.core.cache import cache
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import IsAuthenticated
+from django.shortcuts import get_object_or_404
+from .models import Vendor
+# import logging
+from .serializers import UserCreateSerializer, UserListSerializer, UserDetailSerializer,VendorSerializer
+import logging
+logger = logging.getLogger(__name__)
+# from myproject.exceptions import format_validation_errors
+from finances.models import PurchaseOrder, VendorBill, OutgoingPayment, Expense
+from rest_framework.exceptions import ValidationError as DRFValidationError
+from Project.models import Project
+from .models import CURRENCY_CHOICES
+
+def format_validation_errors(errors):
+    """
+    Formats DRF serializer errors into a more user-friendly structure.
+    Returns a dictionary where keys are fields and values are the first error message.
+    """
+    formatted_errors = {}
+    if not isinstance(errors, dict):
+        return {"error": str(errors)}
+
+    # Handle non-field errors first
+    if 'non_field_errors' in errors and errors['non_field_errors']:
+        formatted_errors['error'] = errors['non_field_errors'][0]
+        return formatted_errors
+
+    # Handle field-specific errors
+    for field, messages in errors.items():
+        if isinstance(messages, list) and messages:
+            message = messages[0]
+            field_name = field.replace('_', ' ')
+            
+            # Custom formatting for specific, common errors
+            if "This field is required." in message:
+                formatted_errors[field] = f"{field_name.lower()} is required"
+            else:
+                formatted_errors[field] = message
+            
+    return formatted_errors
+
+
+from .models import Account, PasswordResetOTP
+from .serializers import (
+    LoginSerializer,
+    OTPRequestSerializer,
+    OTPVerifySerializer,
+    ResetPasswordSerializer,
+    ResendOTPSerializer
+)
+
+User = get_user_model()
+
+
+
+
+class LoginView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        access = data["access"]
+        refresh = data["refresh"]
+        user_id = refresh.payload.get('user_id')
+        # user_obj = User.objects.get(id=user_id)
+        # user = {"roles": [role.role_name for role in user.roles.all()]}
+        user_obj = User.objects.get(id=user_id)
+        user_data = data["user"]
+        roles = [role.role_name for role in user_obj.roles.all()]
+        if user_obj.is_superuser and "Admin" not in roles:
+            roles.append("Admin")
+        user_data["roles"] = roles
+
+        response = Response({
+            "message": "Login success",
+            "access_token": access, 
+            "is_authenticated": user_obj.is_active, 
+            "is_admin": user_obj.is_staff,
+            # "name": user.role.role,      # 🔥 send access token in JSON
+            "user": data["user"]
+        })
+
+        # Conditionally set cookie attributes based on environment
+        if settings.DEBUG:
+            # For local development (HTTP)
+            response.set_cookie(
+                key="refresh_token",
+                value=str(refresh),
+                httponly=True,
+                max_age=7 * 24 * 60 * 60,
+                path="/"
+            )
+        else:
+            # For production (HTTPS)
+            response.set_cookie(
+                key="refresh_token",
+                value=str(refresh),
+                httponly=True,
+                secure=True,
+                samesite="None",
+                max_age=7 * 24 * 60 * 60,
+                path="/"
+            )
+
+        return response
+
+
+
+
+class LogoutView(APIView):
+    def post(self, request):
+        logout(request)  # destroys the session
+        return Response({"message": "Logged out"})
+
+
+
+class RefreshTokenCookieView(APIView):
+    # authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        refresh_token = request.COOKIES.get("refresh_token")
+
+        if not refresh_token:
+            return Response({"error": "Refresh token missing"}, status=401)
+
+        try:
+            refresh = RefreshToken(refresh_token)
+            user_id = refresh.payload.get('user_id')
+            user = User.objects.get(id=user_id)
+        except (TokenError, User.DoesNotExist, Exception):
+            return Response({"error": "Invalid refresh token"}, status=401)
+
+        new_access = str(refresh.access_token)
+        roles = [role.role_name for role in user.roles.all()]
+        if user.is_superuser and "Admin" not in roles:
+            roles.append("Admin")
+
+        return Response({
+            "access_token": new_access,
+            "is_authenticated": user.is_active,  # Check if user account is active
+            "username": user.username,
+            "email":  user.email,
+            "roles": roles
+        }) 
+
+
+
+
+class OTPRequestView(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+        serializer = OTPRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            result = serializer.save()
+            return Response({"message": "OTP sent", **result}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class OTPVerifyView(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+        serializer = OTPVerifySerializer(data=request.data)
+        if serializer.is_valid():
+            reset_token = serializer.validated_data.get('reset_token')
+            return Response({
+                "detail": "OTP valid",
+                "reset_token": reset_token
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ResetPasswordView(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            result = serializer.save()
+            return Response({"message": "Password reset successful", **result}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class LogoutView(APIView):
+    def post(self, request):
+        response = Response({"message": "Logged out"}, status=200)
+        response.delete_cookie("access_token")
+        response.delete_cookie("refresh_token")
+        return response
+
+
+class ResendOTPView(APIView):
+    def post(self, request):
+        serializer = ResendOTPSerializer(data=request.data)
+        if serializer.is_valid():
+            result = serializer.save()
+            return Response({"message": "OTP resent", **result}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+class UserCreateView(APIView):
+    """
+    API endpoint for creating new users with profile pictures.
+    """
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    # parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [AllowAny]
+
+    def post(self, request):  # FIXED: Added 'd' to 'def'
+        serializer = UserCreateSerializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            user = serializer.save()
+            try:
+                cache.delete("users_list")  # Invalidate user list cache
+            except Exception as cache_err:
+                logger.warning(f"Failed to delete cache: {cache_err}")
+
+            return Response(
+                {
+                    "message": "User created successfully.",
+                    "user_id": user.id,
+                    "email": user.email,
+                    "profile_picture": user.profile_picture.url if user.profile_picture else None
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        except DRFValidationError as e:
+            errors = format_validation_errors(e.detail)
+            return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        except IntegrityError as e:
+            # More specific error message
+            error_message = str(e)
+            if "email" in error_message.lower():
+                details = f"Email '{request.data.get('email')}' already exists."
+            else:
+                details = "Duplicate record exists."
+            
+            return Response(
+                {"error": "IntegrityError", "details": details},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        except Exception as e:
+            logger.error(f"User creation failed: {str(e)}", exc_info=True)
+            return Response(
+                {"error": "ServerError", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+class UserListView(APIView):
+    CACHE_TIMEOUT = 120 
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        try:
+            # if not request.user.has_role_permission(self.permission_code):
+            #     return Response({"error": "Permission denied"}, status=403)
+
+            cache_key = "users_list"
+            try:
+                cached = cache.get(cache_key)
+                if cached:
+                    return Response(cached, status=200)
+            except Exception as cache_err:
+                logger.warning(f"Cache get failed: {cache_err}")
+
+            qs = User.objects.filter().prefetch_related(
+                Prefetch("roles")
+            )
+            
+            search = request.query_params.get("search")
+            if search:
+                qs = qs.filter(
+                    Q(first_name__icontains=search)
+                    | Q(last_name__icontains=search)
+                    | Q(email__icontains=search)
+                )
+
+            serializer = UserListSerializer(qs, many=True)
+
+            try:
+                cache.set(cache_key, serializer.data, timeout=self.CACHE_TIMEOUT)
+            except Exception as cache_err:
+                logger.warning(f"Cache set failed: {cache_err}")
+                
+            # cache.delete("users_list")
+            return Response(serializer.data, status=200)
+
+        except Exception as e:
+            logger.error(f"UserListView Error: {str(e)}", exc_info=True)
+            return Response(
+                {"error": "Internal server error", "details": str(e)},
+                status=500,
+            )
+class UserDetailVieW(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, id):
+
+        # if not request.user.has_role_permission(self.permission_code):
+        #     return Response({"error": "Permission denied"}, status=403)
+
+        try:
+            user = (
+                User.objects.filter(is_active=True)
+                .prefetch_related("roles")
+                .get(id=id)
+            )
+
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=404)
+
+        except Exception as e:
+            logger.error(f"UserDetailView Error: {str(e)}", exc_info=True)
+            return Response(
+                {"error": "Internal server error", "details": str(e)},
+                status=500,
+            )
+
+        serializer = UserDetailSerializer(user)
+        # cache.delete("users_list")
+        return Response(serializer.data, status=200)
+    
+
+    def put(self, request, id):
+        try:
+            user = User.objects.get(id=id)
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=404)
+
+        serializer = UserDetailSerializer(user, data=request.data, partial=True)
+        try:
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+
+            # 🔥 Update roles manually (IMPORTANT)
+            if "roles" in request.data:
+                from roles.models import Role
+                role_ids = request.data["roles"]
+                
+                # Ensure role_ids is a list
+                if not isinstance(role_ids, list):
+                    role_ids = [role_ids]
+                
+                # Convert to integers if they're strings
+                try:
+                    role_ids = [int(rid) for rid in role_ids]
+                except (ValueError, TypeError):
+                    return Response({
+                        "error": "Invalid role IDs format",
+                        "details": "Role IDs must be integers"
+                    }, status=400)
+                
+                # Validate that all role IDs exist
+                existing_roles = Role.objects.filter(id__in=role_ids)
+                if existing_roles.count() != len(role_ids):
+                    invalid_ids = set(role_ids) - set(existing_roles.values_list('id', flat=True))
+                    return Response({
+                        "error": "Invalid role IDs",
+                        "invalid_ids": list(invalid_ids)
+                    }, status=400)
+                
+                user.roles.set(role_ids)
+
+            try:
+                cache.delete("users_list")
+            except Exception as cache_err:
+                logger.warning(f"Failed to delete cache: {cache_err}")
+
+            return Response(serializer.data, status=200)
+
+        except IntegrityError as e:
+            logger.error(f"UserDetailView IntegrityError: {str(e)}", exc_info=True)
+            return Response({
+                "error": "Foreign key constraint failed",
+                "details": "One or more related records (roles, module, etc.) do not exist"
+            }, status=400)
+
+        except DRFValidationError as e:
+            errors = format_validation_errors(e.detail)
+            return Response({"errors": errors}, status=400)
+
+        except Exception as e:
+            logger.error(f"UserDetailView PUT Error: {str(e)}", exc_info=True)
+            return Response({"error": "Internal server error", "details": str(e)}, status=500)
+    
+    def delete(self, request, id):
+        try:
+            user = User.objects.get(id=id)
+            user.delete()
+            try:
+                cache.delete("users_list")
+            except Exception as cache_err:
+                logger.warning(f"Failed to delete cache: {cache_err}")
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"UserDetailView DELETE Error: {str(e)}", exc_info=True)
+            return Response({"error": "Internal server error", "details": str(e)}, status=500)
+    
+
+class CurrencyListAPIView(APIView):
+    permission_classes = [AllowAny]
+    def get(self, request):
+        currencies = [
+            {
+                "code": code,
+                "name": name
+            }
+            for code, name in CURRENCY_CHOICES
+        ]
+
+        return Response(currencies)
+
+
+# vendor/views.py
+class VendorListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+    def get(self, request, vendor_id=None):
+
+    # Decide queryset
+        if vendor_id:
+            vendors = Vendor.objects.filter(id=vendor_id)
+        else:
+            vendors = Vendor.objects.all()
+
+        result = []
+
+        for vendor in vendors:
+
+            # ------------------
+            # Projects (via PO)
+            # ------------------
+            projects = Project.objects.filter(
+                purchaseorder__vendor=vendor
+            ).distinct()
+
+            project_list = [
+                {
+                    "project_no": p.project_no,
+                    "project_name": p.project_name,
+                    "status": p.status,
+                    "project_type": p.project_type,
+                    "currency": p.currency,
+                    "start_date": p.start_date,
+                    "end_date": p.end_date,
+                }
+                for p in projects
+            ]
+
+            # ------------------
+            # Purchase Orders
+            # ------------------
+            po_list = [
+                {
+                    "po_no": po.po_no,
+                    "status": po.status,
+                    "issue_date": po.issue_date,
+                    "total_amount": po.total_amount,
+                }
+                for po in PurchaseOrder.objects.filter(vendor=vendor)
+            ]
+
+            # ------------------
+            # Bills
+            # ------------------
+            bill_list = [
+                {
+                    "bill_no": b.bill_no,
+                    "status": b.status,
+                    "total_amount": b.total_amount,
+                    "paid_amount": b.paid_amount,
+                    "balance_amount": b.balance_amount,
+                }
+                for b in VendorBill.objects.filter(vendor=vendor)
+            ]
+
+            # ------------------
+            # Payments
+            # ------------------
+            payment_list = [
+                {
+                    "payment_date": p.payment_date,
+                    "amount": p.amount,
+                    "payment_method": p.payment_method,
+                    "reference_no": p.reference_no,
+                }
+                for p in OutgoingPayment.objects.filter(vendor=vendor)
+            ]
+
+            # ------------------
+            # Expenses
+            # ------------------
+            expense_list = [
+                {
+                    "expense_no": e.expense_no,
+                    "category": e.category,
+                    "expense_date": e.expense_date,
+                    "amount": e.amount,
+                    "balance_amount": e.balance_amount(),
+                }
+                for e in Expense.objects.filter(vendor=vendor)
+            ]
+
+            result.append({
+                "id": vendor.id,
+                "name": vendor.name,
+                "vendor_type": vendor.vendor_type,
+                "vendor_name": vendor.name,
+                "email": vendor.email,
+                "phone": vendor.phone,
+                "created_at": vendor.created_at,
+                "projects": project_list,
+                "purchase_orders": po_list,
+                "bills": bill_list,
+                "payments": payment_list,
+                "expenses": expense_list,
+            })
+
+        return Response(result, status=status.HTTP_200_OK)
+
+
+
+
+    def post(self, request):
+        serializer = VendorSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+    
+    def put(self, request, pk):
+        vendor = get_object_or_404(Vendor, pk=pk)
+        serializer = VendorSerializer(vendor, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)  
+
+
+
+class VendorChoicesAPIView(APIView):
+    """
+    Returns static vendor-related choices.
+    Useful for dropdowns and form builders.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        vendor_types = [
+            {"value": key, "label": label}
+            for key, label in Vendor.VENDOR_TYPE_CHOICES
+        ]
+
+        return Response({
+            "vendor_types": vendor_types
+        })
