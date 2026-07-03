@@ -12,11 +12,11 @@ export default {
         brand: {
           50: '#eff6ff',
           100: '#dbeafe',
-          800: '#1e40af', 
+          800: '#1e40af',
           900: '#1e3a8a',
         },
         input: {
-          bg: '#F0F4FA', 
+          bg: '#F0F4FA',
         }
       },
       fontFamily: {

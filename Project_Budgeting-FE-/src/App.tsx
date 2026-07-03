@@ -47,14 +47,26 @@ const App: React.FC = () => {
 
 
   return (
-    <main className="min-h-screen w-full flex items-center justify-center bg-white p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen w-full bg-slate-50 font-sans antialiased text-slate-900">
       <Toaster position="top-right" />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<LoginForm />} />
+          <Route path="/" element={
+            <main className="min-h-screen w-full flex items-center justify-center bg-white p-4 sm:p-6 lg:p-8">
+              <LoginForm />
+            </main>
+          } />
 
-          <Route path="/forgot-password" element={<ForgotPasswordForm />} />
-          <Route path="/verification" element={<VerificationScreen />} />
+          <Route path="/forgot-password" element={
+            <main className="min-h-screen w-full flex items-center justify-center bg-white p-4 sm:p-6 lg:p-8">
+              <ForgotPasswordForm />
+            </main>
+          } />
+          <Route path="/verification" element={
+            <main className="min-h-screen w-full flex items-center justify-center bg-white p-4 sm:p-6 lg:p-8">
+              <VerificationScreen />
+            </main>
+          } />
 
 
           {/* Protect Dashboard */}
@@ -259,16 +271,6 @@ const App: React.FC = () => {
             }
           />
 
-          {/* Purchase Order Details Page */}
-          <Route
-            path="/purchase-orders/:poId"
-            element={
-              <ProtectedRoute>
-                <PurchaseOrderDetailsPage />
-              </ProtectedRoute>
-            }
-          />
-
           {/* Bill Details Page */}
           <Route
             path="/bills/:billId"
@@ -311,12 +313,16 @@ const App: React.FC = () => {
             }
           />
 
-          <Route path="/create-password" element={<CreatePasswordScreen />} />
+          <Route path="/create-password" element={
+            <main className="min-h-screen w-full flex items-center justify-center bg-white p-4 sm:p-6 lg:p-8">
+              <CreatePasswordScreen />
+            </main>
+          } />
 
 
         </Routes >
       </BrowserRouter >
-    </main >
+    </div>
   );
 };
 

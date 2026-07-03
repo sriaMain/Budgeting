@@ -1,16 +1,16 @@
 import React, { useState, useCallback } from "react";
 import { InputField } from "../components/InputField";
 import { Button } from "../components/Button";
-import { Checkbox } from "../components/Checkbox";
+
 import { EyeIcon, EyeOffIcon } from "../components/Icons";
 import type { LoginFormData, FormErrors } from "../types";
 import { Link } from "react-router-dom";
-import { Captcha } from "../components/Captcha";
+
 import axiosInstance from "../utils/axiosInstance";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useDispatch } from "react-redux";
 import { parseApiErrors } from "../utils/parseApiErrors";
-import { Toast } from "../components/Toast";
+
 
 export const LoginForm: React.FC = () => {
   const [formData, setFormData] = useState<LoginFormData>({
@@ -22,12 +22,7 @@ export const LoginForm: React.FC = () => {
   const [errors, setErrors] = useState<FormErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [loginSuccess, setLoginSuccess] = useState(false);
-  const [captchaInput, setCaptchaInput] = useState("");
-  const [captchaToken, setCaptchaToken] = useState("");
-  const [captchaRefreshCounter, setCaptchaRefreshCounter] = useState(0);
-  const [showToast, setShowToast] = useState(false);
-  const [isNavigating, setIsNavigating] = useState(false);
+
   const { goTo } = useAppNavigation();
   const dispatch = useDispatch();
 
@@ -53,17 +48,7 @@ export const LoginForm: React.FC = () => {
     }
   };
 
-  const handleCaptchaInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCaptchaInput(e.target.value);
-    if (errors.captcha) {
-      setErrors((prev) => ({ ...prev, captcha: undefined }));
-    }
-  };
 
-  // Callback for the Captcha component to report the valid token
-  const handleCaptchaTokenChange = useCallback((token: string) => {
-    setCaptchaToken(token);
-  }, []);
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
@@ -78,16 +63,7 @@ export const LoginForm: React.FC = () => {
       newErrors.password = "Password must be at least 6 characters";
     }
 
-    // Captcha Validation
-    if (!captchaInput) {
-      newErrors.captcha = "Please enter the characters shown above";
-      // refresh captcha on missing input
-      setCaptchaRefreshCounter(c => c + 1);
-    } else if (captchaInput !== captchaToken) {
-      newErrors.captcha = "Incorrect characters. Please try again.";
-      // refresh captcha after incorrect attempt
-      setCaptchaRefreshCounter(c => c + 1);
-    }
+
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -133,54 +109,23 @@ export const LoginForm: React.FC = () => {
           }, 
         });
         
-        // Show toast and blur form, then navigate after brief delay
-        setIsNavigating(true);
-        setShowToast(true);
-        setTimeout(() => {
-          goTo("/dashboard");
-        }, 1800);
+        // Navigate immediately
+        goTo("/dashboard");
       }
-    }  catch (err: any) {
+    }  catch (err) {
       const newErrors = parseApiErrors(err);
 
       setErrors(newErrors);
-      // On any failed login attempt from server, refresh captcha
-      setCaptchaRefreshCounter(c => c + 1);
+
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (loginSuccess) {
-    return (
-      <div className="text-center p-8 bg-green-50 rounded-2xl border border-green-100 animate-fadeIn">
-        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg
-            className="w-8 h-8"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M5 13l4 4L19 7"
-            ></path>
-          </svg>
-        </div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Welcome Back!</h2>
-        <p className="text-gray-600">Login successful. Redirecting...</p>
-      </div>
-    );
-  }
+
 
   return (
     <div className="w-full max-w-[480px] min-h-[600px] mx-auto bg-white relative">
-      {/* Blur overlay when navigating */}
-      {isNavigating && (
-        <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto" />
-      )}
       
       {/* Header */}
       <div className="mb-12 text-center">
@@ -237,24 +182,7 @@ export const LoginForm: React.FC = () => {
           />
         </div>
 
-        <div className="space-y-3 pt-2">
-          <label className="block text-base font-medium text-gray-900 mb-2">
-            Security Check
-          </label>
-          <div className="flex justify-center bg-gray-50 p-3 rounded-lg border border-gray-200">
-            <Captcha onCaptchaChange={handleCaptchaTokenChange} refreshCounter={captchaRefreshCounter} />
-          </div>
-          <InputField
-            label=""
-            name="captcha"
-            type="text"
-            value={captchaInput}
-            onChange={handleCaptchaInputChange}
-            error={errors.captcha}
-            placeholder="Type the characters above"
-            autoComplete="off"
-          />
-        </div>
+
 
         <div className="space-y-6">
           <Button type="submit" isLoading={isLoading}>
@@ -274,14 +202,7 @@ export const LoginForm: React.FC = () => {
         </div>
       </form>
       
-      {/* Toast Notification */}
-      {showToast && (
-        <Toast
-          message="Login successful!"
-          type="success"
-          onClose={() => setShowToast(false)}
-        />
-      )}
+
     </div>
   );
 };

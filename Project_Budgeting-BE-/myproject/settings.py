@@ -326,14 +326,21 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 # STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = 'smtp.gmail.com'
+# EMAIL_PORT = 587
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = 'teerdavenigedela@gmail.com'
+# EMAIL_HOST_PASSWORD = 'vcig blpb lbdg sact'  # Gmail App Password
+# DEFAULT_FROM_EMAIL = "teerdavenigedela@gmail.com"
+
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'teerdavenigedela@gmail.com'
-EMAIL_HOST_PASSWORD = 'vcig blpb lbdg sact'  # Gmail App Password
-DEFAULT_FROM_EMAIL = "teerdavenigedela@gmail.com"
-
+EMAIL_HOST_USER = 'malladiravindra1@gmail.com'
+EMAIL_HOST_PASSWORD = 'ggok gbvm uyuo sjgw'  # Gmail App Password
+DEFAULT_FROM_EMAIL = "malladiravindra1@gmail.com"
 
 
 CELERY_BROKER_URL = 'redis://localhost:6379/0'

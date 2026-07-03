@@ -26,6 +26,7 @@ interface Project {
 		bills_and_expenses: string;
 		currency: string;
 		forecasted_profit: string;
+		quoted_amount?: string;
 	};
 }
 

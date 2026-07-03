@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Edit, FileText, Share2, Send, Receipt, Loader2, Plus } from 'lucide-react';
+import { Edit, FileText, Share2, Send, Receipt, Loader2, Plus, ArrowLeft } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import { InfoDisplay } from '../components/InfoDisplay';
 import { ReusableTable, type Column } from '../components/ReusableTable';
@@ -207,6 +207,19 @@ export default function QuoteDetailsPage({
     return (
         <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
             <div className="space-y-6">
+                {/* Breadcrumb — ← Pipeline / Quote Details */}
+                <div className="flex items-center gap-2 text-sm mb-2">
+                    <button
+                        onClick={() => navigate('/pipeline')}
+                        className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-bold transition-colors"
+                    >
+                        <ArrowLeft size={16} strokeWidth={2.5} />
+                        Pipeline
+                    </button>
+                    <span className="text-slate-300 font-light text-base">/</span>
+                    <span className="text-slate-600 font-medium">Quote Details</span>
+                </div>
+
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <h1 className="text-2xl font-bold text-gray-900">Quote Details</h1>

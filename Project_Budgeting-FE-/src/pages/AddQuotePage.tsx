@@ -527,17 +527,19 @@ export default function AddQuotePage() {
     <Layout userRole="admin" currentPage="pipeline" onNavigate={() => { }}>
       <div className="px-2 sm:px-4 md:px-6 lg:px-8">
         <div className="max-w-[1600px] mx-auto py-4 sm:py-6 md:py-8">
-          <div className="flex items-center gap-2 text-xs sm:text-sm mb-4 sm:mb-6">
+          {/* Breadcrumb — ← Pipeline / Add Quote Details */}
+          <div className="flex items-center gap-2 text-sm mb-6">
             <button
-              onClick={() => navigate('/pipeline')}
-              className="text-blue-600 hover:text-blue-800 font-semibold transition-colors flex items-center gap-1"
+              onClick={() => navigate(projectId ? `/projects/${projectId}` : '/pipeline')}
+              className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-bold transition-colors"
             >
-              <ArrowLeft size={16} className="hidden sm:block" />
-              <ArrowLeft size={14} className="sm:hidden" />
+              <ArrowLeft size={16} strokeWidth={2.5} />
               {projectId ? 'Project Details' : 'Pipeline'}
             </button>
-            <span className="text-gray-400">/</span>
-            <span className="text-gray-700 font-medium">{isEditMode ? 'Edit' : 'Add'} {projectId ? 'Project' : 'Quote'} Details</span>
+            <span className="text-slate-300 font-light text-base">/</span>
+            <span className="text-slate-600 font-medium">
+              {isEditMode ? 'Edit' : 'Add'} {projectId ? 'Project' : 'Quote'} Details
+            </span>
           </div>
 
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden relative">

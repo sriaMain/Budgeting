@@ -1,5 +1,16 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 @config "../tailwind.config.ts";
+
+/* Custom Snap Transition and Utility Styles */
+.transition-premium {
+  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.border-premium {
+  border-color: rgba(226, 232, 240, 0.6);
+  /* border-slate-200/60 */
+}
 
 @keyframes slideInFromRight {
   from {
@@ -14,5 +25,16 @@
 }
 
 .animate-slideInFromRight {
-  animation: slideInFromRight 0.3s ease-out;
+  animation: slideInFromRight 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Custom CSS progress bar animation */
+@keyframes progressWidth {
+  from {
+    width: 0%;
+  }
+}
+
+.animate-progress {
+  animation: progressWidth 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

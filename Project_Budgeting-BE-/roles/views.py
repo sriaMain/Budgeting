@@ -143,6 +143,13 @@ class RoleListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         
         role = serializer.save()
+
+        # ✅ Invalidate cache immediately after creation
+        try:
+            cache.delete(ROLES_ACTIVE_CACHE_KEY)
+        except Exception as e:
+            logger.warning(f"Cache delete failed: {e}")
+
         return Response(
             RoleDetailSerializer(role).data,
             status=status.HTTP_201_CREATED
