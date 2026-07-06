@@ -288,7 +288,7 @@ export default function CreatePurchaseOrderPage() {
                                     onChange={(e) => setReferenceQuoteNo(e.target.value)}
                                     disabled
                                 />
-                                
+
                                 {/* Vendor Selection */}
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-700">

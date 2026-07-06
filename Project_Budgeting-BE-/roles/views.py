@@ -27,7 +27,8 @@ ROLES_ACTIVE_CACHE_KEY = "roles_list_active_v1"
 
 
 class PermissionTreeView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_code = "rbac.permissions.view"
     def get(self, request):
         cache_key = "permission_tree_v1"
         try:
@@ -88,9 +89,8 @@ class CacheTestView(APIView):
 
 
 class PermissionFlatListView(APIView):
-    # permission_classes = [IsAuthenticated, HasPermissionCode]
-    # permission_code = "roles.permissions.view"
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_code = "rbac.permissions.view"
     def get(self, request):
         perms = (
             Permission.objects.filter(is_active=True)
@@ -104,8 +104,11 @@ class PermissionFlatListView(APIView):
 # ROLES_LIST_CACHE_KEY = "roles_list_v2"
 
 class RoleListCreateView(APIView):
-   
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_map = {
+        "GET": "roles.view",
+        "POST": "roles.create"
+    }
 
     def get(self, request):
         try:
@@ -158,8 +161,7 @@ class RoleListCreateView(APIView):
 
 
 class RoleDetailView(APIView):
-    # permission_classes = [IsAuthenticated, HasPermissionCode]
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated, HasPermissionCode]
 
 
     permission_map = {
@@ -213,7 +215,7 @@ class RoleDetailView(APIView):
 
         updated = serializer.save()
         try:
-            cache.delete("roles_list_v1")  # Invalidate cache
+            cache.delete(ROLES_ACTIVE_CACHE_KEY)  # Invalidate cache
         except Exception as e:
             logger.warning(f"Cache delete failed: {e}")
         return Response(
@@ -223,7 +225,19 @@ class RoleDetailView(APIView):
 
     def delete(self, request, pk):
         role = self.get_object(pk)
-        role.is_active = False
-        role.modified_by = request.user
-        role.save(update_fields=["is_active", "modified_by", "modified_at"])
+        if not role.is_active:
+            # Already inactive: permanently delete from the database
+            role.delete()
+        else:
+            # Active: soft delete (make inactive)
+            role.is_active = False
+            role.modified_by = request.user
+            role.save(update_fields=["is_active", "modified_by", "modified_at"])
+
+        # ✅ Invalidate cache immediately after deletion
+        try:
+            cache.delete(ROLES_ACTIVE_CACHE_KEY)
+        except Exception as e:
+            logger.warning(f"Cache delete failed: {e}")
+
         return Response(status=status.HTTP_204_NO_CONTENT)

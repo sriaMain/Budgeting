@@ -1183,10 +1183,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                 {/* Timer Field (Dynamic elapsed time) - Hidden when needs extra hours or pending approval */}
                                 {!task.needs_extra_hours && !task.has_extra_hours_request && (
                                   <div className={`px-2 py-1.5 rounded-lg border text-xs font-mono min-w-[70px] text-center transition-all ${task.is_stopped
-                                      ? 'bg-red-50 border-red-200 text-red-600 font-semibold'
-                                      : task.running
-                                        ? 'bg-green-50 border-green-200 text-green-700 font-bold'
-                                        : 'bg-gray-50 border-gray-200 text-gray-500'
+                                    ? 'bg-red-50 border-red-200 text-red-600 font-semibold'
+                                    : task.running
+                                      ? 'bg-green-50 border-green-200 text-green-700 font-bold'
+                                      : 'bg-gray-50 border-gray-200 text-gray-500'
                                     }`}>
                                     {formatElapsedTime(elapsedTimes[task.id] || task.total_seconds || 0)}
                                     {task.is_stopped && <span className="ml-1 text-[10px]">(Stopped)</span>}
@@ -1689,10 +1689,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                   </td>
                                   <td className="px-6 py-5">
                                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${record.status === 'approved'
-                                        ? 'bg-green-100 text-green-800'
-                                        : record.status === 'submitted'
-                                          ? 'bg-blue-100 text-blue-800'
-                                          : 'bg-yellow-100 text-yellow-800'
+                                      ? 'bg-green-100 text-green-800'
+                                      : record.status === 'submitted'
+                                        ? 'bg-blue-100 text-blue-800'
+                                        : 'bg-yellow-100 text-yellow-800'
                                       }`}>
                                       {record.status}
                                     </span>
@@ -2055,10 +2055,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                     <h2 className="text-2xl font-bold text-gray-900 mb-1">My Timesheet</h2>
                     {timesheetData?.timesheet?.status && (
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${timesheetData.timesheet.status === 'approved'
-                          ? 'bg-green-100 text-green-800'
-                          : timesheetData.timesheet.status === 'submitted'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-yellow-100 text-yellow-800'
+                        ? 'bg-green-100 text-green-800'
+                        : timesheetData.timesheet.status === 'submitted'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-yellow-100 text-yellow-800'
                         }`}>
                         {timesheetData.timesheet.status}
                       </span>
@@ -2383,8 +2383,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                 <button
                   onClick={() => setRequestsView('pending')}
                   className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${requestsView === 'pending'
-                      ? 'text-blue-600 border-b-2 border-blue-600'
-                      : 'text-gray-500 hover:text-gray-700'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-500 hover:text-gray-700'
                     }`}
                 >
                   Pending ({pendingRequests.length})
@@ -2397,8 +2397,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                     }
                   }}
                   className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${requestsView === 'history'
-                      ? 'text-blue-600 border-b-2 border-blue-600'
-                      : 'text-gray-500 hover:text-gray-700'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-500 hover:text-gray-700'
                     }`}
                 >
                   History ({requestHistory.length})
@@ -2464,8 +2464,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                 }}
                                 disabled={isLoadingTaskDetails}
                                 className={`text-sm font-semibold transition-colors text-left ${isLoadingTaskDetails
-                                    ? 'text-gray-400 cursor-wait'
-                                    : 'text-blue-600 hover:text-blue-800 hover:underline'
+                                  ? 'text-gray-400 cursor-wait'
+                                  : 'text-blue-600 hover:text-blue-800 hover:underline'
                                   }`}
                               >
                                 {request.task}
@@ -2587,8 +2587,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                 }}
                                 disabled={!record.task_id || isLoadingTaskDetails}
                                 className={`text-sm font-semibold transition-colors text-left ${!record.task_id || isLoadingTaskDetails
-                                    ? 'text-gray-400 cursor-not-allowed'
-                                    : 'text-blue-600 hover:text-blue-800 hover:underline'
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-blue-600 hover:text-blue-800 hover:underline'
                                   }`}
                               >
                                 {record.task}
@@ -2614,8 +2614,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                             </td>
                             <td className="px-6 py-4 text-center">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${record.status === 'approved'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-100 text-red-800'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-red-100 text-red-800'
                                 }`}>
                                 {record.status}
                               </span>

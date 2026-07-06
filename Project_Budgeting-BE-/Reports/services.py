@@ -2,12 +2,19 @@ from decimal import Decimal
 from django.db.models import Sum, Max, Q
 from django.db.models.functions import Coalesce
 
-from finances.models import Invoice, InvoicePayment, OutgoingPayment, PurchaseOrder
-from django.db.models import F
+from finances.models import Invoice, InvoicePayment, OutgoingPayment, PurchaseOrder, ExpensePayment
+from django.db.models import F, Case, When
 from Project.models import ProjectBudget
+
 def get_financial_summary(filters):
-    budget = ProjectBudget.objects.aggregate(
-        total=Coalesce(Sum("total_budget"), Decimal("0.00"))
+    budget = ProjectBudget.objects.annotate(
+        resolved_budget=Case(
+            When(total_budget__isnull=False, then=F("total_budget")),
+            When(project__created_from_quotation__total_amount__isnull=False, then=F("project__created_from_quotation__total_amount")),
+            default=Decimal("0.00")
+        )
+    ).aggregate(
+        total=Coalesce(Sum("resolved_budget"), Decimal("0.00"))
     )["total"]
 
     invoiced = Invoice.objects.exclude(
@@ -21,6 +28,8 @@ def get_financial_summary(filters):
     )["total"]
 
     expenses = OutgoingPayment.objects.aggregate(
+        total=Coalesce(Sum("amount"), Decimal("0.00"))
+    )["total"] + ExpensePayment.objects.aggregate(
         total=Coalesce(Sum("amount"), Decimal("0.00"))
     )["total"]
 
@@ -87,6 +96,14 @@ def get_all_tab_data(filters):
         ).aggregate(
             total=Coalesce(Sum("amount"), Decimal("0.00"))
         )["total"] if project else Decimal("0.00")
+
+        expense_pmts = ExpensePayment.objects.filter(
+            expense__project=project
+        ).aggregate(
+            total=Coalesce(Sum("amount"), Decimal("0.00"))
+        )["total"] if project else Decimal("0.00")
+
+        expenses += expense_pmts
         
         received = InvoicePayment.objects.filter(
             invoice__client=client,
@@ -244,6 +261,14 @@ def get_project_tab_data(filters):
         ).aggregate(
             total=Coalesce(Sum("amount"), Decimal("0.00"))
         )["total"]
+
+        expense_pmts = ExpensePayment.objects.filter(
+            expense__project=pb.project
+        ).aggregate(
+            total=Coalesce(Sum("amount"), Decimal("0.00"))
+        )["total"]
+
+        expenses += expense_pmts
 
         data.append({
             "project_no": pb.project.project_no,

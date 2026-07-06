@@ -4,6 +4,8 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from django.utils import timezone
+from django.core.validators import MinValueValidator
+from decimal import Decimal
 
 
 class Project(models.Model):
@@ -72,9 +74,21 @@ class ProjectBudget(models.Model):
     project = models.OneToOneField(Project, on_delete=models.SET_NULL, null=True, related_name='budget')
     use_quoted_amounts = models.BooleanField(default=True)
     total_hours = models.PositiveIntegerField(null=True, blank=True)
-    total_budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    bills_and_expenses = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    total_budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal('0.00'))])
+    bills_and_expenses = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal('0.00'))])
     currency = models.CharField(max_length=10, default='INR')
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(total_budget__gte=0) | models.Q(total_budget__isnull=True),
+                name='projectbudget_total_budget_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(bills_and_expenses__gte=0) | models.Q(bills_and_expenses__isnull=True),
+                name='projectbudget_bills_and_expenses_non_negative'
+            ),
+        ]
 
     def apply_quoted_amounts(self):
         quote = self.project.created_from_quotation
@@ -126,7 +140,7 @@ class Task(models.Model):
         null=True,
         related_name='assigned_tasks'
     )
-    allocated_hours = models.DecimalField(max_digits=5, decimal_places=2)
+    allocated_hours = models.DecimalField(max_digits=5, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planned')
     due_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
@@ -140,6 +154,9 @@ class Task(models.Model):
         on_delete=models.SET_NULL,
         null=True, blank=True, related_name='modified_tasks'
     )
+
+    class Meta:
+        unique_together = ('project', 'title')
 
     def __str__(self):
         return self.title
@@ -208,7 +225,7 @@ class TimesheetEntry(models.Model):
         related_name='time_entries'
     )
     date = models.DateField()
-    hours = models.DecimalField(max_digits=6, decimal_places=4)
+    hours = models.DecimalField(max_digits=6, decimal_places=4, validators=[MinValueValidator(Decimal('0.01'))])
 
     class Meta:
         unique_together = ('timesheet', 'task', 'date')
@@ -267,13 +284,13 @@ class TaskExtraHoursRequest(models.Model):
         related_name="extra_hour_requests"
     )
 
-    requested_hours = models.DecimalField(max_digits=7, decimal_places=2)
+    requested_hours = models.DecimalField(max_digits=7, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     reason = models.TextField()
     previous_allocated_hours = models.DecimalField(
-        max_digits=5, decimal_places=2, null=True, blank=True
+        max_digits=5, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal('0.00'))]
     )
     approved_allocated_hours = models.DecimalField(
-        max_digits=5, decimal_places=2, null=True, blank=True
+        max_digits=5, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal('0.00'))]
     )
 
     status = models.CharField(

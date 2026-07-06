@@ -37,7 +37,7 @@ axiosInstance.interceptors.response.use(
     }
 
     const isRefreshRequest = originalRequest.url && (
-      originalRequest.url.includes("/accounts/refresh/") || 
+      originalRequest.url.includes("/accounts/refresh/") ||
       originalRequest.url.includes("accounts/refresh")
     );
 

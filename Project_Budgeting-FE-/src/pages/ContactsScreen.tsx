@@ -29,7 +29,7 @@ export default function ContactsScreen() {
 
   // Application State - Clients
   const [clients, setClients] = useState<Client[]>([]);
-  
+
   // Application State - Vendors
   const [vendors, setVendors] = useState<Vendor[]>([]);
 
@@ -151,21 +151,19 @@ export default function ContactsScreen() {
               <div className="flex">
                 <button
                   onClick={() => setActiveTab('clients')}
-                  className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'clients'
+                  className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'clients'
                       ? 'border-blue-600 text-blue-600'
                       : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   Clients
                 </button>
                 <button
                   onClick={() => setActiveTab('vendors')}
-                  className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'vendors'
+                  className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'vendors'
                       ? 'border-blue-600 text-blue-600'
                       : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   Vendors
                 </button>

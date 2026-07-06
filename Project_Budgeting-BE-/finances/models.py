@@ -1,9 +1,9 @@
 
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
-from django.db.models import Sum
+from django.db.models import Sum, F, Q
 from Project.models import Project
 from product_group.models import Quote, Product_Services
 from django.core.exceptions import ValidationError
@@ -11,17 +11,29 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils.crypto import get_random_string
 from django.urls import reverse
-from django.db import models, transaction
-from django.core.exceptions import ValidationError
-from django.db.models import F
-from django.utils import timezone
-from decimal import Decimal
 from accounts.models import Vendor
 
+class SoftDeleteManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(is_deleted=False)
+
+class SoftDeleteModel(models.Model):
+    is_deleted = models.BooleanField(default=False, db_index=True)
+
+    objects = SoftDeleteManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        abstract = True
+
+    def delete(self, *args, **kwargs):
+        self.is_deleted = True
+        self.save(update_fields=['is_deleted'])
 
 
 
-class Invoice(models.Model):
+
+class Invoice(SoftDeleteModel):
     STATUS_CHOICES = [
         ('Draft', 'Draft'),
         ('Issued', 'Issued'),
@@ -67,19 +79,19 @@ class Invoice(models.Model):
     issue_date = models.DateField()
     due_date = models.DateField()
 
-    sub_total = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
+    sub_total = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
     tax_percentage = models.DecimalField(
         max_digits=5,
         decimal_places=2,
         default=Decimal("0.00"),
         validators=[MinValueValidator(0), MaxValueValidator(100)]
     )
-    tax_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
-    discount_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
-    total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
+    tax_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
+    discount_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
 
-    paid_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
-    balance_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
+    paid_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
+    balance_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
 
     notes = models.TextField(blank=True)
     terms_conditions = models.TextField(blank=True)
@@ -117,12 +129,32 @@ class Invoice(models.Model):
         ordering = ['-created_at']
         constraints = [
             models.CheckConstraint(
+                condition=models.Q(sub_total__gte=0),
+                name='invoice_sub_total_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(tax_amount__gte=0),
+                name='invoice_tax_amount_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(discount_amount__gte=0),
+                name='invoice_discount_amount_non_negative'
+            ),
+            models.CheckConstraint(
                 condition=models.Q(total_amount__gte=0),
-                name='invoice_total_non_negative'
+                name='invoice_total_amount_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(paid_amount__gte=0),
+                name='invoice_paid_amount_non_negative'
             ),
             models.CheckConstraint(
                 condition=models.Q(balance_amount__gte=0),
-                name='invoice_balance_non_negative'
+                name='invoice_balance_amount_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(discount_amount__lte=models.F('sub_total')),
+                name='invoice_discount_le_subtotal'
             ),
         ]
 
@@ -173,7 +205,7 @@ class Invoice(models.Model):
 
     
 
-class InvoiceItem(models.Model):
+class InvoiceItem(SoftDeleteModel):
     invoice = models.ForeignKey(
         Invoice,
         related_name='items',
@@ -208,7 +240,15 @@ class InvoiceItem(models.Model):
         validators=[MinValueValidator(0), MaxValueValidator(100)]
     )
 
-    amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
+    amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gte=0),
+                name='invoiceitem_amount_non_negative'
+            )
+        ]
 
     def save(self, *args, **kwargs):
         base = self.quantity * self.price_per_unit
@@ -218,7 +258,7 @@ class InvoiceItem(models.Model):
 
 
 
-class InvoicePayment(models.Model):
+class InvoicePayment(SoftDeleteModel):
     PAYMENT_METHOD_CHOICES = [
         ('Cash', 'Cash'),
         ('Bank Transfer', 'Bank Transfer'),
@@ -262,6 +302,12 @@ class InvoicePayment(models.Model):
 
     class Meta:
         ordering = ['-payment_date', '-created_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gt=0),
+                name='invoicepayment_amount_positive'
+            )
+        ]
 
     # def clean(self):
     #     if self.invoice_id:
@@ -317,7 +363,7 @@ class InvoicePayment(models.Model):
 
 
 
-class PurchaseOrder(models.Model):
+class PurchaseOrder(SoftDeleteModel):
     STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('issued', 'Issued'),
@@ -333,8 +379,20 @@ class PurchaseOrder(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     issue_date = models.DateField(default=timezone.now)
 
-    sub_total = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    sub_total = models.DecimalField(max_digits=15, decimal_places=2, default=0, validators=[MinValueValidator(Decimal('0.00'))])
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0, validators=[MinValueValidator(Decimal('0.00'))])
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(sub_total__gte=0),
+                name='purchaseorder_sub_total_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(total_amount__gte=0),
+                name='purchaseorder_total_amount_non_negative'
+            ),
+        ]
 
     created_by = models.ForeignKey(
         'accounts.Account',
@@ -351,7 +409,7 @@ class PurchaseOrder(models.Model):
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
         
-class PurchaseOrderItem(models.Model):
+class PurchaseOrderItem(SoftDeleteModel):
     purchase_order = models.ForeignKey(
         PurchaseOrder,
         related_name='items',
@@ -364,17 +422,25 @@ class PurchaseOrderItem(models.Model):
     )
 
     description = models.TextField()
-    quantity = models.DecimalField(max_digits=10, decimal_places=2)
-    unit_rate = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
+    unit_rate = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
 
-    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    amount = models.DecimalField(max_digits=15, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gte=0),
+                name='purchaseorderitem_amount_non_negative'
+            )
+        ]
 
     def save(self, *args, **kwargs):
         self.amount = self.quantity * self.unit_rate
         super().save(*args, **kwargs)
 
 
-class VendorBill(models.Model):
+class VendorBill(SoftDeleteModel):
     STATUS_CHOICES = [
         ('unpaid', 'Unpaid'),
         ('partially_paid', 'Partially Paid'),
@@ -388,9 +454,25 @@ class VendorBill(models.Model):
     bill_date = models.DateField()
     due_date = models.DateField()
 
-    total_amount = models.DecimalField(max_digits=15, decimal_places=2)
-    paid_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
-    balance_amount = models.DecimalField(max_digits=15, decimal_places=2)
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+    paid_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0, validators=[MinValueValidator(Decimal('0.00'))])
+    balance_amount = models.DecimalField(max_digits=15, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(total_amount__gte=0),
+                name='vendorbill_total_amount_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(paid_amount__gte=0),
+                name='vendorbill_paid_amount_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(balance_amount__gte=0),
+                name='vendorbill_balance_amount_non_negative'
+            ),
+        ]
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='unpaid')
 
@@ -408,7 +490,7 @@ class VendorBill(models.Model):
             self.status = 'partially_paid'
         else:
             self.status = 'unpaid'
-class OutgoingPayment(models.Model):
+class OutgoingPayment(SoftDeleteModel):
     PAYMENT_METHOD_CHOICES = [
         ('bank', 'Bank Transfer'),
         ('upi', 'UPI'),
@@ -423,7 +505,7 @@ class OutgoingPayment(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT)
 
     payment_date = models.DateField()
-    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    amount = models.DecimalField(max_digits=15, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
 
     payment_method = models.CharField(
         max_length=20,
@@ -448,7 +530,7 @@ class OutgoingPayment(models.Model):
         # Update bill status
         self.vendor_bill.refresh_from_db()
         self.vendor_bill.update_status()
-        self.vendor_bill.save(update_fields=["status"])
+        self.vendor_bill.save(update_fields=["status", "paid_amount", "balance_amount"])
 # models.py
 from django.db import models
 from cloudinary.models import CloudinaryField
@@ -512,7 +594,7 @@ from django.db.models import Sum
 from django.core.validators import MinValueValidator
 import uuid
 
-class Expense(models.Model):
+class Expense(SoftDeleteModel):
 
     CATEGORY_CHOICES = [
         ('rent', 'Rent'),
@@ -570,6 +652,12 @@ class Expense(models.Model):
 
     class Meta:
         ordering = ['-expense_date', '-created_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gt=0),
+                name='expense_amount_positive'
+            )
+        ]
 
     def __str__(self):
         return self.expense_no
@@ -604,7 +692,7 @@ class Expense(models.Model):
         return self.balance_amount() == Decimal('0.00')
 
 
-class ExpensePayment(models.Model):
+class ExpensePayment(SoftDeleteModel):
 
     PAYMENT_METHOD_CHOICES = [
         ('bank', 'Bank Transfer'),
@@ -632,6 +720,14 @@ class ExpensePayment(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gt=0),
+                name='expensepayment_amount_positive'
+            )
+        ]
+
     @transaction.atomic
     def save(self, *args, **kwargs):
         if self.expense.is_fully_paid():
@@ -641,3 +737,34 @@ class ExpensePayment(models.Model):
             raise ValidationError("Payment exceeds expense balance")
 
         super().save(*args, **kwargs)
+
+
+class AuditLog(models.Model):
+    ACTION_CHOICES = [
+        ('CREATE', 'Create'),
+        ('UPDATE', 'Update'),
+        ('DELETE', 'Delete'),
+        ('APPROVE', 'Approve'),
+        ('PAYMENT', 'Payment'),
+    ]
+
+    model_name = models.CharField(max_length=100)
+    object_id = models.IntegerField(null=True, blank=True)
+    object_repr = models.CharField(max_length=255)
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    changes = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+def log_audit(user, instance, action, changes=None):
+    AuditLog.objects.create(
+        model_name=instance.__class__.__name__,
+        object_id=instance.pk,
+        object_repr=str(instance)[:255],
+        action=action,
+        user=user if user and user.is_authenticated else None,
+        changes=changes
+    )

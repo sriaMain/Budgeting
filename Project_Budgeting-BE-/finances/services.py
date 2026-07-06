@@ -54,6 +54,8 @@ class InvoiceService:
         notes="",
         terms_conditions=""
     ):
+        from product_group.models import Quote
+        quote = Quote.objects.select_for_update().get(pk=quote.pk)
         if quote.status != "Confirmed":
             raise ValidationError("Quote must be Confirmed")
 

@@ -49,7 +49,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                 axiosInstance.get('/accounts/users/'),
                 axiosInstance.get('/product-services/')
             ]);
-            
+
             const users = usersRes.data;
             const fetchedModules = modulesRes.data;
             setModules(fetchedModules);
@@ -59,7 +59,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
 
             if (currentUser) {
                 setUserId(currentUser.id);
-                
+
                 let currentModuleId = '';
                 if (currentUser.modules && currentUser.modules.length > 0) {
                     currentModuleId = String(currentUser.modules[0]);

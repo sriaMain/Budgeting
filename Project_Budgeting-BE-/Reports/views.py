@@ -10,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from Project.models import ProjectBudget
-from finances.models import Invoice, InvoicePayment, OutgoingPayment
+from finances.models import Invoice, InvoicePayment, OutgoingPayment, ExpensePayment
 
 from .serializers import DashboardMetricsSerializer
 from rest_framework.views import APIView
@@ -26,20 +26,23 @@ from .services import (
 )
 
 
+from django.db.models import Case, When, F
+
 class DashboardMetricsAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # 🔹 Cache (60 seconds)
+        # 🔹 Cache (60 seconds) - User specific to prevent data leakage
+        cache_key = f"dashboard_metrics:{request.user.id}"
         try:
-            cached_data = cache.get("dashboard_metrics")
+            cached_data = cache.get(cache_key)
             if cached_data:
                 return Response(cached_data)
         except Exception:
             cached_data = None
 
-        # 1️⃣ Budget → ProjectBudget.total_budget (only active projects)
+        # 1️⃣ Budget → ProjectBudget.total_budget (only active projects, with fallback to quote total)
         total_budget_qs = ProjectBudget.objects.filter(
             project__status__in=[
                 "planning",
@@ -54,13 +57,26 @@ class DashboardMetricsAPIView(APIView):
         if not is_admin_or_manager:
             total_budget_qs = total_budget_qs.filter(project__project_manager=request.user)
 
-        total_budget = total_budget_qs.aggregate(
-            total=Coalesce(
-                Sum("total_budget"),
+        budget_aggregate = total_budget_qs.annotate(
+            resolved_budget=Case(
+                When(total_budget__isnull=False, then=F("total_budget")),
+                When(project__created_from_quotation__total_amount__isnull=False, then=F("project__created_from_quotation__total_amount")),
+                default=Decimal("0.00")
+            )
+        ).aggregate(
+            total_budget=Coalesce(
+                Sum("resolved_budget"),
                 Decimal("0.00"),
                 output_field=DecimalField(max_digits=15, decimal_places=2),
             )
-        )["total"]
+        )
+        total_budget = budget_aggregate["total_budget"]
+
+        total_forecasted_profit = Decimal("0.00")
+        for pb in total_budget_qs:
+            val = pb.forecasted_profit
+            if val is not None:
+                total_forecasted_profit += val
 
         # 2️⃣ Invoiced → Invoice.total_amount (valid business statuses)
         invoiced_qs = Invoice.objects.filter(
@@ -90,18 +106,30 @@ class DashboardMetricsAPIView(APIView):
             )
         )["total"]
 
-        # 4️⃣ Expenses → OutgoingPayment.amount
+        # 4️⃣ Expenses → OutgoingPayment.amount + ExpensePayment.amount
         expenses_qs = OutgoingPayment.objects.all()
+        expense_payments_qs = ExpensePayment.objects.all()
         if not is_admin_or_manager:
             expenses_qs = expenses_qs.filter(vendor_bill__purchase_order__project__project_manager=request.user)
+            expense_payments_qs = expense_payments_qs.filter(expense__project__project_manager=request.user)
 
-        total_expenses = expenses_qs.aggregate(
+        total_outgoing = expenses_qs.aggregate(
             total=Coalesce(
                 Sum("amount"),
                 Decimal("0.00"),
                 output_field=DecimalField(max_digits=15, decimal_places=2),
             )
         )["total"]
+
+        total_expense_pmts = expense_payments_qs.aggregate(
+            total=Coalesce(
+                Sum("amount"),
+                Decimal("0.00"),
+                output_field=DecimalField(max_digits=15, decimal_places=2),
+            )
+        )["total"]
+
+        total_expenses = total_outgoing + total_expense_pmts
 
         # 5️⃣ Profit → Received - Expenses
         profit = (total_received or Decimal("0.00")) - (total_expenses or Decimal("0.00"))
@@ -127,11 +155,15 @@ class DashboardMetricsAPIView(APIView):
                 "value": profit,
                 "change": 0,
             },
+            "forecasted_profit": {
+                "value": total_forecasted_profit,
+                "change": 0,
+            },
         }
 
         serializer = DashboardMetricsSerializer(data)
         try:
-            cache.set("dashboard_metrics", serializer.data, timeout=60)
+            cache.set(cache_key, serializer.data, timeout=60)
         except Exception:
             pass
 
@@ -278,4 +310,4 @@ class ReportExportAPIView(APIView):
             response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
             response['Content-Disposition'] = f'attachment; filename="report_{section}.xlsx"'
 
-        return response
+        return response

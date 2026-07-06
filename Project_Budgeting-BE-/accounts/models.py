@@ -8,6 +8,8 @@ from django.contrib.auth.hashers import make_password, check_password
 import random
 from roles.models import RBACUserMixin# from rbac.models import RBACUserMixin
 from cloudinary_storage.storage import MediaCloudinaryStorage
+from django.core.validators import MinValueValidator
+from decimal import Decimal
 
 from core.app_constants import CURRENCY_CHOICES
 
@@ -25,6 +27,7 @@ class Account(AbstractUser, RBACUserMixin):
         decimal_places=2,
         null=True,
         blank=True,
+        validators=[MinValueValidator(Decimal('0.00'))]
     )
     currency = models.CharField(
         max_length=3,
@@ -45,6 +48,12 @@ class Account(AbstractUser, RBACUserMixin):
 
     class Meta:
         ordering = ["first_name", "last_name"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(charges_per_hour__gte=0) | models.Q(charges_per_hour__isnull=True),
+                name='account_charges_per_hour_non_negative'
+            )
+        ]
 
     @property
     def display_name(self):

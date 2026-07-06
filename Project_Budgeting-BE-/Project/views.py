@@ -28,6 +28,12 @@ class ProjectAPIView(APIView):
     # CREATE PROJECT
     # @transaction.atomic
     def post(self, request):
+        is_admin_or_manager = request.user.is_superuser or request.user.roles.filter(
+            role_name__in=["Admin", "Manager", "Project Manager"]
+        ).exists()
+        if not is_admin_or_manager:
+            return Response({"error": "You do not have permission to create projects"}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = ProjectCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         project = serializer.save()
@@ -203,6 +209,13 @@ class ProjectAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        is_admin_or_manager = request.user.is_superuser or request.user.roles.filter(
+            role_name__in=["Admin", "Manager"]
+        ).exists()
+        is_project_pm = project.project_manager == request.user
+        if not (is_admin_or_manager or is_project_pm):
+            return Response({"error": "You do not have permission to update this project"}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = ProjectCreateSerializer(
             project,
             data=request.data,
@@ -229,6 +242,12 @@ class ProjectAPIView(APIView):
                 {"error": "Project not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+        is_admin_or_manager = request.user.is_superuser or request.user.roles.filter(
+            role_name__in=["Admin", "Manager"]
+        ).exists()
+        if not is_admin_or_manager:
+            return Response({"error": "You do not have permission to delete this project"}, status=status.HTTP_403_FORBIDDEN)
 
         project.delete()
         return Response(
@@ -402,6 +421,19 @@ class TaskAPIView(APIView):
 
     # CREATE TASK
     def post(self, request):
+        project_id = request.data.get("project")
+        if not project_id:
+            return Response({"error": "project is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        project = get_object_or_404(Project, project_no=project_id)
+        is_admin_or_manager = request.user.is_superuser or request.user.roles.filter(
+            role_name__in=["Admin", "Manager", "Project Manager"]
+        ).exists()
+        is_project_pm = project.project_manager == request.user
+        
+        if not (is_admin_or_manager or is_project_pm):
+            return Response({"error": "You do not have permission to create tasks for this project"}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = TaskSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         task = serializer.save(created_by=request.user)
@@ -425,8 +457,8 @@ class TaskAPIView(APIView):
         user = request.user
 
         is_employee = user.roles.filter(role_name="Employee").exists()
-        is_manager = user.roles.filter(role_name__in=["Manager", "Project Manager"]).exists()
-        is_admin = user.roles.filter(role_name="Admin").exists()
+        is_manager = user.is_superuser or user.roles.filter(role_name__in=["Manager", "Project Manager"]).exists()
+        is_admin = user.is_superuser or user.roles.filter(role_name="Admin").exists()
 
         # 🔹 Task detail
         if task_id:
@@ -532,9 +564,9 @@ class TaskAPIView(APIView):
             )
 
         # Only PM / Admin can assign
-        if not request.user.roles.filter(
-            role_name__in=["Project Manager", "Admin","Employee"]
-        ).exists():
+        if not (request.user.is_superuser or request.user.roles.filter(
+            role_name__in=["Project Manager", "Admin", "Employee"]
+        ).exists()):
             return Response(
                 {"error": "Permission denied"},
                 status=403
@@ -577,9 +609,9 @@ class TaskAPIView(APIView):
             )
 
         # Only PM / Admin / Employee can update
-        if not request.user.roles.filter(
+        if not (request.user.is_superuser or request.user.roles.filter(
             role_name__in=["Project Manager", "Admin", "Employee"]
-        ).exists():
+        ).exists()):
             return Response(
                 {"error": "Permission denied"},
                 status=403
@@ -638,6 +670,14 @@ class TaskAPIView(APIView):
                     {"error": "Task not found"},
                     status=status.HTTP_404_NOT_FOUND
                 )
+
+            is_admin_or_manager = request.user.is_superuser or request.user.roles.filter(
+                role_name__in=["Admin", "Manager", "Project Manager"]
+            ).exists()
+            is_project_pm = task.project and task.project.project_manager == request.user
+            
+            if not (is_admin_or_manager or is_project_pm):
+                return Response({"error": "You do not have permission to delete this task"}, status=status.HTTP_403_FORBIDDEN)
 
             task.delete()
             return Response(
@@ -1814,9 +1854,9 @@ class PendingExtraHoursAPIView(APIView):
 
     def get(self, request):
         # Only PM / Admin
-        if not request.user.roles.filter(
+        if not (request.user.is_superuser or request.user.roles.filter(
             role_name__in=["Project Manager", "Admin"]
-        ).exists():
+        ).exists()):
             return Response(status=403)
 
         requests = TaskExtraHoursRequest.objects.filter(status="pending")
@@ -1850,9 +1890,9 @@ class ReviewExtraHoursAPIView(APIView):
     def post(self, request, request_id):
 
         # Only PM / Admin
-        if not request.user.roles.filter(
+        if not (request.user.is_superuser or request.user.roles.filter(
             role_name__in=["Project Manager", "Admin"]
-        ).exists():
+        ).exists()):
             return Response(status=403)
 
         req = TaskExtraHoursRequest.objects.get(id=request_id)
@@ -1929,8 +1969,8 @@ class TaskGroupedByStatusAPIView(APIView):
         user = request.user
         
         is_employee = user.roles.filter(role_name="Employee").exists()
-        is_manager = user.roles.filter(role_name__in=["Manager", "Project Manager"]).exists()
-        is_admin = user.roles.filter(role_name="Admin").exists()
+        is_manager = user.is_superuser or user.roles.filter(role_name__in=["Manager", "Project Manager"]).exists()
+        is_admin = user.is_superuser or user.roles.filter(role_name="Admin").exists()
 
         # 1️⃣ Define all possible statuses explicitly
         status_keys = dict(Task.STATUS_CHOICES).keys()
@@ -2007,9 +2047,9 @@ class TimesheetEmployeeAPIView(APIView):
 
     def get(self, request, user_id):
         # Only PM / Admin
-        if not request.user.roles.filter(
+        if not (request.user.is_superuser or request.user.roles.filter(
             role_name__in=["Project Manager", "Admin"]
-        ).exists():
+        ).exists()):
             return Response({"error": "Permission denied"}, status=403)
 
         # Resolve employee
@@ -2074,9 +2114,9 @@ class TimesheetWeeklySummaryAPIView(APIView):
 
     def get(self, request):
         # Only PM / Admin
-        if not request.user.roles.filter(
+        if not (request.user.is_superuser or request.user.roles.filter(
             role_name__in=["Project Manager", "Admin"]
-        ).exists():
+        ).exists()):
             return Response({"error": "Permission denied"}, status=403)
 
         # Get week_start from query param (YYYY-MM-DD format)
@@ -2231,7 +2271,7 @@ class ExtraHoursHistoryAPIView(APIView):
         )
 
         # Access control: PM/Admin see all; others see only their own
-        is_pm_admin = request.user.roles.filter(role_name__in=["Project Manager", "Admin"]).exists()
+        is_pm_admin = request.user.is_superuser or request.user.roles.filter(role_name__in=["Project Manager", "Admin"]).exists()
         if not is_pm_admin:
             qs = qs.filter(requested_by=request.user)
 

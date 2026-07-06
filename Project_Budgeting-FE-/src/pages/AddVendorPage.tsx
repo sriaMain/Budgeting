@@ -110,7 +110,7 @@ export function AddVendorPage({ vendor, onSave, onCancel }: AddVendorPageProps) 
 
     try {
       setIsSaving(true);
-      
+
       const payload = {
         name: formData.name.trim(),
         vendor_type: formData.vendor_type,
@@ -132,9 +132,9 @@ export function AddVendorPage({ vendor, onSave, onCancel }: AddVendorPageProps) 
       }
     } catch (error: any) {
       console.error('Error saving vendor:', error);
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.error ||
-                          `Failed to ${isEditing ? 'update' : 'create'} vendor`;
+      const errorMessage = error.response?.data?.message ||
+        error.response?.data?.error ||
+        `Failed to ${isEditing ? 'update' : 'create'} vendor`;
       toast.error(errorMessage);
 
       // Set field-specific errors if available
@@ -190,9 +190,8 @@ export function AddVendorPage({ vendor, onSave, onCancel }: AddVendorPageProps) 
               name="name"
               value={formData.name}
               onChange={handleChange}
-              className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors.name ? 'border-red-500 bg-red-50' : 'border-gray-300'
-              }`}
+              className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.name ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
               placeholder="Enter vendor name"
             />
             {errors.name && (
@@ -211,9 +210,8 @@ export function AddVendorPage({ vendor, onSave, onCancel }: AddVendorPageProps) 
               value={formData.vendor_type}
               onChange={handleChange}
               disabled={isLoadingTypes}
-              className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors.vendor_type ? 'border-red-500 bg-red-50' : 'border-gray-300'
-              }`}
+              className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.vendor_type ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
             >
               <option value="">Select vendor type</option>
               {vendorTypes.map(type => (
@@ -238,9 +236,8 @@ export function AddVendorPage({ vendor, onSave, onCancel }: AddVendorPageProps) 
               name="email"
               value={formData.email}
               onChange={handleChange}
-              className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors.email ? 'border-red-500 bg-red-50' : 'border-gray-300'
-              }`}
+              className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.email ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
               placeholder="vendor@example.com"
             />
             {errors.email && (
@@ -259,9 +256,8 @@ export function AddVendorPage({ vendor, onSave, onCancel }: AddVendorPageProps) 
               name="phone"
               value={formData.phone}
               onChange={handleChange}
-              className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors.phone ? 'border-red-500 bg-red-50' : 'border-gray-300'
-              }`}
+              className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.phone ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                }`}
               placeholder="9876543210"
             />
             {errors.phone && (

@@ -14,7 +14,7 @@ from io import BytesIO
 from datetime import timedelta, datetime
 from decimal import Decimal
 
-from .models import Invoice, InvoiceItem, InvoicePayment, PurchaseOrder, Vendor, VendorBill, OutgoingPayment,Expense,ExpensePayment
+from .models import Invoice, InvoiceItem, InvoicePayment, PurchaseOrder, Vendor, VendorBill, OutgoingPayment,Expense,ExpensePayment, log_audit
 from .serializers import (
     InvoiceListSerializer, InvoiceDetailSerializer, InvoiceItemSerializer,
     InvoicePaymentSerializer,
@@ -23,6 +23,7 @@ from .serializers import (
 )
 from .services import InvoiceService
 from django.core.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from product_group.models import Quote
 from django.http import Http404
@@ -265,6 +266,7 @@ class GenerateInvoiceView(APIView):
                 terms_conditions=serializer.validated_data.get("terms_conditions", ""),
                 invoice_items=invoice_items,
             )
+            log_audit(request.user, invoice, 'CREATE', {"quote_id": quote.id, "total": str(invoice.total_amount)})
 
         except ValidationError as e:
             return Response(
@@ -317,7 +319,7 @@ class RecordPaymentView(APIView):
         
     @transaction.atomic
     def post(self, request, invoice_id):
-        invoice = get_object_or_404(Invoice, id=invoice_id)
+        invoice = get_object_or_404(Invoice.objects.select_for_update(), id=invoice_id)
 
         serializer = InvoicePaymentSerializer(
             data=request.data,
@@ -329,6 +331,7 @@ class RecordPaymentView(APIView):
             invoice=invoice,
             created_by=request.user
         )
+        log_audit(request.user, payment, 'PAYMENT', {"invoice_id": invoice.id, "amount": str(payment.amount)})
 
         return Response(
             {
@@ -932,25 +935,16 @@ class PurchaseOrderCreateAPIView(APIView):
         items = request.data.get("items", [])
 
         if not quote_no:
-            return Response(
-                {"error": "quote_no is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise DRFValidationError("quote_no is required")
 
         if not vendor_id:
-            return Response(
-                {"error": "vendor_id is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise DRFValidationError("vendor_id is required")
 
         if not items:
-            return Response(
-                {"error": "At least one item is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise DRFValidationError("At least one item is required")
 
-        # 🔗 Fetch objects safely
-        quote = get_object_or_404(Quote, quote_no=quote_no)
+        # 🔗 Fetch objects safely and lock Quote for update
+        quote = get_object_or_404(Quote.objects.select_for_update(), quote_no=quote_no)
         vendor = get_object_or_404(Vendor, id=vendor_id)
 
         # 🔢 Generate PO number
@@ -975,10 +969,7 @@ class PurchaseOrderCreateAPIView(APIView):
             unit_rate = item.get("unit_rate")  # optional
 
             if not quote_item_id or not quantity:
-                return Response(
-                    {"error": "quote_item_id and quantity are required"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                raise DRFValidationError("quote_item_id and quantity are required")
 
             quote_item = get_object_or_404(
                 QuoteItem,
@@ -990,12 +981,7 @@ class PurchaseOrderCreateAPIView(APIView):
             unit_rate = Decimal(unit_rate) if unit_rate else quote_item.price_per_unit
 
             if unit_rate is None:
-                return Response(
-                    {
-                        "detail": f"unit_rate missing for quote_item {quote_item.id}"
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                raise DRFValidationError(f"unit_rate missing for quote_item {quote_item.id}")
 
             po_item = PurchaseOrderItem.objects.create(
                 purchase_order=po,
@@ -1011,6 +997,7 @@ class PurchaseOrderCreateAPIView(APIView):
         po.sub_total = total
         po.total_amount = total
         po.save()
+        log_audit(request.user, po, 'CREATE', {"quote_no": quote.quote_no, "total": str(po.total_amount)})
 
         return Response(
             {
@@ -1237,7 +1224,7 @@ class OutgoingPaymentCreateAPIView(APIView):
 
     @transaction.atomic
     def post(self, request, bill_id):
-        bill = get_object_or_404(VendorBill, id=bill_id)
+        bill = get_object_or_404(VendorBill.objects.select_for_update(), id=bill_id)
 
         amount = request.data.get("amount")
         payment_date = request.data.get("payment_date")
@@ -1245,22 +1232,13 @@ class OutgoingPaymentCreateAPIView(APIView):
         reference_no = request.data.get("reference_no", "")
 
         if not amount or not payment_date or not payment_method:
-            return Response(
-                {"error": "amount, payment_date and payment_method are required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise DRFValidationError("amount, payment_date and payment_method are required")
 
         if float(amount) <= 0:
-            return Response(
-                {"error": "Payment amount must be greater than zero"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise DRFValidationError("Payment amount must be greater than zero")
 
         if float(amount) > float(bill.balance_amount):
-            return Response(
-                {"error": "Payment exceeds bill balance"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise DRFValidationError("Payment exceeds bill balance")
 
         payment = OutgoingPayment.objects.create(
             vendor_bill=bill,
@@ -1270,6 +1248,7 @@ class OutgoingPaymentCreateAPIView(APIView):
             payment_method=payment_method,
             reference_no=reference_no
         )
+        log_audit(request.user, payment, 'PAYMENT', {"vendor_bill_id": bill.id, "amount": str(payment.amount)})
 
         return Response(
             {
@@ -1751,8 +1730,9 @@ class ExpensePaymentAPIView(APIView):
     #         status=status.HTTP_200_OK
     #     )
     
+    @transaction.atomic
     def post(self, request, pk):
-        expense = get_object_or_404(Expense, pk=pk)
+        expense = get_object_or_404(Expense.objects.select_for_update(), pk=pk)
 
         serializer = ExpensePaymentSerializer(
             data=request.data,
@@ -1760,7 +1740,8 @@ class ExpensePaymentAPIView(APIView):
         )
 
         serializer.is_valid(raise_exception=True)
-        serializer.save(expense=expense)
+        payment = serializer.save(expense=expense)
+        log_audit(request.user, payment, 'PAYMENT', {"expense_id": expense.id, "amount": str(payment.amount)})
 
         return Response(
             {

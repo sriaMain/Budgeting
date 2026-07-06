@@ -17,11 +17,11 @@ const VerificationScreen: React.FC = () => {
   const email = params.get("email") ?? "sri@gmail.com";
   const { goBack, goTo } = useAppNavigation();
 
- const [remaining, setRemaining] = useState<number>(0);
- const [isResending, setIsResending] = useState<boolean>(false);
- const [showToast, setShowToast] = useState(false);
- const [toastMessage, setToastMessage] = useState("");
- const [isNavigating, setIsNavigating] = useState(false);
+  const [remaining, setRemaining] = useState<number>(0);
+  const [isResending, setIsResending] = useState<boolean>(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const [isNavigating, setIsNavigating] = useState(false);
 
   // ----------------------------
   // 🔥 USE EFFECT FOR TIMER
@@ -85,7 +85,7 @@ const VerificationScreen: React.FC = () => {
         if (data?.reset_token) {
           localStorage.setItem("reset_token", data.reset_token);
         }
-        
+
         // Show toast and navigate after delay
         setIsNavigating(true);
         setToastMessage("OTP verified successfully!");
@@ -95,27 +95,27 @@ const VerificationScreen: React.FC = () => {
         }, 1800);
       }
     } catch (err: any) {
-  const newErrors=     parseApiErrors(err); 
-  
-    
-          setErrors(newErrors)
-  };
+      const newErrors = parseApiErrors(err);
+
+
+      setErrors(newErrors)
+    };
   }
-const handleResendOtp = async () => {
-  try {
-    const response = await axiosInstance.post("/accounts/otp-request/", {
-      email: email,
-    });
-    if (response.status === 200) {
-      console.log("OTP resent successfully");
-      return true;
+  const handleResendOtp = async () => {
+    try {
+      const response = await axiosInstance.post("/accounts/otp-request/", {
+        email: email,
+      });
+      if (response.status === 200) {
+        console.log("OTP resent successfully");
+        return true;
+      }
+    } catch (err) {
+      const errors = parseApiErrors(err);
+      setErrors(errors);
     }
-  } catch (err) {
-   const errors = parseApiErrors(err);
-    setErrors(errors);
-  }
-  return false;
-};
+    return false;
+  };
 
   // Clear general error when user edits the OTP
   useEffect(() => {
@@ -134,13 +134,13 @@ const handleResendOtp = async () => {
       const resendAt = Date.now() + 60 * 1000;
       localStorage.setItem("otp_resend_at", resendAt.toString());
       setRemaining(60);
-      
+
       // Show toast for resend success
       setToastMessage("OTP resent successfully!");
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
     } else {
-      
+
     }
   };
 
@@ -150,7 +150,7 @@ const handleResendOtp = async () => {
       {isNavigating && (
         <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto rounded-lg" />
       )}
-      
+
       {/* Header Section */}
       <h1 className="text-[2rem] font-bold text-gray-900 mb-4 tracking-tight">
         Check Your email
@@ -192,45 +192,44 @@ const handleResendOtp = async () => {
         disabled={otp.length !== 4}
         className={`
           w-[280px] py-3.5 rounded-xl font-bold text-white text-lg transition-all duration-200 transform
-          ${
-            otp.length === 4
-              ? "bg-[#1D4ED8] hover:bg-[#1E40AF] shadow-lg shadow-blue-900/20 cursor-pointer active:scale-[0.98]"
-              : "bg-[#1D4ED8] opacity-90 cursor-not-allowed" // Keeping it blue but maybe slightly different interaction as per design often staying primary
+          ${otp.length === 4
+            ? "bg-[#1D4ED8] hover:bg-[#1E40AF] shadow-lg shadow-blue-900/20 cursor-pointer active:scale-[0.98]"
+            : "bg-[#1D4ED8] opacity-90 cursor-not-allowed" // Keeping it blue but maybe slightly different interaction as per design often staying primary
           }
         `}
-        // Note: In the image, the button is solid blue.
-        // I'm assuming it stays blue but might not do anything if empty.
+      // Note: In the image, the button is solid blue.
+      // I'm assuming it stays blue but might not do anything if empty.
       >
         Confirm
       </button>
 
       {/* Resend Timer */}
-    <div className="mt-6 text-gray-400 font-medium text-[15px] flex items-center gap-1">
-  <span>Didn't get the email? </span>
+      <div className="mt-6 text-gray-400 font-medium text-[15px] flex items-center gap-1">
+        <span>Didn't get the email? </span>
 
-  <button
-    onClick={handleResend}
-    disabled={remaining > 0 || isResending}
-    className={`
+        <button
+          onClick={handleResend}
+          disabled={remaining > 0 || isResending}
+          className={`
       flex items-center gap-2
-      ${remaining === 0 && !isResending 
-        ? "text-blue-700 hover:underline cursor-pointer" 
-        : "text-gray-400 cursor-default"
-      }
+      ${remaining === 0 && !isResending
+              ? "text-blue-700 hover:underline cursor-pointer"
+              : "text-gray-400 cursor-default"
+            }
     `}
-  >
-    {isResending ? (
-      <>
-        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-        <span>Resending...</span>
-      </>
-    ) : remaining > 0 ? (
-      `Resend in ${formatTime(remaining)}`
-    ) : (
-      "Resend code"
-    )}
-  </button>
-</div>
+        >
+          {isResending ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              <span>Resending...</span>
+            </>
+          ) : remaining > 0 ? (
+            `Resend in ${formatTime(remaining)}`
+          ) : (
+            "Resend code"
+          )}
+        </button>
+      </div>
 
       {/* Back Button */}
       <button
@@ -240,7 +239,7 @@ const handleResendOtp = async () => {
         <ArrowLeft className="w-6 h-6 stroke-[3px] group-hover:-translate-x-1 transition-transform duration-200" />
         Back
       </button>
-      
+
       {/* Toast Notification */}
       {showToast && (
         <Toast

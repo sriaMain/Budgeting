@@ -329,7 +329,7 @@ export default function PipelineScreen({
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold transition-premium shadow-sm hover:shadow hover:scale-[1.02] text-sm flex-1 sm:flex-initial justify-center"
             >
               <Plus size={16} />
-              <span>New Proposal</span>
+              <span>Add Quotation</span>
             </button>
           </div>
         </div>

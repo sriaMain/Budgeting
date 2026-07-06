@@ -30,9 +30,9 @@ const ManageUsersTab: React.FC = () => {
       (u.email || "").toString().toLowerCase().includes(searchLower) ||
       (u.position || "").toString().toLowerCase().includes(searchLower)
     );
-    
+
     const matchesStatus = statusFilter === "all" ? true : (statusFilter === "active" ? u.is_active : !u.is_active);
-    
+
     let matchesModule = true;
     if (moduleFilter !== "all" && Array.isArray(modules) && modules.length > 0) {
       let currentModuleId = '';
@@ -395,7 +395,7 @@ const ManageUsersTab: React.FC = () => {
                 />
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               </div>
-              
+
               <button
                 onClick={() => { setFormData(initialFormState); setErrors({}); setView('form'); }}
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold shadow-sm transition-all whitespace-nowrap"

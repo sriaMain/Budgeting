@@ -12,3 +12,4 @@ class DashboardMetricsSerializer(serializers.Serializer):
     received = MetricSerializer()
     expenses = MetricSerializer()
     profit = MetricSerializer()
+    forecasted_profit = MetricSerializer()

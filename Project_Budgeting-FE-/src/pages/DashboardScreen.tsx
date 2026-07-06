@@ -41,6 +41,7 @@ interface DashboardMetrics {
   received: MetricData;
   expenses: MetricData;
   profit: MetricData;
+  forecasted_profit: MetricData;
 }
 
 interface ProjectBudget {
@@ -109,6 +110,10 @@ export default function DashboardScreen({ userRole, currentPage, onNavigate }: a
           profit: {
             value: parseFloat(metricsRes.data.profit?.value || '0'),
             change: metricsRes.data.profit?.change || 18
+          },
+          forecasted_profit: {
+            value: parseFloat(metricsRes.data.forecasted_profit?.value || '0'),
+            change: metricsRes.data.forecasted_profit?.change || 12
           }
         };
         setMetrics(parsedMetrics);
@@ -243,16 +248,27 @@ export default function DashboardScreen({ userRole, currentPage, onNavigate }: a
               {userRole.charAt(0).toUpperCase() + userRole.slice(1)} 👋
             </h1>
             <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
-              <span>Here's your financial overview for today. You currently have</span>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                {projectsList.length} Active Projects
-              </span>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-100">
-                {metrics ? formatCurrency(metrics.invoiced.value - metrics.received.value).replace('₹', '₹') : '₹0'} Pending Receivables
-              </span>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-50 text-slate-700 border border-slate-200">
-                6 Invoices
-              </span>
+              {userRole === 'user' ? (
+                <>
+                  <span>Here's your overview for today. You currently have</span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                    {projectsList.length} Active Projects
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>Here's your financial overview for today. You currently have</span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                    {projectsList.length} Active Projects
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-100">
+                    {metrics ? formatCurrency(metrics.invoiced.value - metrics.received.value).replace('₹', '₹') : '₹0'} Pending Receivables
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-50 text-slate-700 border border-slate-200">
+                    6 Invoices
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
@@ -271,60 +287,62 @@ export default function DashboardScreen({ userRole, currentPage, onNavigate }: a
           </div>
         </div>
 
-        {/* Financial Overview — KPI Cards (FIRST, above Quick Actions) */}
-        <div className="space-y-3">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">Financial Overview</h2>
-            <p className="text-sm text-slate-400">Monitor your organization's financial performance.</p>
+        {/* Financial Overview — KPI Cards (FIRST, above Quick Actions) - Hidden for regular user role */}
+        {userRole !== 'user' && (
+          <div className="space-y-3 animate-fadeIn">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Financial Overview</h2>
+              <p className="text-sm text-slate-400">Monitor your organization's financial performance.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+              <PremiumKpiCard
+                title="Total Budget"
+                value={metrics?.budget.value || 0}
+                change={metrics?.budget.change}
+                isLoading={loading}
+                formatter={formatCurrency}
+                icon={<Wallet className="w-5 h-5" />}
+                sparklineData={[12, 14, 15, 14, 18, 19]}
+              />
+              <PremiumKpiCard
+                title="Forecasted profit (budget)"
+                value={metrics?.forecasted_profit.value || 0}
+                change={metrics?.forecasted_profit.change}
+                isLoading={loading}
+                formatter={formatCurrency}
+                icon={<TrendingUp className="w-5 h-5" />}
+                sparklineData={[8, 11, 13, 15, 14, 16]}
+              />
+              <PremiumKpiCard
+                title="Total Received"
+                value={metrics?.received.value || 0}
+                change={metrics?.received.change}
+                isLoading={loading}
+                formatter={formatCurrency}
+                icon={<DollarSign className="w-5 h-5" />}
+                sparklineData={[5, 8, 9, 12, 11, 15]}
+              />
+              <PremiumKpiCard
+                title="Total Expenses"
+                value={metrics?.expenses.value || 0}
+                change={metrics?.expenses.change}
+                isLoading={loading}
+                formatter={formatCurrency}
+                icon={<TrendingDown className="w-5 h-5" />}
+                sparklineData={[10, 8, 12, 10, 14, 11]}
+              />
+              <PremiumKpiCard
+                title="Net Profit"
+                value={metrics?.profit.value || 0}
+                change={metrics?.profit.change}
+                isLoading={loading}
+                formatter={formatCurrency}
+                icon={<TrendingUp className="w-5 h-5" />}
+                sparklineData={[3, 5, 4, 8, 9, 13]}
+              />
+            </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            <PremiumKpiCard
-              title="Total Budget"
-              value={metrics?.budget.value || 0}
-              change={metrics?.budget.change}
-              isLoading={loading}
-              formatter={formatCurrency}
-              icon={<Wallet className="w-5 h-5" />}
-              sparklineData={[12, 14, 15, 14, 18, 19]}
-            />
-            <PremiumKpiCard
-              title="Total Invoiced"
-              value={metrics?.invoiced.value || 0}
-              change={metrics?.invoiced.change}
-              isLoading={loading}
-              formatter={formatCurrency}
-              icon={<FileText className="w-5 h-5" />}
-              sparklineData={[8, 11, 13, 15, 14, 16]}
-            />
-            <PremiumKpiCard
-              title="Total Received"
-              value={metrics?.received.value || 0}
-              change={metrics?.received.change}
-              isLoading={loading}
-              formatter={formatCurrency}
-              icon={<DollarSign className="w-5 h-5" />}
-              sparklineData={[5, 8, 9, 12, 11, 15]}
-            />
-            <PremiumKpiCard
-              title="Total Expenses"
-              value={metrics?.expenses.value || 0}
-              change={metrics?.expenses.change}
-              isLoading={loading}
-              formatter={formatCurrency}
-              icon={<TrendingDown className="w-5 h-5" />}
-              sparklineData={[10, 8, 12, 10, 14, 11]}
-            />
-            <PremiumKpiCard
-              title="Net Profit"
-              value={metrics?.profit.value || 0}
-              change={metrics?.profit.change}
-              isLoading={loading}
-              formatter={formatCurrency}
-              icon={<TrendingUp className="w-5 h-5" />}
-              sparklineData={[3, 5, 4, 8, 9, 13]}
-            />
-          </div>
-        </div>
+        )}
 
         {/* Quick Actions — BELOW KPI cards, with header, matching first screenshot */}
         <div className="space-y-3">
@@ -333,136 +351,170 @@ export default function DashboardScreen({ userRole, currentPage, onNavigate }: a
             <p className="text-sm text-slate-400">Fast access to essential modules.</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-
-            <div
-              onClick={() => navigate('/pipeline')}
-              className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md cursor-pointer transition-premium group flex items-center gap-4 px-5 py-4"
-            >
-              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
-                <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                </svg>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="font-bold text-slate-900 text-sm">View Pipeline</h4>
-                <p className="text-xs text-slate-400 truncate">Track and manage your lea...</p>
-              </div>
-              <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-premium shrink-0" />
-            </div>
-
-            <div
-              onClick={() => navigate('/projects')}
-              className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md cursor-pointer transition-premium group flex items-center gap-4 px-5 py-4"
-            >
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                <Briefcase className="w-5 h-5 text-slate-500" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="font-bold text-slate-900 text-sm">Manage Projects</h4>
-                <p className="text-xs text-slate-400 truncate">Overview of all active proje...</p>
-              </div>
-              <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-slate-600 group-hover:translate-x-0.5 transition-premium shrink-0" />
-            </div>
-
-            <div
-              onClick={() => navigate('/reports')}
-              className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md cursor-pointer transition-premium group flex items-center gap-4 px-5 py-4"
-            >
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
-                <FileText className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="font-bold text-slate-900 text-sm">Financial Reports</h4>
-                <p className="text-xs text-slate-400 truncate">Detailed analytics and state...</p>
-              </div>
-              <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-premium shrink-0" />
-            </div>
-
-            <div
-              onClick={() => navigate('/contacts')}
-              className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md cursor-pointer transition-premium group flex items-center gap-4 px-5 py-4"
-            >
-              <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center shrink-0">
-                <Users className="w-5 h-5 text-rose-500" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="font-bold text-slate-900 text-sm">Client Directory</h4>
-                <p className="text-xs text-slate-400 truncate">View and manage all conta...</p>
-              </div>
-              <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-premium shrink-0" />
-            </div>
-
-          </div>
-        </div>
-
-        {/* Charts Section — 65% Budget vs Expenses + 35% Cash Flow side by side */}
-        <div className="flex flex-col lg:flex-row gap-5">
-
-          {/* Budget vs Expenses (65%) */}
-          <div className="flex-1 lg:w-[65%] bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm space-y-3">
-            <div className="flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-slate-800 text-base">Budget vs Expenses</h3>
-                <p className="text-xs text-slate-400 font-medium">Monthly utilization breakdown</p>
-              </div>
-              {/* Legend pills */}
-              <div className="flex items-center gap-3 text-xs font-semibold text-slate-500">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block"></span> Budget
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block"></span> Expense
-                </span>
-              </div>
-            </div>
-            <div className="h-[260px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 500 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 500 }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
-                  <Tooltip content={<CustomBarTooltip />} cursor={{ fill: '#f8fafc' }} />
-                  <Bar dataKey="Budget" fill="#4f46e5" radius={[4, 4, 0, 0]} maxBarSize={26} />
-                  <Bar dataKey="Expense" fill="#e2e8f0" radius={[4, 4, 0, 0]} maxBarSize={26} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Cash Flow (35%) */}
-          <div className="w-full lg:w-[35%] bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm space-y-3">
-            <div>
-              <h3 className="font-bold text-slate-800 text-base">Cash Flow</h3>
-              <p className="text-xs text-slate-400 font-medium">Weekly running balance</p>
-            </div>
-            <div className="h-[260px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={[
-                    { week: 'W1', Inflow: chartData[0]?.Inflow || 0 },
-                    { week: 'W2', Inflow: chartData[1]?.Inflow || 0 },
-                    { week: 'W3', Inflow: chartData[2]?.Inflow || 0 },
-                    { week: 'W4', Inflow: chartData[3]?.Inflow || 0 },
-                    { week: 'W5', Inflow: chartData[4]?.Inflow || 0 },
-                    { week: 'W6', Inflow: chartData[5]?.Inflow || 0 },
-                  ]}
-                  margin={{ top: 10, right: 10, left: -15, bottom: 0 }}
+            {userRole === 'user' ? (
+              <>
+                <div
+                  onClick={() => navigate('/projects')}
+                  className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md cursor-pointer transition-premium group flex items-center gap-4 px-5 py-4"
                 >
-                  <defs>
-                    <linearGradient id="cashFlowGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="week" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 500 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 500 }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
-                  <Tooltip content={<CustomAreaTooltip />} />
-                  <Area type="monotone" dataKey="Inflow" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#cashFlowGradient)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                    <Briefcase className="w-5 h-5 text-slate-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-slate-900 text-sm">View Projects</h4>
+                    <p className="text-xs text-slate-400 truncate">Overview of active projects...</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-slate-600 group-hover:translate-x-0.5 transition-premium shrink-0" />
+                </div>
 
+                <div
+                  onClick={() => navigate('/task-management')}
+                  className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md cursor-pointer transition-premium group flex items-center gap-4 px-5 py-4"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
+                    <CheckCircle className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-slate-900 text-sm">My Tasks</h4>
+                    <p className="text-xs text-slate-400 truncate">Track and manage assigned tasks...</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-premium shrink-0" />
+                </div>
+              </>
+            ) : (
+              <>
+                <div
+                  onClick={() => navigate('/pipeline')}
+                  className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md cursor-pointer transition-premium group flex items-center gap-4 px-5 py-4"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-slate-900 text-sm">View Pipeline</h4>
+                    <p className="text-xs text-slate-400 truncate">Track and manage your lea...</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-premium shrink-0" />
+                </div>
+
+                <div
+                  onClick={() => navigate('/projects')}
+                  className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md cursor-pointer transition-premium group flex items-center gap-4 px-5 py-4"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                    <Briefcase className="w-5 h-5 text-slate-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-slate-900 text-sm">Manage Projects</h4>
+                    <p className="text-xs text-slate-400 truncate">Overview of all active proje...</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-slate-600 group-hover:translate-x-0.5 transition-premium shrink-0" />
+                </div>
+
+                <div
+                  onClick={() => navigate('/reports')}
+                  className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md cursor-pointer transition-premium group flex items-center gap-4 px-5 py-4"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+                    <FileText className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-slate-900 text-sm">Financial Reports</h4>
+                    <p className="text-xs text-slate-400 truncate">Detailed analytics and state...</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-premium shrink-0" />
+                </div>
+
+                <div
+                  onClick={() => navigate('/contacts')}
+                  className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md cursor-pointer transition-premium group flex items-center gap-4 px-5 py-4"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center shrink-0">
+                    <Users className="w-5 h-5 text-rose-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-slate-900 text-sm">Client Directory</h4>
+                    <p className="text-xs text-slate-400 truncate">View and manage all conta...</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-premium shrink-0" />
+                </div>
+              </>
+            )}
+          </div>
         </div>
+
+        {/* Charts Section — 65% Budget vs Expenses + 35% Cash Flow side by side - Hidden for regular user role */}
+        {userRole !== 'user' && (
+          <div className="flex flex-col lg:flex-row gap-5 animate-fadeIn">
+
+            {/* Budget vs Expenses (65%) */}
+            <div className="flex-1 lg:w-[65%] bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm space-y-3">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-slate-800 text-base">Budget vs Expenses</h3>
+                  <p className="text-xs text-slate-400 font-medium">Monthly utilization breakdown</p>
+                </div>
+                {/* Legend pills */}
+                <div className="flex items-center gap-3 text-xs font-semibold text-slate-500">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block"></span> Budget
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block"></span> Expense
+                  </span>
+                </div>
+              </div>
+              <div className="h-[260px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 500 }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 500 }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
+                    <Tooltip content={<CustomBarTooltip />} cursor={{ fill: '#f8fafc' }} />
+                    <Bar dataKey="Budget" fill="#4f46e5" radius={[4, 4, 0, 0]} maxBarSize={26} />
+                    <Bar dataKey="Expense" fill="#e2e8f0" radius={[4, 4, 0, 0]} maxBarSize={26} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Cash Flow (35%) */}
+            <div className="w-full lg:w-[35%] bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm space-y-3">
+              <div>
+                <h3 className="font-bold text-slate-800 text-base">Cash Flow</h3>
+                <p className="text-xs text-slate-400 font-medium">Weekly running balance</p>
+              </div>
+              <div className="h-[260px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={[
+                      { week: 'W1', Inflow: chartData[0]?.Inflow || 0 },
+                      { week: 'W2', Inflow: chartData[1]?.Inflow || 0 },
+                      { week: 'W3', Inflow: chartData[2]?.Inflow || 0 },
+                      { week: 'W4', Inflow: chartData[3]?.Inflow || 0 },
+                      { week: 'W5', Inflow: chartData[4]?.Inflow || 0 },
+                      { week: 'W6', Inflow: chartData[5]?.Inflow || 0 },
+                    ]}
+                    margin={{ top: 10, right: 10, left: -15, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="cashFlowGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="week" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 500 }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 500 }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
+                    <Tooltip content={<CustomAreaTooltip />} />
+                    <Area type="monotone" dataKey="Inflow" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#cashFlowGradient)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+          </div>
+        )}
 
         {/* Project Status — 4 horizontal cards matching second screenshot */}
         <div className="space-y-3">

@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db.models import Sum
 from decimal import Decimal
 from core.app_constants import CURRENCY_CHOICES
+from django.core.validators import MinValueValidator
 # Create your models here.
 class ProductGroup(models.Model):
     product_group_name = models.CharField(max_length=100, unique=True)
@@ -79,14 +80,14 @@ class Quote(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='authored_quotes', null=True)
     
     # Summary fields can be calculated or stored
-    sub_total = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
-    tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
-    total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
-    total_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
-    in_house_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
-    outsourced_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
-    invoiced_sum = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
-    to_be_invoiced_sum = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
+    sub_total = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
+    tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
+    total_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
+    in_house_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
+    outsourced_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
+    invoiced_sum = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
+    to_be_invoiced_sum = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal('0.00'))])
     currency = models.CharField(
     max_length=3,
     choices=CURRENCY_CHOICES,
@@ -106,6 +107,22 @@ class Quote(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='created_quotes', null=True)
     modified_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='updated_quotes', null=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(sub_total__gte=0),
+                name='quote_sub_total_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(total_amount__gte=0),
+                name='quote_total_amount_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(total_cost__gte=0),
+                name='quote_total_cost_non_negative'
+            ),
+        ]
 
     def __str__(self):
         return f"Quote {self.quote_no} - {self.quote_name}"
@@ -151,15 +168,33 @@ class QuoteItem(models.Model):
     
     quantity = models.PositiveIntegerField()
     unit = models.CharField(max_length=10, choices=UNIT_CHOICES, default='pieces')
-    price_per_unit = models.DecimalField(max_digits=10, decimal_places=2)
-    cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    price_per_unit = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+    cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal('0.00'))])
     
     # This can be calculated automatically on save
     amount = models.DecimalField(
         max_digits=15,
         decimal_places=2,
-        editable=False
+        editable=False,
+        validators=[MinValueValidator(Decimal('0.00'))]
     )
+
+    class Meta:
+        unique_together = ('quote', 'product_service')
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(price_per_unit__gte=0),
+                name='quoteitem_price_per_unit_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cost__gte=0),
+                name='quoteitem_cost_non_negative'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(amount__gte=0),
+                name='quoteitem_amount_non_negative'
+            ),
+        ]
 
     # ✅ EXECUTION DECISION (MOST IMPORTANT)
     is_outsourced = models.BooleanField(
@@ -171,10 +206,6 @@ class QuoteItem(models.Model):
     bill_number = models.CharField(max_length=50, blank=True, null=True)
     
 
-    def save(self, *args, **kwargs):
-        self.full_clean()  # 🔒 enforce validation
-        self.amount = self.quantity * self.price_per_unit
-        super().save(*args, **kwargs)
     def __str__(self):
         return f"Item for Quote {self.quote.quote_no}: {self.product_service.product_service_name}"
     

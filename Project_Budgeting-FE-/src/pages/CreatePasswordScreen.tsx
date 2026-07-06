@@ -46,7 +46,7 @@ const CreatePasswordScreen: React.FC = () => {
     // Clear errors and start loading
     setErrors({});
     setIsLoading(true);
-    const reset_token = localStorage.getItem("reset_token") || "";  
+    const reset_token = localStorage.getItem("reset_token") || "";
 
     try {
       // Simulate API call
@@ -58,7 +58,7 @@ const CreatePasswordScreen: React.FC = () => {
       if (response.status === 200) {
         setIsLoading(false);
         localStorage.removeItem("reset_token");
-        
+
         // Show toast and navigate after delay
         setIsNavigating(true);
         setShowToast(true);
@@ -77,7 +77,7 @@ const CreatePasswordScreen: React.FC = () => {
       {isNavigating && (
         <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-50 pointer-events-auto" />
       )}
-      
+
       {/* Left Side - Illustration (Hidden on Mobile) */}
       <div className="hidden lg:flex lg:w-1/2 bg-indigo-50 relative items-center justify-center p-12 overflow-hidden">
         {/* Abstract Background Shapes */}
@@ -174,7 +174,7 @@ const CreatePasswordScreen: React.FC = () => {
           </form>
         </div>
       </div>
-      
+
       {/* Toast Notification */}
       {showToast && (
         <Toast

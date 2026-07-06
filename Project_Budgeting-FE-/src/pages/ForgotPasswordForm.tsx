@@ -9,6 +9,32 @@ import type { FormErrors } from "../types";
 import { parseApiErrors } from "../utils/parseApiErrors";
 import { Toast } from "../components/Toast";
 
+const emailDomains: { [key: string]: string } = {
+  "gamil.com": "gmail.com",
+  "gmal.com": "gmail.com",
+  "gmaill.com": "gmail.com",
+  "gmail.co": "gmail.com",
+  "gmial.com": "gmail.com",
+  "yaho.com": "yahoo.com",
+  "yhoo.com": "yahoo.com",
+  "hotamil.com": "hotmail.com",
+  "hotmial.com": "hotmail.com",
+  "outlok.com": "outlook.com",
+  "msm.com": "msn.com"
+};
+
+const getEmailSuggestion = (val: string): string | null => {
+  if (!val || !val.includes("@")) return null;
+  const parts = val.split("@");
+  if (parts.length !== 2) return null;
+  const [local, domain] = parts;
+  const correctedDomain = emailDomains[domain.toLowerCase().trim()];
+  if (correctedDomain) {
+    return `${local}@${correctedDomain}`;
+  }
+  return null;
+};
+
 export const ForgotPasswordForm: React.FC = () => {
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -69,13 +95,13 @@ export const ForgotPasswordForm: React.FC = () => {
         }, 1800);
       }
     } catch (err: any) {
-          const newErrors = parseApiErrors(err);
-    
-          // set the general error string into the string state
-          setError(
-            newErrors.general ??
-              (err instanceof Error ? err.message : "An unexpected error occurred")
-          );
+      const newErrors = parseApiErrors(err);
+
+      // set the general error string into the string state
+      setError(
+        newErrors.general ??
+        (err instanceof Error ? err.message : "An unexpected error occurred")
+      );
     } finally {
       setIsLoading(false);
     }
@@ -108,7 +134,7 @@ export const ForgotPasswordForm: React.FC = () => {
       {isNavigating && (
         <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto" />
       )}
-      
+
       {/* Image Side */}
       <div
         className="hidden md:block w-full md:w-1/2 bg-cover bg-center relative"
@@ -142,6 +168,23 @@ export const ForgotPasswordForm: React.FC = () => {
               className="bg-gray-50"
             />
 
+            {(() => {
+              const suggestion = getEmailSuggestion(email);
+              if (!suggestion) return null;
+              return (
+                <div className="-mt-3 mb-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg border border-blue-100 flex items-center justify-between animate-fadeIn">
+                  <span>Did you mean <strong className="font-semibold text-blue-800">{suggestion}</strong>?</span>
+                  <button
+                    type="button"
+                    onClick={() => setEmail(suggestion)}
+                    className="text-xs font-bold text-blue-700 hover:text-blue-900 underline focus:outline-none cursor-pointer"
+                  >
+                    Correct it
+                  </button>
+                </div>
+              );
+            })()}
+
             <Button type="submit" isLoading={isLoading}>
               Send
             </Button>
@@ -159,7 +202,7 @@ export const ForgotPasswordForm: React.FC = () => {
           </form>
         </div>
       </div>
-      
+
       {/* Toast Notification */}
       {showToast && (
         <Toast

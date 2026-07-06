@@ -20,6 +20,7 @@ from django.shortcuts import get_object_or_404
 from .models import Vendor
 # import logging
 from .serializers import UserCreateSerializer, UserListSerializer, UserDetailSerializer,VendorSerializer
+from roles.permission import HasPermissionCode
 import logging
 logger = logging.getLogger(__name__)
 # from myproject.exceptions import format_validation_errors
@@ -136,7 +137,7 @@ class LogoutView(APIView):
 
 
 class RefreshTokenCookieView(APIView):
-    # authentication_classes = []
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -221,8 +222,8 @@ class UserCreateView(APIView):
     API endpoint for creating new users with profile pictures.
     """
     parser_classes = [JSONParser, MultiPartParser, FormParser]
-    # parser_classes = [MultiPartParser, FormParser]
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_code = "user.create"
 
     def post(self, request):  # FIXED: Added 'd' to 'def'
         serializer = UserCreateSerializer(data=request.data)
@@ -270,7 +271,8 @@ class UserCreateView(APIView):
             )
 class UserListView(APIView):
     CACHE_TIMEOUT = 120 
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_code = "user.view"
 
     def get(self, request):
         try:
@@ -314,7 +316,12 @@ class UserListView(APIView):
                 status=500,
             )
 class UserDetailVieW(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_map = {
+        "GET": "user.view",
+        "PUT": "user.update",
+        "DELETE": "user.delete"
+    }
 
     def get(self, request, id):
 

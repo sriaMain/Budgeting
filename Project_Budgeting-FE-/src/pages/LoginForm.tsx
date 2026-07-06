@@ -11,12 +11,38 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useDispatch } from "react-redux";
 import { parseApiErrors } from "../utils/parseApiErrors";
 
+const emailDomains: { [key: string]: string } = {
+  "gamil.com": "gmail.com",
+  "gmal.com": "gmail.com",
+  "gmaill.com": "gmail.com",
+  "gmail.co": "gmail.com",
+  "gmial.com": "gmail.com",
+  "yaho.com": "yahoo.com",
+  "yhoo.com": "yahoo.com",
+  "hotamil.com": "hotmail.com",
+  "hotmial.com": "hotmail.com",
+  "outlok.com": "outlook.com",
+  "msm.com": "msn.com"
+};
+
+const getEmailSuggestion = (val: string): string | null => {
+  if (!val || !val.includes("@")) return null;
+  const parts = val.split("@");
+  if (parts.length !== 2) return null;
+  const [local, domain] = parts;
+  const correctedDomain = emailDomains[domain.toLowerCase().trim()];
+  if (correctedDomain) {
+    return `${local}@${correctedDomain}`;
+  }
+  return null;
+};
+
 
 export const LoginForm: React.FC = () => {
   const [formData, setFormData] = useState<LoginFormData>({
     emailOrUsername: "",
     password: "",
-   captchaInput: "",
+    captchaInput: "",
   });
 
   const [errors, setErrors] = useState<FormErrors>({});
@@ -87,7 +113,7 @@ export const LoginForm: React.FC = () => {
       if (response.status === 200) {
         // Map roles array to userRole
         const backendRole = response.data.user.roles[0] || 'user';
-        
+
         // Map backend roles to frontend roles
         let userRole: 'admin' | 'user' | 'manager' = 'user';
         if (backendRole.toLowerCase() === 'admin') {
@@ -97,22 +123,22 @@ export const LoginForm: React.FC = () => {
         } else {
           userRole = 'user';
         }
-        
-        dispatch({ 
-          type: "auth/loginSuccess", 
+
+        dispatch({
+          type: "auth/loginSuccess",
           payload: {
-            isAuthenticated: true, 
-            userRole: userRole, 
+            isAuthenticated: true,
+            userRole: userRole,
             accessToken: response.data.access_token,
             username: response.data.user.username,
             email: response.data.user.email,
-          }, 
+          },
         });
-        
+
         // Navigate immediately
         goTo("/dashboard");
       }
-    }  catch (err) {
+    } catch (err) {
       const newErrors = parseApiErrors(err);
 
       setErrors(newErrors);
@@ -126,7 +152,7 @@ export const LoginForm: React.FC = () => {
 
   return (
     <div className="w-full max-w-[480px] min-h-[600px] mx-auto bg-white relative">
-      
+
       {/* Header */}
       <div className="mb-12 text-center">
         <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
@@ -167,6 +193,23 @@ export const LoginForm: React.FC = () => {
           autoComplete="username"
         />
 
+        {(() => {
+          const suggestion = getEmailSuggestion(formData.emailOrUsername);
+          if (!suggestion) return null;
+          return (
+            <div className="mt-1 mb-3 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg border border-blue-100 flex items-center justify-between animate-fadeIn">
+              <span>Did you mean <strong className="font-semibold text-blue-800">{suggestion}</strong>?</span>
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, emailOrUsername: suggestion }))}
+                className="text-xs font-bold text-blue-700 hover:text-blue-900 underline focus:outline-none cursor-pointer"
+              >
+                Correct it
+              </button>
+            </div>
+          );
+        })()}
+
         <div className="relative">
           <InputField
             label="Password"
@@ -190,7 +233,7 @@ export const LoginForm: React.FC = () => {
           </Button>
 
           <div className="flex items-center justify-end">
-        
+
             <Link
               to="/forgot-password"
               className="text-sm font-medium text-blue-500 hover:text-brand-800 hover:underline transition-colors"
@@ -201,7 +244,7 @@ export const LoginForm: React.FC = () => {
           </div>
         </div>
       </form>
-      
+
 
     </div>
   );
