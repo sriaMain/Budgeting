@@ -42,6 +42,7 @@ class Product_Services(models.Model):
     product_service_name = models.CharField(max_length=100, unique=True)
     product_group = models.ForeignKey(ProductGroup, on_delete=models.SET_NULL, related_name='products_services', null=True)
     description = models.TextField(blank=True)
+    technologies = models.TextField(blank=True, null=True, help_text="Comma-separated list of technologies")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(

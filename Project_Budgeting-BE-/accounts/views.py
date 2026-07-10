@@ -271,11 +271,20 @@ class UserCreateView(APIView):
             )
 class UserListView(APIView):
     CACHE_TIMEOUT = 120 
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     permission_code = "user.view"
 
     def get(self, request):
         try:
+            # Check permission manually
+            has_perm = request.user.is_superuser or request.user.has_role_permission(self.permission_code)
+            
+            if not has_perm:
+                # Regular users can only see themselves
+                qs = User.objects.filter(id=request.user.id).prefetch_related("roles")
+                serializer = UserListSerializer(qs, many=True)
+                return Response(serializer.data, status=200)
+
             # if not request.user.has_role_permission(self.permission_code):
             #     return Response({"error": "Permission denied"}, status=403)
 
@@ -315,8 +324,17 @@ class UserListView(APIView):
                 {"error": "Internal server error", "details": str(e)},
                 status=500,
             )
+
+class IsSelfOrHasPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        requested_id = view.kwargs.get('id')
+        if requested_id and request.user.is_authenticated and request.user.id == int(requested_id):
+            if request.method in ["GET", "PUT", "PATCH"]:
+                return True
+        return HasPermissionCode().has_permission(request, view)
+
 class UserDetailVieW(APIView):
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated, IsSelfOrHasPermission]
     permission_map = {
         "GET": "user.view",
         "PUT": "user.update",

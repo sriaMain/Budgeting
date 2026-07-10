@@ -24,6 +24,8 @@ import PurchaseOrderDetailsPage from "./pages/PurchaseOrderDetailsPage";
 import BillDetailsPage from "./pages/BillDetailsPage";
 import ExpenseDetailsPage from "./pages/ExpenseDetailsPage";
 import ReportsPage from "./pages/ReportsPage";
+import NotificationsScreen from "./pages/NotificationsScreen";
+import TaskDeepLinkHandler from "./pages/TaskDeepLinkHandler";
 import { initializeAuth } from "./auth/authThunk";
 import { useAppSelector } from "./hooks/useAppSelector";
 import { useAppDispatch } from "./hooks/useAppDispatch";
@@ -69,6 +71,9 @@ const App: React.FC = () => {
           } />
 
 
+          {/* Deep-link handler – public route, no auth wrapper */}
+          <Route path="/task-access" element={<TaskDeepLinkHandler />} />
+
           {/* Protect Dashboard */}
           <Route
             path="/dashboard"
@@ -99,7 +104,9 @@ const App: React.FC = () => {
           <Route path="/contacts" element={
             <ProtectedRoute>
               <ContactsScreen
-
+                userRole={userRole}
+                currentPage={currentPage}
+                onNavigate={handleNavigate}
               />
             </ProtectedRoute>
           } />
@@ -318,6 +325,20 @@ const App: React.FC = () => {
               <CreatePasswordScreen />
             </main>
           } />
+
+          {/* Notifications Center */}
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute>
+                <NotificationsScreen
+                  userRole={userRole}
+                  currentPage={currentPage}
+                  onNavigate={handleNavigate}
+                />
+              </ProtectedRoute>
+            }
+          />
 
 
         </Routes >

@@ -9,6 +9,7 @@ import { AddVendorPage } from "../pages/AddVendorPage";
 import { VendorDetailsPage } from "../pages/VendorDetailsPage";
 import { Layout } from "../components/Layout";
 import axiosInstance from "../utils/axiosInstance";
+import { useLocation } from "react-router-dom";
 
 export interface Vendor {
   id: number;
@@ -20,12 +21,22 @@ export interface Vendor {
   updated_at?: string;
 }
 
-export default function ContactsScreen() {
+export default function ContactsScreen({ userRole = 'admin', currentPage, onNavigate }: { userRole?: string; currentPage?: string; onNavigate?: (page: string) => void }) {
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState<'clients' | 'vendors'>('clients');
   const [currentView, setCurrentView] = useState<'list' | 'add' | 'details' | 'edit'>('list');
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<number | null>(null);
   const accessToken = useAppSelector((state) => state.auth.accessToken);
+
+  useEffect(() => {
+    if (location.state && (location.state as any).clientId) {
+      const cId = (location.state as any).clientId;
+      setSelectedClientId(Number(cId));
+      setActiveTab('clients');
+      setCurrentView('details');
+    }
+  }, [location.state]);
 
   // Application State - Clients
   const [clients, setClients] = useState<Client[]>([]);
@@ -62,7 +73,6 @@ export default function ContactsScreen() {
         });
         setPocs(allPocs);
       }
-      console.log("Fetched clients:", response.data);
     } catch (error) {
       console.error("Failed to fetch clients:", error);
     }
@@ -74,7 +84,6 @@ export default function ContactsScreen() {
       if (response.status === 200) {
         setVendors(response.data);
       }
-      console.log("Fetched vendors:", response.data);
     } catch (error) {
       console.error("Failed to fetch vendors:", error);
     }
@@ -142,7 +151,7 @@ export default function ContactsScreen() {
   const getVendorById = (id: number) => vendors.find(v => v.id === id);
 
   return (
-    <Layout userRole="admin" currentPage="contacts" onNavigate={() => { }}>
+    <Layout userRole={userRole as any} currentPage="contacts" onNavigate={onNavigate || (() => { })}>
       <div className="bg-gray-50 font-sans min-h-screen">
         <div className="max-w-[1600px] mx-auto px-6 py-6">
           {/* Tabs */}

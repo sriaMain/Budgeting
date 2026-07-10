@@ -1,11 +1,11 @@
 
 
-
 from django.urls import path, include
 from .views import (ProjectAPIView, ProjectBudgetAPIView, StopTaskTimerAPIView, TaskAPIView, TaskTimerStateAPIView,
  TimesheetAPIView, TimesheetEntryAPIView, SubmitTimesheetAPIView, StartTaskTimerAPIView,
   PauseTaskTimerAPIView, PendingExtraHoursAPIView, ReviewExtraHoursAPIView, RequestExtraHoursAPIView, ExtraHoursHistoryAPIView,
-  TaskStatusChoicesView, ServiceUsersAPIView, TaskGroupedByStatusAPIView, TimesheetWeeklySummaryAPIView, TimesheetEmployeeAPIView, ProjectStatusChoicesView, ProjectNamesAPIView)
+  TaskStatusChoicesView, ServiceUsersAPIView, TaskGroupedByStatusAPIView, TimesheetWeeklySummaryAPIView, TimesheetEmployeeAPIView, ProjectStatusChoicesView, ProjectNamesAPIView, ProjectRoleAPIView,
+  TaskAssignAPIView, TaskDeepLinkView)
 
 
 urlpatterns = [
@@ -15,6 +15,8 @@ urlpatterns = [
     path('budgets/<int:project_no>/', ProjectBudgetAPIView.as_view(), name='project-budget-detail-by-id'),
     path('budgets/', ProjectBudgetAPIView.as_view(), name='project-budget-list-create'),
     path('projects/<int:project_id>/budget/', ProjectBudgetAPIView.as_view()),
+    path('projects/<int:project_id>/roles/', ProjectRoleAPIView.as_view(), name='project-roles'),
+    path('projects/<int:project_id>/roles/<int:role_assignment_id>/', ProjectRoleAPIView.as_view(), name='project-roles-detail'),
     path('tasks/<int:project_id>/tasks/', TaskAPIView.as_view(), name='project-tasks-list'),  #project related tasks
     path('tasks/', TaskAPIView.as_view(), name='task-list-create'),
     path('services/users/', ServiceUsersAPIView.as_view(), name='service-users-list'),
@@ -41,6 +43,10 @@ urlpatterns = [
     path("tasks/<int:task_id>/timer/stop/", StopTaskTimerAPIView.as_view(), name="task-timer-stop"),
     path('timesheet/weekly-summary/', TimesheetWeeklySummaryAPIView.as_view(), name='timesheet-weekly-summary'),
     path('timesheet/employee/<int:user_id>/', TimesheetEmployeeAPIView.as_view(), name='timesheet-employee'),
-    
 
+    # ── Task Assignment (explicit endpoint) ──────────────────────────────────
+    path('tasks/<int:task_id>/assign/', TaskAssignAPIView.as_view(), name='task-assign'),
+
+    # ── Deep-Link Validation (public, validates signed token) ─────────────────
+    path('task-access/', TaskDeepLinkView.as_view(), name='task-deep-link'),
 ]

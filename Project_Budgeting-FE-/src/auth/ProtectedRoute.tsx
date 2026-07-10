@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAppSelector } from "../hooks/useAppSelector";
 import { useAppDispatch } from "../hooks/useAppDispatch";
 import { useEffect, useState } from "react";
@@ -15,6 +15,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 }) => {
   const dispatch = useAppDispatch();
   const auth = useAppSelector((state) => state.auth);
+  const location = useLocation();
 
   const [checking, setChecking] = useState(true);
 
@@ -53,9 +54,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  // Not authenticated after cookie check → redirect to login
+  // Not authenticated after cookie check → redirect to login, preserving intended destination
   if (!auth.isAuthenticated) {
-    return <Navigate to="/" replace />;
+    const nextPath = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/?next=${nextPath}`} replace />;
   }
 
   // Role check

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { PremiumKpiCard } from '../components/PremiumKpiCard';
 import axiosInstance from '../utils/axiosInstance';
+import { useAppSelector } from '../hooks/useAppSelector';
+
 import {
   Plus,
   FileText,
@@ -68,6 +70,7 @@ export default function DashboardScreen({ userRole, currentPage, onNavigate }: a
   const [projectsList, setProjectsList] = useState<ProjectDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const username = useAppSelector((state: any) => state.auth.username);
 
   // Clock tick
   useEffect(() => {
@@ -193,9 +196,9 @@ export default function DashboardScreen({ userRole, currentPage, onNavigate }: a
 
   // Generate trend data based on fetched metrics for realistic presentation
   const generateTrendData = () => {
-    const receivedVal = metrics?.received.value || 1200000;
-    const expensesVal = metrics?.expenses.value || 450000;
-    const budgetVal = metrics?.budget.value || 2500000;
+    const receivedVal = metrics?.received.value ?? 1200000;
+    const expensesVal = metrics?.expenses.value ?? 450000;
+    const budgetVal = metrics?.budget.value ?? 2500000;
 
     // Distribute received & expenses over the last 6 months
     return [
@@ -245,7 +248,7 @@ export default function DashboardScreen({ userRole, currentPage, onNavigate }: a
           <div className="space-y-2">
             <h1 className="text-2xl font-bold text-slate-900">
               Good {currentTime.getHours() < 12 ? 'Morning' : currentTime.getHours() < 17 ? 'Afternoon' : 'Evening'},{' '}
-              {userRole.charAt(0).toUpperCase() + userRole.slice(1)} 👋
+              {username ? username.charAt(0).toUpperCase() + username.slice(1) : userRole.charAt(0).toUpperCase() + userRole.slice(1)} 👋
             </h1>
             <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
               {userRole === 'user' ? (
@@ -305,7 +308,7 @@ export default function DashboardScreen({ userRole, currentPage, onNavigate }: a
                 sparklineData={[12, 14, 15, 14, 18, 19]}
               />
               <PremiumKpiCard
-                title="Forecasted profit (budget)"
+                title="Forecasted profit"
                 value={metrics?.forecasted_profit.value || 0}
                 change={metrics?.forecasted_profit.change}
                 isLoading={loading}

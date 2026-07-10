@@ -8,12 +8,13 @@ interface PipelineStageProps {
   onQuoteClick?: (quote: Quote) => void;
 }
 
-const STAGE_COLORS = {
-  oppurtunity: 'bg-gray-50 border-gray-200',
+const STAGE_COLORS: Record<string, string> = {
+  opportunity: 'bg-gray-50 border-gray-200',
   scoping: 'bg-blue-50 border-blue-200',
   proposal: 'bg-yellow-50 border-yellow-200',
   confirmed: 'bg-green-50 border-green-200'
 };
+
 
 export const PipelineStage: React.FC<PipelineStageProps> = ({ stage, onQuoteClick }) => {
   const colorClass = STAGE_COLORS[stage.stage] || 'bg-gray-50 border-gray-200';

@@ -338,6 +338,14 @@ export function AddTaskModal({
             newErrors.title = 'Task title must be at least 3 characters';
         }
 
+        if (!formData.project || formData.project === 0) {
+            newErrors.project = 'Project is required';
+        }
+
+        if (!formData.status) {
+            newErrors.status = 'Status is required';
+        }
+
         // Validate HH:MM format for allocated hours
         const timePattern = /^([0-9]{1,2}):([0-5][0-9])$/;
         if (!formData.allocated_hours) {
@@ -346,8 +354,8 @@ export function AddTaskModal({
             newErrors.allocated_hours = 'Please enter time in HH:MM format (e.g., 05:30)';
         } else {
             const decimalHours = hhmmToDecimal(formData.allocated_hours);
-            if (decimalHours <= 0) {
-                newErrors.allocated_hours = 'Allocated hours must be greater than 00:00';
+            if (decimalHours < 10 / 60) {
+                newErrors.allocated_hours = 'Allocated hours must be at least 10 minutes (00:10)';
             }
         }
 
@@ -539,7 +547,7 @@ export function AddTaskModal({
                             {/* Project - Prefilled (read-only) or Searchable Dropdown */}
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-700">
-                                    Project
+                                    <span className="text-red-500 mr-1">*</span>Project
                                 </label>
                                 {isProjectReadOnly ? (
                                     <div className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 font-medium">
@@ -582,10 +590,10 @@ export function AddTaskModal({
                                 )}
                             </div>
 
-                            {/* Status (Optional) */}
+                            {/* Status */}
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-700">
-                                    Status
+                                    <span className="text-red-500 mr-1">*</span>Status
                                 </label>
                                 <div className="relative">
                                     <select

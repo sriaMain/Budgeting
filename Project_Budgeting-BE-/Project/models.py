@@ -131,9 +131,16 @@ class Task(models.Model):
         ('completed', 'Completed'),
         ('needs_attention', 'Needs Attention'),
     ]
+    PRIORITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    ]
 
     project = models.ForeignKey(Project, on_delete=models.SET_NULL, null=True, related_name='tasks')
     title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium')
     assigned_to = models.ForeignKey(
         "accounts.Account",
         on_delete=models.SET_NULL,
@@ -312,3 +319,73 @@ class TaskExtraHoursRequest(models.Model):
 
     def __str__(self):
         return f"{self.task.title} | +{self.requested_hours} hrs"
+
+
+class ProjectRole(models.Model):
+    """
+    Links a user to a specific project with a specific role.
+    """
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='project_roles')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='project_roles')
+    role = models.ForeignKey('roles.Role', on_delete=models.CASCADE, related_name='project_roles')
+    
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='assigned_project_roles'
+    )
+
+    class Meta:
+        unique_together = ('project', 'user', 'role')
+
+    def __str__(self):
+        return f"{self.user} - {self.role} in {self.project}"
+
+
+class TaskAssignmentAuditLog(models.Model):
+    """
+    Immutable audit record every time a task is assigned or re-assigned.
+    Records who did the action, who was the previous and new assignee, and when.
+    """
+    task = models.ForeignKey(
+        Task,
+        on_delete=models.CASCADE,
+        related_name='assignment_audit_logs'
+    )
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='task_assignments_made'
+    )
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='task_assignments_received'
+    )
+    previous_assignee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='task_previous_assignments'
+    )
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    reassigned_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-assigned_at']
+
+    def __str__(self):
+        return (
+            f"Task '{self.task.title}' assigned to "
+            f"{self.assigned_to} by {self.assigned_by} at {self.assigned_at}"
+        )
+

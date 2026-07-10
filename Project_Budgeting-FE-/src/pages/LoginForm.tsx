@@ -4,7 +4,7 @@ import { Button } from "../components/Button";
 
 import { EyeIcon, EyeOffIcon } from "../components/Icons";
 import type { LoginFormData, FormErrors } from "../types";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import axiosInstance from "../utils/axiosInstance";
 import { useAppNavigation } from "../hooks/useAppNavigation";
@@ -51,6 +51,7 @@ export const LoginForm: React.FC = () => {
 
   const { goTo } = useAppNavigation();
   const dispatch = useDispatch();
+  const [searchParams] = useSearchParams();
 
 
 
@@ -135,8 +136,9 @@ export const LoginForm: React.FC = () => {
           },
         });
 
-        // Navigate immediately
-        goTo("/dashboard");
+        // Navigate to deep-link destination (if any) or default dashboard
+        const nextPath = searchParams.get("next");
+        goTo(nextPath ? decodeURIComponent(nextPath) : "/dashboard");
       }
     } catch (err) {
       const newErrors = parseApiErrors(err);

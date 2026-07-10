@@ -160,28 +160,14 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             const response = await axiosInstance.post('/projects/', payload);
 
             if (response.status === 201 || response.status === 200) {
-                console.log('Project created successfully:', response.data);
                 toast.success('Project created successfully');
 
-                // Extract project ID from the actual response structure
-                let newProjectId;
-
-                // The backend returns: { Projects: [{ company_name: "...", project_details: [...] }] }
-                if (response.data.Projects && response.data.Projects.length > 0) {
-                    const projectDetails = response.data.Projects[0].project_details;
-                    if (projectDetails && projectDetails.length > 0) {
-                        // Get the last project (the newly created one)
-                        newProjectId = projectDetails[projectDetails.length - 1].project_no;
-                    }
-                }
-
-                console.log('Extracted project ID:', newProjectId);
+                // Extract project ID from the actual backend response structure
+                // Backend POST /projects/ returns: { "message": "...", "project": { project_no, ... } }
+                const newProjectId = response.data.project?.project_no;
 
                 if (newProjectId) {
-                    console.log('Navigating to project:', newProjectId);
                     navigate(`/projects/${newProjectId}`);
-                } else {
-                    console.warn('No project ID found in response data:', response.data);
                 }
 
                 onClose();
@@ -208,7 +194,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
         <>
             {/* Backdrop */}
             <div
-                className="fixed inset-0 br-10 bg-opacity-50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
                 onClick={handleBackdropClick}
             >
                 {/* Modal */}
@@ -230,7 +216,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                         </div>
                         {/* Static informational text */}
                         <p className="text-sm text-gray-600 mt-2">
-                            Move questions to Confirmed & Create Project.
+                            Move quotations to Confirmed &amp; Create Project.
                         </p>
                     </div>
 

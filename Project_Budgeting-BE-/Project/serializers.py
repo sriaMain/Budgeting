@@ -451,6 +451,8 @@ class TaskSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
+            "description",
+            "priority",
             "status",
             "allocated_hours",
             "allocated_formatted",
@@ -862,3 +864,18 @@ class TimesheetWeeklySummarySerializer(serializers.Serializer):
     def get_data(self, obj):
         """Extract data from obj dict"""
         return obj.get('data', [])
+
+from .models import ProjectRole
+
+class ProjectRoleSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    role_name = serializers.CharField(source='role.role_name', read_only=True)
+    assigned_by_name = serializers.CharField(source='assigned_by.username', read_only=True)
+
+    class Meta:
+        model = ProjectRole
+        fields = [
+            'id', 'project', 'user', 'username', 'role', 'role_name', 
+            'assigned_at', 'assigned_by', 'assigned_by_name'
+        ]
+        read_only_fields = ['assigned_at', 'assigned_by']

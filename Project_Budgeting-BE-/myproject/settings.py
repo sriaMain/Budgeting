@@ -77,7 +77,7 @@ INSTALLED_APPS = [
     'Reports',
     'core',
     'phonenumber_field',
-
+    'notifications',
     
 ]
 ASGI_APPLICATION = "myproject.asgi.application"
@@ -110,14 +110,21 @@ else:
         }
     }
 
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+if _redis_available:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [("127.0.0.1", 6379)],
+            },
         },
-    },
-}
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -286,6 +293,7 @@ SIMPLE_JWT = {
 }
 
 FRONTEND_BASE_URL = "http://localhost:5173"
+TASK_DEEP_LINK_EXPIRY_DAYS = 7
 from dotenv import load_dotenv
 load_dotenv()
 

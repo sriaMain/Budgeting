@@ -7,6 +7,7 @@ import { ReusableTable } from '../components/ReusableTable';
 import { AddTaskModal } from '../components/AddTaskModal';
 import { AssignTaskModal } from '../components/AssignTaskModal';
 import { AddExpenseModal } from '../components/AddExpenseModal';
+import { ManageProjectRoles } from '../components/ManageProjectRoles';
 import { toast } from 'react-hot-toast';
 
 
@@ -559,18 +560,22 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                             </span>
                         </div>
                         <div className="flex gap-4">
-                            <button
-                                onClick={() => navigate(`/projects/edit/${projectId}`)}
-                                className="px-4 py-2 bg-purple-200 text-black font-medium rounded-lg hover:bg-purple-300 transition-colors duration-200"
-                            >
-                                ✎ Modify Details
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('Budget')}
-                                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors duration-200"
-                            >
-                                Monthly Budget
-                            </button>
+                            {userRole !== 'user' && (
+                                <button
+                                    onClick={() => navigate(`/projects/edit/${projectId}`)}
+                                    className="px-4 py-2 bg-purple-200 text-black font-medium rounded-lg hover:bg-purple-300 transition-colors duration-200"
+                                >
+                                    ✎ Modify Details
+                                </button>
+                            )}
+                            {userRole !== 'user' && (
+                                <button
+                                    onClick={() => setActiveTab('Budget')}
+                                    className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors duration-200"
+                                >
+                                    Monthly Budget
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -598,58 +603,67 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                 </div>
 
                 {/* Stats Section */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                        <p className="text-xs text-gray-600 mb-2">Billable hours</p>
-                        <p className="text-2xl font-bold text-gray-900 mb-1">0:00</p>
-                        <p className="text-xs text-gray-600">h</p>
-                        <p className="text-xs text-gray-600 mt-2">0% of total</p>
-                    </div>
+                {userRole !== 'user' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                            <p className="text-xs text-gray-600 mb-2">Billable hours</p>
+                            <p className="text-2xl font-bold text-gray-900 mb-1">0:00</p>
+                            <p className="text-xs text-gray-600">h</p>
+                            <p className="text-xs text-gray-600 mt-2">0% of total</p>
+                        </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                        <p className="text-xs text-gray-600 mb-2">Remaining Billable hours</p>
-                        <p className="text-2xl font-bold text-gray-900 mb-1">20:00</p>
-                        <p className="text-xs text-gray-600">h</p>
-                        <p className="text-xs text-gray-600 mt-2">100% of total</p>
-                    </div>
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                            <p className="text-xs text-gray-600 mb-2">Remaining Billable hours</p>
+                            <p className="text-2xl font-bold text-gray-900 mb-1">20:00</p>
+                            <p className="text-xs text-gray-600">h</p>
+                            <p className="text-xs text-gray-600 mt-2">100% of total</p>
+                        </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                        <p className="text-xs text-gray-600 mb-2">User budget</p>
-                        <p className="text-2xl font-bold text-gray-900 mb-1">
-                            {project.budget ? parseFloat(project.budget.total_budget || project.budget.quoted_amount || '0').toLocaleString() : '0'} {project.budget?.currency || 'INR'}
-                        </p>
-                        <p className="text-xs text-gray-600 mt-2">0% of total</p>
-                    </div>
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                            <p className="text-xs text-gray-600 mb-2">User budget</p>
+                            <p className="text-2xl font-bold text-gray-900 mb-1">
+                                {project.budget ? parseFloat(project.budget.total_budget || project.budget.quoted_amount || '0').toLocaleString() : '0'} {project.budget?.currency || 'INR'}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-2">0% of total</p>
+                        </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                        <p className="text-xs text-gray-600 mb-2">Overdue tasks</p>
-                        <p className="text-2xl font-bold text-gray-900">0</p>
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                            <p className="text-xs text-gray-600 mb-2">Overdue tasks</p>
+                            <p className="text-2xl font-bold text-gray-900">0</p>
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Tabs Section */}
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200">
                     {/* Main Tabs */}
                     <div className="border-b border-gray-200 px-6">
                         <div className="flex gap-8 overflow-x-auto">
-                            {['Tasks', 'Time', 'Budget', 'Finances', 'Details', 'Payment'].map((tab) => (
-                                <button
-                                    type="button"
-                                    key={tab}
-                                    onClick={() => {
-                                        setActiveTab(tab);
-                                        if (tab === 'Tasks') {
-                                            setActiveSubTab('Task list');
-                                        }
-                                    }}
-                                    className={`py-4 px-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab
-                                        ? 'text-gray-900 border-blue-600'
-                                        : 'text-gray-600 border-transparent hover:text-gray-900'
-                                        }`}
-                                >
-                                    {tab}
-                                </button>
-                            ))}
+                            {['Tasks', 'Time', 'Budget', 'Finances', 'Details', 'Payment']
+                                .filter((tab) => {
+                                    if (userRole === 'user') {
+                                        return ['Tasks', 'Time', 'Details'].includes(tab);
+                                    }
+                                    return true;
+                                })
+                                .map((tab) => (
+                                    <button
+                                        type="button"
+                                        key={tab}
+                                        onClick={() => {
+                                            setActiveTab(tab);
+                                            if (tab === 'Tasks') {
+                                                setActiveSubTab('Task list');
+                                            }
+                                        }}
+                                        className={`py-4 px-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab
+                                            ? 'text-gray-900 border-blue-600'
+                                            : 'text-gray-600 border-transparent hover:text-gray-900'
+                                            }`}
+                                    >
+                                        {tab}
+                                    </button>
+                                ))}
                         </div>
                     </div>
 
@@ -722,21 +736,26 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                         >
                                                                             {task.assigneeAvatar}
                                                                         </div>
-                                                                        <span className="text-sm text-gray-900">&gt;</span>
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                setSelectedTaskForAssignment(task);
-                                                                                setIsAssignTaskModalOpen(true);
-                                                                            }}
-                                                                            className="w-6 h-6 rounded-full border-2 border-dotted border-gray-400 hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer flex items-center justify-center"
-                                                                            title={task.assignee !== 'Unassigned' ? 'Reassign task' : 'Assign task'}
-                                                                        >
-                                                                            <Plus className="w-3 h-3 text-gray-400 hover:text-blue-500" />
-                                                                        </button>
+                                                                        {userRole !== 'user' && (
+                                                                            <>
+                                                                                <span className="text-sm text-gray-900">&gt;</span>
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        setSelectedTaskForAssignment(task);
+                                                                                        setIsAssignTaskModalOpen(true);
+                                                                                    }}
+                                                                                    className="w-6 h-6 rounded-full border-2 border-dotted border-gray-400 hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer flex items-center justify-center"
+                                                                                    title={task.assignee !== 'Unassigned' ? 'Reassign task' : 'Assign task'}
+                                                                                >
+                                                                                    <Plus className="w-3 h-3 text-gray-400 hover:text-blue-500" />
+                                                                                </button>
+                                                                            </>
+                                                                        )}
                                                                     </div>
                                                                 </td>
                                                                 <td
                                                                     onClick={async () => {
+                                                                        if (userRole === 'user') return;
                                                                         try {
                                                                             const resp = await axiosInstance.get(`tasks/${task.id}/`);
                                                                             setSelectedTaskForEdit(resp.data);
@@ -746,7 +765,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                             toast.error('Failed to load task for editing');
                                                                         }
                                                                     }}
-                                                                    className="py-4 px-3 text-sm text-gray-900 cursor-pointer"
+                                                                    className={`py-4 px-3 text-sm text-gray-900 ${userRole !== 'user' ? 'cursor-pointer' : ''}`}
                                                                 >{task.title}</td>
                                                                 <td className="py-4 px-3">
                                                                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
@@ -764,15 +783,17 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 </tbody>
                                             </table>
                                         </div>
-                                        <div className="mt-6">
-                                            <button
-                                                onClick={() => setIsAddTaskModalOpen(true)}
-                                                className="inline-flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900 font-medium"
-                                            >
-                                                <Plus className="w-4 h-4" />
-                                                Add task
-                                            </button>
-                                        </div>
+                                        {userRole !== 'user' && (
+                                            <div className="mt-6">
+                                                <button
+                                                    onClick={() => setIsAddTaskModalOpen(true)}
+                                                    className="inline-flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900 font-medium"
+                                                >
+                                                    <Plus className="w-4 h-4" />
+                                                    Add task
+                                                </button>
+                                            </div>
+                                        )}
                                     </>
                                 )}
 
@@ -911,14 +932,13 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                             {/* Remaining Budget Card */}
                                                             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 text-left">
                                                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Remaining Budget</p>
-                                                                <p className={`text-2xl font-bold ${
-                                                                    (parseFloat(project.budget.total_budget || project.budget.quoted_amount || '0') - 
-                                                                     (parseFloat(project.budget.used_budget || '0') + parseFloat(project.budget.bills_and_expenses || '0'))) >= 0
+                                                                <p className={`text-2xl font-bold ${(parseFloat(project.budget.total_budget || project.budget.quoted_amount || '0') -
+                                                                        (parseFloat(project.budget.used_budget || '0') + parseFloat(project.budget.bills_and_expenses || '0'))) >= 0
                                                                         ? 'text-green-600'
                                                                         : 'text-red-600'
-                                                                }`}>
+                                                                    }`}>
                                                                     {(
-                                                                        parseFloat(project.budget.total_budget || project.budget.quoted_amount || '0') - 
+                                                                        parseFloat(project.budget.total_budget || project.budget.quoted_amount || '0') -
                                                                         (parseFloat(project.budget.used_budget || '0') + parseFloat(project.budget.bills_and_expenses || '0'))
                                                                     ).toLocaleString()} {project.budget.currency}
                                                                 </p>
@@ -929,12 +949,12 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                         {/* Total Outflow Progress Section */}
                                                         <div className="bg-white rounded-lg border border-gray-200 p-6 text-left">
                                                             <h4 className="text-sm font-bold text-gray-900 mb-4">Outflow Budget Consumption</h4>
-                                                            
+
                                                             {(() => {
                                                                 const totalBudgetVal = parseFloat(project.budget.total_budget || project.budget.quoted_amount || '0');
                                                                 const totalOutflowVal = parseFloat(project.budget.used_budget || '0') + parseFloat(project.budget.bills_and_expenses || '0');
                                                                 const spentPercent = totalBudgetVal > 0 ? Math.min(Math.round((totalOutflowVal / totalBudgetVal) * 100), 100) : 0;
-                                                                
+
                                                                 return (
                                                                     <div className="space-y-3">
                                                                         <div className="flex justify-between items-center text-sm font-semibold text-gray-700">
@@ -942,10 +962,9 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                             <span>{spentPercent}% consumed</span>
                                                                         </div>
                                                                         <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden border border-gray-200">
-                                                                            <div 
-                                                                                className={`h-full rounded-full transition-all duration-500 ${
-                                                                                    spentPercent > 90 ? 'bg-red-500' : spentPercent > 70 ? 'bg-orange-500' : 'bg-green-500'
-                                                                                }`} 
+                                                                            <div
+                                                                                className={`h-full rounded-full transition-all duration-500 ${spentPercent > 90 ? 'bg-red-500' : spentPercent > 70 ? 'bg-orange-500' : 'bg-green-500'
+                                                                                    }`}
                                                                                 style={{ width: `${spentPercent}%` }}
                                                                             />
                                                                         </div>
@@ -967,9 +986,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                 <tbody className="divide-y divide-gray-200 bg-white">
                                                                     <tr>
                                                                         <td className="px-6 py-4 font-medium text-gray-700">Forecasted Profit/Loss</td>
-                                                                        <td className={`px-6 py-4 text-right font-bold ${
-                                                                            (project.budget.profit_or_loss || 0) >= 0 ? 'text-green-600' : 'text-red-600'
-                                                                        }`}>
+                                                                        <td className={`px-6 py-4 text-right font-bold ${(project.budget.profit_or_loss || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                                                                            }`}>
                                                                             {parseFloat(project.budget.profit_or_loss || '0').toLocaleString()} {project.budget.currency}
                                                                         </td>
                                                                     </tr>
@@ -1435,38 +1453,40 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                     )}
 
                                                     {/* Budget */}
-                                                    <div>
-                                                        <label className="text-xs font-medium text-gray-500 uppercase">Budget</label>
-                                                        <p className="text-sm text-gray-900 mt-1">
-                                                            {(() => {
-                                                                const val = (() => {
-                                                                    if (project.budget && typeof project.budget === 'object') {
-                                                                        if (project.budget.total_budget !== undefined && project.budget.total_budget !== null) {
-                                                                            return project.budget.total_budget;
+                                                    {userRole !== 'user' && (
+                                                        <div>
+                                                            <label className="text-xs font-medium text-gray-500 uppercase">Budget</label>
+                                                            <p className="text-sm text-gray-900 mt-1">
+                                                                {(() => {
+                                                                    const val = (() => {
+                                                                        if (project.budget && typeof project.budget === 'object') {
+                                                                            if (project.budget.total_budget !== undefined && project.budget.total_budget !== null) {
+                                                                                return project.budget.total_budget;
+                                                                            }
+                                                                            if (project.budget.quoted_amount !== undefined && project.budget.quoted_amount !== null) {
+                                                                                return project.budget.quoted_amount;
+                                                                            }
                                                                         }
-                                                                        if (project.budget.quoted_amount !== undefined && project.budget.quoted_amount !== null) {
-                                                                            return project.budget.quoted_amount;
+                                                                        if (project.budget && typeof project.budget !== 'object') {
+                                                                            return project.budget;
                                                                         }
-                                                                    }
-                                                                    if (project.budget && typeof project.budget !== 'object') {
-                                                                        return project.budget;
-                                                                    }
-                                                                    return project.total_budget ||
-                                                                           project.project_budget ||
-                                                                           project.cost ||
-                                                                           project.value ||
-                                                                           '0';
-                                                                })();
-                                                                const num = parseFloat(String(val).replace(/[^0-9.-]+/g, ""));
-                                                                const formattedVal = (isNaN(num) ? 0 : num).toLocaleString('en-IN', {
-                                                                    minimumFractionDigits: 2,
-                                                                    maximumFractionDigits: 2
-                                                                });
-                                                                const cur = project.budget?.currency || project.currency || 'INR';
-                                                                return `${formattedVal} ${cur}`;
-                                                            })()}
-                                                        </p>
-                                                    </div>
+                                                                        return project.total_budget ||
+                                                                            project.project_budget ||
+                                                                            project.cost ||
+                                                                            project.value ||
+                                                                            '0';
+                                                                    })();
+                                                                    const num = parseFloat(String(val).replace(/[^0-9.-]+/g, ""));
+                                                                    const formattedVal = (isNaN(num) ? 0 : num).toLocaleString('en-IN', {
+                                                                        minimumFractionDigits: 2,
+                                                                        maximumFractionDigits: 2
+                                                                    });
+                                                                    const cur = project.budget?.currency || project.currency || 'INR';
+                                                                    return `${formattedVal} ${cur}`;
+                                                                })()}
+                                                            </p>
+                                                        </div>
+                                                    )}
 
                                                     {/* Start Date */}
                                                     {project.start_date && (
@@ -1512,13 +1532,15 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 onChange={handleFileSelect}
                                                 className="hidden"
                                             />
-                                            <button
-                                                onClick={() => fileInputRef.current?.click()}
-                                                disabled={isUploading}
-                                                className="text-blue-600 text-sm font-medium hover:text-blue-700 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                <span>{isUploading ? '⌛' : '📎'}</span> {isUploading ? 'Uploading...' : 'Add Files'}
-                                            </button>
+                                            {userRole !== 'user' && (
+                                                <button
+                                                    onClick={() => fileInputRef.current?.click()}
+                                                    disabled={isUploading}
+                                                    className="text-blue-600 text-sm font-medium hover:text-blue-700 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <span>{isUploading ? '⌛' : '📎'}</span> {isUploading ? 'Uploading...' : 'Add Files'}
+                                                </button>
+                                            )}
                                         </div>
                                         <div className="px-6 py-6 bg-white">
                                             {isLoadingAttachments ? (
@@ -1903,6 +1925,10 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                     );
                                 })()}
                             </div>
+                        )}
+
+                        {activeTab === 'Team' && (
+                            <ManageProjectRoles projectId={projectId!} userRole={userRole} />
                         )}
                     </div>
                 </div>

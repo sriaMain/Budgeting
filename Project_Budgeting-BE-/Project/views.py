@@ -4,7 +4,7 @@ from rest_framework import status, permissions
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from urllib3 import request
-from .models import Project, ProjectBudget, Task, Timesheet, TimesheetEntry, TaskTimerLog, TaskExtraHoursRequest
+from .models import Project, ProjectBudget, Task, Timesheet, TimesheetEntry, TaskTimerLog, TaskExtraHoursRequest, TaskAssignmentAuditLog
 from .serializers import (ProjectCreateSerializer, ProjectBudgetSerializer, TaskSerializer,
  TimesheetEntrySerializer, TimesheetSerializer, TaskTimerLogSerializer, 
  TaskExtraHoursRequestSerializer, TaskExtraHoursReviewSerializer, ProjectListSerializer)
@@ -58,10 +58,11 @@ class ProjectAPIView(APIView):
                 )
                 is_admin_or_manager = request.user.is_superuser or request.user.roles.filter(role_name__in=["Admin", "Manager", "Project Manager"]).exists()
                 if not is_admin_or_manager and project.project_manager != request.user:
-                    return Response(
-                        {"error": "You do not have permission to access this project"},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
+                    if not project.tasks.filter(assigned_to=request.user).exists():
+                        return Response(
+                            {"error": "You do not have permission to access this project"},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
             except Project.DoesNotExist:
                 return Response(
                     {"error": "Project not found"},
@@ -87,7 +88,9 @@ class ProjectAPIView(APIView):
         projects = Project.objects.select_related("client", "budget")
         is_admin_or_manager = request.user.is_superuser or request.user.roles.filter(role_name__in=["Admin", "Manager", "Project Manager"]).exists()
         if not is_admin_or_manager:
-            projects = projects.filter(project_manager=request.user)
+            projects = projects.filter(
+                Q(project_manager=request.user) | Q(tasks__assigned_to=request.user)
+            ).distinct()
 
         # 🔹 Filters
         if search:
@@ -438,9 +441,18 @@ class TaskAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         task = serializer.save(created_by=request.user)
 
-        # Notify assignee if provided
-        if task.assigned_to_id:
-            send_task_assignment_email.delay(task.id, task.assigned_to_id)
+        # Full assignment workflow: audit log + HTML email + in-app notification
+        if task.assigned_to:
+            try:
+                from Project.services.assignment_service import TaskAssignmentService
+                TaskAssignmentService.assign(
+                    task=task,
+                    assignee=task.assigned_to,
+                    assigned_by=request.user,
+                )
+            except Exception:
+                # Fall back to legacy plain-text email so creation still works
+                send_task_assignment_email.delay(task.id, task.assigned_to_id)
 
         return Response(
             {
@@ -449,6 +461,7 @@ class TaskAPIView(APIView):
             },
             status=status.HTTP_201_CREATED
         )
+
 
 
 
@@ -556,14 +569,14 @@ class TaskAPIView(APIView):
         )
     def put(self, request, task_id):
         try:
-            task = Task.objects.get(id=task_id)
+            task = Task.objects.select_related('project').get(id=task_id)
         except Task.DoesNotExist:
             return Response(
                 {"error": "Task not found"},
                 status=404
             )
 
-        # Only PM / Admin can assign
+        # Only PM / Admin / Employee can assign
         if not (request.user.is_superuser or request.user.roles.filter(
             role_name__in=["Project Manager", "Admin", "Employee"]
         ).exists()):
@@ -580,24 +593,27 @@ class TaskAPIView(APIView):
                 status=400
             )
 
-        user = Account.objects.get(id=assigned_to)
+        try:
+            assignee = Account.objects.get(id=assigned_to)
+        except Account.DoesNotExist:
+            return Response({"error": "Assignee user not found"}, status=404)
 
-        # 🔒 SAFETY CHECK: user must belong to same service as task creator (optional)
-        # if user.module != task.project.service:
-        #     return Response({"error": "User does not belong to selected service"}, status=400)
-
-        task.assigned_to = user
-        task.status = "planned"
-        task.save()
+        # Use TaskAssignmentService for full workflow
+        from Project.services.assignment_service import TaskAssignmentService
+        result = TaskAssignmentService.assign(
+            task=task,
+            assignee=assignee,
+            assigned_by=request.user,
+        )
 
         return Response({
             "message": "Task assigned successfully",
-            "task_id": task.id,
+            "task_id": result["task_id"],
             "assigned_to": {
-                "id": user.id,
-                "name": user.get_full_name(),
-                "service": user.module.product_service_name if user.module else None
-            }
+                "id": assignee.id,
+                "name": assignee.get_full_name(),
+            },
+            "deep_link_url": result["deep_link_url"],
         })
     def patch(self, request, task_id):
         try:
@@ -651,11 +667,24 @@ class TaskAPIView(APIView):
         if not serializer.is_valid():
             print("PATCH serializer.errors:", serializer.errors)
             return Response({"errors": serializer.errors}, status=400)
-        serializer.save()
+        serializer.save(modified_by=request.user)
 
         new_assigned_to = serializer.instance.assigned_to_id
         if new_assigned_to and new_assigned_to != old_assigned_to:
-            send_task_assignment_email.delay(task.id, new_assigned_to)
+            # Use TaskAssignmentService for the full workflow:
+            # audit log + signed deep-link + HTML email (Celery) + in-app notification
+            try:
+                assignee = Account.objects.get(id=new_assigned_to)
+                from Project.services.assignment_service import TaskAssignmentService
+                updated_task = Task.objects.select_related('project').get(id=task.id)
+                TaskAssignmentService.assign(
+                    task=updated_task,
+                    assignee=assignee,
+                    assigned_by=request.user,
+                )
+            except Exception:
+                # Fall back to legacy plain-text email so assignment still works
+                send_task_assignment_email.delay(task.id, new_assigned_to)
 
         return Response({
             "message": "Task updated successfully (partial)",
@@ -2307,3 +2336,225 @@ class ExtraHoursHistoryAPIView(APIView):
             })
 
         return Response(data)
+
+from .models import ProjectRole
+from .serializers import ProjectRoleSerializer
+
+class ProjectRoleAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_id):
+        roles = ProjectRole.objects.filter(project_id=project_id)
+        serializer = ProjectRoleSerializer(roles, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, project_id):
+        user_id = request.data.get('user_id')
+        role_id = request.data.get('role_id')
+        
+        if not user_id or not role_id:
+            return Response({"error": "user_id and role_id are required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            if ProjectRole.objects.filter(project_id=project_id, user_id=user_id, role_id=role_id).exists():
+                return Response({"error": "This role is already assigned to the user for this project."}, status=status.HTTP_400_BAD_REQUEST)
+                
+            project_role = ProjectRole.objects.create(
+                project_id=project_id,
+                user_id=user_id,
+                role_id=role_id,
+                assigned_by=request.user
+            )
+            serializer = ProjectRoleSerializer(project_role)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, project_id, role_assignment_id):
+        try:
+            assignment = ProjectRole.objects.get(id=role_assignment_id, project_id=project_id)
+            assignment.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ProjectRole.DoesNotExist:
+            return Response({"error": "Role assignment not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task Assignment API  (explicit POST endpoint)
+# POST /api/tasks/<task_id>/assign/
+# ─────────────────────────────────────────────────────────────────────────────
+class TaskAssignAPIView(APIView):
+    """
+    Explicit endpoint to (re-)assign a task.
+    Runs the full workflow: audit log + HTML email + in-app notification.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request, task_id):
+        # RBAC: only Admin / Project Manager can call this endpoint
+        is_admin_or_pm = request.user.is_superuser or request.user.roles.filter(
+            role_name__in=["Admin", "Project Manager", "Manager"]
+        ).exists()
+        if not is_admin_or_pm:
+            return Response(
+                {"error": "Only Admins and Project Managers can assign tasks."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            task = Task.objects.select_related('project').get(id=task_id)
+        except Task.DoesNotExist:
+            return Response({"error": "Task not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        assignee_id = request.data.get("assigned_to")
+        if not assignee_id:
+            return Response(
+                {"error": "assigned_to (user ID) is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            assignee = Account.objects.get(id=assignee_id, is_active=True)
+        except Account.DoesNotExist:
+            return Response(
+                {"error": "Assignee not found or inactive."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        from Project.services.assignment_service import TaskAssignmentService
+        result = TaskAssignmentService.assign(
+            task=task,
+            assignee=assignee,
+            assigned_by=request.user,
+        )
+
+        return Response(
+            {
+                "message": f"Task '{task.title}' assigned to {assignee.get_full_name()} successfully.",
+                "task_id": result["task_id"],
+                "assigned_to_id": result["assigned_to_id"],
+                "deep_link_url": result["deep_link_url"],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deep-Link Validation Endpoint
+# GET /api/task-access/?token=<signed_token>
+# ─────────────────────────────────────────────────────────────────────────────
+from rest_framework.permissions import AllowAny
+from django.core import signing
+
+class TaskDeepLinkView(APIView):
+    """
+    Public endpoint that validates a signed deep-link token and returns
+    the appropriate redirect instruction for the React frontend.
+
+    Response shapes:
+      200 – authenticated user, valid token, correct user
+            { "status": "ok", "redirect": "/task-management", "task_id": 42 }
+
+      200 – unauthenticated
+            { "status": "login_required", "next": "/task-management?task=42" }
+
+      400 – invalid / tampered token
+            { "status": "invalid_token", "message": "..." }
+
+      410 – expired token
+            { "status": "expired", "message": "..." }
+
+      403 – authenticated but wrong user
+            { "status": "unauthorized", "message": "..." }
+
+      404 – task deleted
+            { "status": "not_found", "message": "..." }
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        token = request.query_params.get("token", "").strip()
+        if not token:
+            return Response(
+                {"status": "invalid_token", "message": "Token is missing."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 1. Validate token signature + expiry
+        from Project.services.assignment_service import validate_deep_link_token
+        try:
+            payload = validate_deep_link_token(token)
+        except signing.SignatureExpired:
+            return Response(
+                {"status": "expired", "message": "This link has expired. Please ask your admin to resend the task assignment."},
+                status=status.HTTP_410_GONE,
+            )
+        except (signing.BadSignature, Exception):
+            return Response(
+                {"status": "invalid_token", "message": "This link is invalid or has been tampered with."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        task_id = payload.get("task")
+        user_id = payload.get("user")
+
+        # 2. Verify task still exists
+        try:
+            task = Task.objects.select_related('project').get(id=task_id)
+        except Task.DoesNotExist:
+            return Response(
+                {"status": "not_found", "message": "The task no longer exists."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # 3. Check if the task has been reassigned to a different user
+        is_admin_check = (
+            request.user.is_authenticated and (
+                request.user.is_superuser or
+                request.user.roles.filter(role_name="Admin").exists()
+            )
+        )
+        if not is_admin_check and task.assigned_to_id and task.assigned_to_id != user_id:
+            return Response(
+                {
+                    "status": "reassigned",
+                    "message": "This task has been reassigned to another user. Your link is no longer valid.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 4. Auth check
+        if not request.user or not request.user.is_authenticated:
+            # Unauthenticated — tell frontend to go to login with next param
+            next_url = f"/task-management?task={task_id}"
+            return Response(
+                {"status": "login_required", "next": next_url},
+                status=status.HTTP_200_OK,
+            )
+
+        # 5. Authorization: confirm this link belongs to this user
+        if request.user.id != user_id:
+            # Admin / superuser may bypass
+            is_admin = request.user.is_superuser or request.user.roles.filter(role_name="Admin").exists()
+            if not is_admin:
+                return Response(
+                    {"status": "unauthorized", "message": "This task link is not assigned to your account."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        # 6. All checks passed
+        return Response(
+            {
+                "status": "ok",
+                "redirect": "/task-management",
+                "task_id": task_id,
+                "task_title": task.title,
+                "project_name": task.project.project_name if task.project else None,
+                "priority": task.priority,
+                "status_display": task.get_status_display(),
+            },
+            status=status.HTTP_200_OK,
+        )

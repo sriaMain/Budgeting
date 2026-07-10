@@ -268,8 +268,8 @@ export default function QuoteDetailsPage({
                     {/* Create Project Button - Separate row for better visibility */}
                     {(() => {
                         const status = (quoteData.status || '').toLowerCase().trim();
-                        // Handle various status formats including typos (oppurtunity vs opportunity)
-                        const allowedStatuses = ['opportunity', 'oppurtunity', 'scoping', 'proposal', 'confirmed'];
+                        // Valid pipeline stages
+                        const allowedStatuses = ['opportunity', 'scoping', 'proposal', 'confirmed'];
                         const isInvoiceMode = mode === 'invoice';
                         const shouldShow = !isInvoiceMode && allowedStatuses.includes(status);
 

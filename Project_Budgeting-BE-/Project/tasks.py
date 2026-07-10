@@ -32,7 +32,7 @@ def send_overdue_task_email(task_id, user_id, hours_before):
 
 @shared_task
 def send_task_assignment_email(task_id, user_id):
-    """Notify a user when a task is assigned to them."""
+    """Notify a user when a task is assigned to them (plain-text fallback)."""
     try:
         task = Task.objects.select_related('project').get(id=task_id)
         user = Account.objects.get(id=user_id)
@@ -71,6 +71,39 @@ def send_task_assignment_email(task_id, user_id):
     except Exception:
         # Avoid raising to keep main flow safe
         pass
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_task_assignment_email_html(self, task_id: int, assignee_id: int, assigner_id: int, deep_link_url: str):
+    """
+    Send the HTML task-assignment email via TaskEmailService.
+    Retries up to 3 times (60 s apart) on transient SMTP failures.
+    This task is called by TaskAssignmentService.assign() — NOT the plain-text one.
+    """
+    try:
+        task = Task.objects.select_related('project').get(id=task_id)
+        assignee = Account.objects.get(id=assignee_id)
+        assigner = Account.objects.get(id=assigner_id)
+
+        from Project.services.email_service import TaskEmailService
+        TaskEmailService.send_task_assigned_email(
+            task=task,
+            assignee=assignee,
+            assigner=assigner,
+            deep_link_url=deep_link_url,
+        )
+    except (Task.DoesNotExist, Account.DoesNotExist):
+        # Record deleted — nothing to send
+        pass
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "send_task_assignment_email_html failed (attempt %s): %s",
+            self.request.retries + 1, exc,
+        )
+        raise self.retry(exc=exc)
+
+
 
 
 @shared_task

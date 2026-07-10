@@ -4,7 +4,7 @@ import { useAppSelector } from '../hooks/useAppSelector';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/Button';
 import { InputField } from '../components/InputField';
-import { Search, Filter, Plus, ChevronDown, MoreHorizontal, Wallet, PieChart, TrendingUp, X } from 'lucide-react';
+import { Search, Filter, Plus, ChevronDown, MoreHorizontal, Wallet, PieChart, TrendingUp, X, Percent } from 'lucide-react';
 import { CreateProjectModal } from '../components/CreateProjectModal';
 import axiosInstance from '../utils/axiosInstance';
 
@@ -28,6 +28,7 @@ interface Project {
 		forecasted_profit: string;
 		quoted_amount?: string;
 	};
+	project_manager?: string | null;
 }
 
 interface CompanyGroup {
@@ -69,6 +70,11 @@ const StatusBadge = ({ status }: { status: string }) => {
 		'planning': 'bg-purple-50 text-purple-700 border-purple-200',
 		'in_progress': 'bg-green-50 text-green-700 border-green-200',
 		'In Progress': 'bg-green-50 text-green-700 border-green-200',
+		'development': 'bg-blue-50 text-blue-700 border-blue-200',
+		'testing': 'bg-yellow-50 text-yellow-700 border-yellow-200',
+		'uat': 'bg-orange-50 text-orange-700 border-orange-200',
+		'ready_for_deployment': 'bg-indigo-50 text-indigo-700 border-indigo-200',
+		'deployed': 'bg-emerald-50 text-emerald-700 border-emerald-200',
 		'Completed': 'bg-blue-50 text-blue-700 border-blue-200',
 		'completed': 'bg-blue-50 text-blue-700 border-blue-200',
 		'On Hold': 'bg-orange-50 text-orange-700 border-orange-200',
@@ -104,9 +110,9 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 	});
 
 	const [filterStatus, setFilterStatus] = useState('All');
-	const [statusChoices, setStatusChoices] = useState<{value: string, label: string}[]>([]);
+	const [statusChoices, setStatusChoices] = useState<{ value: string, label: string }[]>([]);
 	const [showMyProjects, setShowMyProjects] = useState(false);
-	
+
 	const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 	const [advancedFilters, setAdvancedFilters] = useState({
 		project_name: '',
@@ -150,15 +156,11 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 		}
 	};
 
+	const currentUserEmail = useAppSelector((state) => state.auth.email);
+
 	const fetchProjects = async () => {
 		try {
 			const params = new URLSearchParams();
-			if (searchQuery) {
-				params.append('search', searchQuery);
-			}
-			if (filterStatus && filterStatus !== 'All') {
-				params.append('status', filterStatus);
-			}
 			if (appliedFilters.project_name) params.append('project_name', appliedFilters.project_name);
 			if (appliedFilters.min_budget) params.append('min_budget', appliedFilters.min_budget);
 			if (appliedFilters.max_budget) params.append('max_budget', appliedFilters.max_budget);
@@ -198,7 +200,8 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 							end_date: p.end_date,
 							status: p.status || 'planning',
 							progress: 0, // Default
-							budget: p.budget
+							budget: p.budget,
+							project_manager: p.project_manager
 						};
 					});
 
@@ -227,19 +230,38 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 		}
 	};
 
-	// Filter company groups based on search query and status filters
+	// Filter company groups based on search query, status filters, and logged-in user assignment
 	const filteredCompanyGroups = companyGroups.map(company => {
 		const filteredProjects = company.projects.filter(project => {
-			// The backend handles search and status filtering,
-			// but we can apply them here as a safety measure for company name matching.
-			const matchesSearch = project.project_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				company.company_name.toLowerCase().includes(searchQuery.toLowerCase());
+			// Rely on backend role/assignment filtering
+			const matchesUser = true;
 
-			const matchesStatus = filterStatus === 'All' || project.status === filterStatus;
+			// Search projects by Project Name or Project Code
+			const matchesSearch = searchQuery === '' || 
+				project.project_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				project.project_no.toString().includes(searchQuery);
 
-			const matchesMyProjects = !showMyProjects || true;
+			// Status filters: All, Running, Pending, Completed, Delayed
+			const isDelayed = !['completed', 'deployed', 'cancelled'].includes(project.status.toLowerCase()) &&
+				project.end_date && new Date(project.end_date) < new Date();
 
-			return matchesSearch && matchesStatus && matchesMyProjects;
+			let matchesStatus = false;
+			if (filterStatus === 'All') {
+				matchesStatus = true;
+			} else {
+				const statusLower = project.status.toLowerCase();
+				if (filterStatus === 'Delayed') {
+					matchesStatus = !!isDelayed;
+				} else if (filterStatus === 'Running') {
+					matchesStatus = ['in_progress', 'development', 'testing', 'uat', 'ready_for_deployment'].includes(statusLower) && !isDelayed;
+				} else if (filterStatus === 'Pending') {
+					matchesStatus = ['planning', 'on_hold'].includes(statusLower) && !isDelayed;
+				} else if (filterStatus === 'Completed') {
+					matchesStatus = ['completed', 'deployed'].includes(statusLower);
+				}
+			}
+
+			return matchesUser && matchesSearch && matchesStatus;
 		});
 
 		return {
@@ -247,6 +269,31 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 			projects: filteredProjects
 		};
 	}).filter(company => company.projects.length > 0);
+
+	// Calculate dynamic KPIs based on filtered company groups
+	const getDynamicKPIs = () => {
+		let forecastedProfit = 0;
+		let totalBudget = 0;
+		let totalHours = 0;
+		
+		filteredCompanyGroups.forEach(company => {
+			company.projects.forEach(p => {
+				const profit = p.budget?.forecasted_profit ? parseFloat(p.budget.forecasted_profit) : 0;
+				const budget = p.budget?.total_budget 
+					? parseFloat(p.budget.total_budget) 
+					: (p.budget?.quoted_amount ? parseFloat(p.budget.quoted_amount) : 0);
+				const hours = p.budget?.total_hours || 0;
+				
+				forecastedProfit += profit;
+				totalBudget += budget;
+				totalHours += hours;
+			});
+		});
+		
+		return { forecastedProfit, totalBudget, totalHours };
+	};
+	
+	const dynamicKPIs = getDynamicKPIs();
 
 	// Calculate currency (use first project's currency or default to INR)
 	const currency = companyGroups.length > 0 && companyGroups[0].projects.length > 0
@@ -316,24 +363,31 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 				</div>
 
 				{/* KPIs */}
-				<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-					<KPICard
-						label="Forecasted profit (budget)"
-						value={`${kpiData.forecastedProfit.toLocaleString()} ${currency}`}
-						icon={TrendingUp}
-					/>
-					<KPICard
-						label="Total Budget"
-						value={`${kpiData.totalBudget.toLocaleString()} ${currency}`}
-						icon={Wallet}
-					/>
-					<KPICard
-						label="Total Hours Allocated"
-						value={kpiData.totalHours.toString()}
-						subValue="hours"
-						icon={PieChart}
-					/>
-				</div>
+				{userRole !== 'user' && (
+					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+						<KPICard
+							label="Forecasted profit"
+							value={`${dynamicKPIs.forecastedProfit.toLocaleString()} ${currency}`}
+							icon={TrendingUp}
+						/>
+						<KPICard
+							label="Profit Margin"
+							value={`${(dynamicKPIs.totalBudget > 0 ? (dynamicKPIs.forecastedProfit / dynamicKPIs.totalBudget) * 100 : 0).toFixed(1)}%`}
+							icon={Percent}
+						/>
+						<KPICard
+							label="Total Budget"
+							value={`${dynamicKPIs.totalBudget.toLocaleString()} ${currency}`}
+							icon={Wallet}
+						/>
+						<KPICard
+							label="Total Hours Allocated"
+							value={dynamicKPIs.totalHours.toString()}
+							subValue="hours"
+							icon={PieChart}
+						/>
+					</div>
+				)}
 
 				{/* Projects Table */}
 				<div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -341,12 +395,22 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 						<div className="min-w-[1000px]">
 							{/* Table Header */}
 							<div className="grid grid-cols-12 gap-4 px-6 py-4 border-b border-gray-200 bg-white text-xs font-semibold text-gray-500 uppercase tracking-wider">
-								<div className="col-span-3">Project Name</div>
-								<div className="col-span-2">Start - End Date</div>
-								<div className="col-span-2">Total Budget</div>
-								<div className="col-span-2">Forecasted Profit</div>
-								<div className="col-span-1">Hours</div>
-								<div className="col-span-2">Status</div>
+								{userRole === 'user' ? (
+									<>
+										<div className="col-span-6">Project Name</div>
+										<div className="col-span-3">Start - End Date</div>
+										<div className="col-span-3">Status</div>
+									</>
+								) : (
+									<>
+										<div className="col-span-3">Project Name</div>
+										<div className="col-span-2">Start - End Date</div>
+										<div className="col-span-2">Total Budget</div>
+										<div className="col-span-2">Forecasted Profit</div>
+										<div className="col-span-1">Hours</div>
+										<div className="col-span-2">Status</div>
+									</>
+								)}
 							</div>
 
 							{/* Table Body */}
@@ -374,27 +438,46 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 														onClick={() => navigate(`/projects/${project.project_no}`)}
 														className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-gray-50 transition-colors bg-white cursor-pointer"
 													>
-														<div className="col-span-3 flex items-center gap-3">
-															<span className="text-sm font-medium text-gray-900">
-																{project.project_name}
-															</span>
-														</div>
-														<div className="col-span-2 text-xs text-gray-600">
-															<div>{project.start_date}</div>
-															<div>{project.end_date}</div>
-														</div>
-														<div className="col-span-2 text-sm text-gray-900 font-medium">
-															{project.budget ? parseFloat(project.budget.total_budget || project.budget.quoted_amount || '0').toLocaleString() : '0'} {project.budget?.currency || 'INR'}
-														</div>
-														<div className="col-span-2 text-sm text-green-600 font-medium">
-															{project.budget ? parseFloat(project.budget.forecasted_profit || '0').toLocaleString() : '0'} {project.budget?.currency || 'INR'}
-														</div>
-														<div className="col-span-1 text-sm text-gray-900 font-medium">
-															{project.budget?.total_hours || 0}h
-														</div>
-														<div className="col-span-2">
-															<StatusBadge status={project.status} />
-														</div>
+														{userRole === 'user' ? (
+															<>
+																<div className="col-span-6 flex items-center gap-3">
+																	<span className="text-sm font-medium text-gray-900">
+																		{project.project_name}
+																	</span>
+																</div>
+																<div className="col-span-3 text-xs text-gray-600">
+																	<div>{project.start_date}</div>
+																	<div>{project.end_date}</div>
+																</div>
+																<div className="col-span-3">
+																	<StatusBadge status={project.status} />
+																</div>
+															</>
+														) : (
+															<>
+																<div className="col-span-3 flex items-center gap-3">
+																	<span className="text-sm font-medium text-gray-900">
+																		{project.project_name}
+																	</span>
+																</div>
+																<div className="col-span-2 text-xs text-gray-600">
+																	<div>{project.start_date}</div>
+																	<div>{project.end_date}</div>
+																</div>
+																<div className="col-span-2 text-sm text-gray-900 font-medium">
+																	{project.budget ? parseFloat(project.budget.total_budget || project.budget.quoted_amount || '0').toLocaleString() : '0'} {project.budget?.currency || 'INR'}
+																</div>
+																<div className="col-span-2 text-sm text-green-600 font-medium">
+																	{project.budget ? parseFloat(project.budget.forecasted_profit || '0').toLocaleString() : '0'} {project.budget?.currency || 'INR'}
+																</div>
+																<div className="col-span-1 text-sm text-gray-900 font-medium">
+																	{project.budget?.total_hours || 0}h
+																</div>
+																<div className="col-span-2">
+																	<StatusBadge status={project.status} />
+																</div>
+															</>
+														)}
 													</div>
 												))}
 											</div>

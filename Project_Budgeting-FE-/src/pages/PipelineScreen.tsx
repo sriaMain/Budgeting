@@ -21,7 +21,7 @@ export default function PipelineScreen({
   const [pipelineData, setPipelineData] = useState<PipelineData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeStage, setActiveStage] = useState<StageType>('oppurtunity');
+  const [activeStage, setActiveStage] = useState<StageType>('opportunity');
 
   // Filter state
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
