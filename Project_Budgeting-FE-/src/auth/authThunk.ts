@@ -1,5 +1,5 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
-import axiosInstance from "../utils/axiosInstance";
+import { axiosRefresh } from "../utils/axiosInstance";
 
 
 interface   InitializeAuthResponse {
@@ -10,6 +10,13 @@ interface   InitializeAuthResponse {
   email: string;
 }
 
+const normalizeRole = (backendRole: string): "admin" | "user" | "manager" => {
+  const role = (backendRole || "").toLowerCase();
+  if (role === "admin") return "admin";
+  if (role === "project manager" || role === "manager") return "manager";
+  return "user";
+};
+
 export const initializeAuth = createAsyncThunk<
   InitializeAuthResponse,   // SUCCESS return type
   void,                     // argument type (none)
@@ -19,13 +26,13 @@ export const initializeAuth = createAsyncThunk<
   async (_, thunkAPI) => {
     try {
       console.log("Initializing Auth");
-      const response = await axiosInstance.post("/accounts/refresh/");
+      const response = await axiosRefresh.post("/accounts/refresh/");
       console.log("Auth Initialized:", response.data);
-     
+
         return {
           isAuthenticated: true,
-          userRole: response.data.role,
-          accessToken: response.data.token,
+          userRole: normalizeRole(response.data.role),
+          accessToken: response.data.access_token,
           username: response.data.username || '',
           email: response.data.email || '',
         };

@@ -91,13 +91,31 @@ class ProjectBudget(models.Model):
         # self.currency = getattr(quote, 'currency', None) or self.project.currency
 
     @property
+    def actual_expenses(self):
+        """
+        Real expenses logged against the project (Finances > Expenses tab).
+        Falls back to the quoted/manual bills_and_expenses estimate when no
+        real expense has been logged yet.
+        """
+        if not self.project:
+            return self.bills_and_expenses or 0
+
+        logged = self.project.expenses.aggregate(
+            total=models.Sum('amount')
+        )['total']
+
+        if logged:
+            return logged
+        return self.bills_and_expenses or 0
+
+    @property
     def forecasted_profit(self):
             """
             Expected profit based on current budget and expenses
             """
-            if self.total_budget is None or self.bills_and_expenses is None:
+            if self.total_budget is None:
                 return None
-            return self.total_budget - self.bills_and_expenses
+            return self.total_budget - self.actual_expenses
 
 
 

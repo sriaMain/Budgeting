@@ -150,13 +150,16 @@ class RefreshTokenCookieView(APIView):
             return Response({"error": "Invalid refresh token"}, status=401)
 
         new_access = str(refresh.access_token)
+        roles = [role.role_name for role in user.roles.all()]
 
         return Response({
             "access_token": new_access,
             "is_authenticated": user.is_active,  # Check if user account is active
             "username": user.username,
-            "email":  user.email
-        }) 
+            "email":  user.email,
+            "role": roles[0] if roles else None,
+            "roles": roles,
+        })
 
 
 

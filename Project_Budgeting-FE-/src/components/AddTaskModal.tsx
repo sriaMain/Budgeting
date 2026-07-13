@@ -73,7 +73,11 @@ export function AddTaskModal({
     // Helper function to convert HH:MM format to decimal hours
     const hhmmToDecimal = (hhmmString: string): number => {
         const [hours, minutes] = hhmmString.split(':').map(Number);
-        return hours + (minutes / 60);
+        // Round to 2 decimal places — allocated_hours is a DecimalField(max_digits=5,
+        // decimal_places=2) on the backend, and an unrounded division (e.g. 20/60 =
+        // 0.3333333333333333) has far more significant digits than that field allows,
+        // which the API rejects with "Ensure that there are no more than 5 digits in total."
+        return Math.round((hours + minutes / 60) * 100) / 100;
     };
 
     const [formData, setFormData] = useState({
@@ -372,7 +376,9 @@ export function AddTaskModal({
             ...(selectedUserId && { assigned_to: selectedUserId }),
             ...(formData.assignee_id && !selectedUserId && formData.assignee_id !== 0 && { assignee_id: formData.assignee_id }),
             ...(formData.project && formData.project !== 0 && { project: formData.project }),
-            ...(formData.due_date && { due_date: formData.due_date })
+            // Always send due_date (even when cleared) so removing it on an edit
+            // actually clears it server-side instead of being silently dropped.
+            due_date: formData.due_date || null
         };
 
         console.log('Form submission payload:', payload); // Debug log

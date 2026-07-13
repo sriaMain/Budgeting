@@ -1,12 +1,8 @@
 
 import React from 'react';
 import { Layout } from '../components/Layout';
-
-
-
-// --- Reusable Dashboard Components ---
-
-// --- Main Screen ---
+import { OrgDashboard } from './OrgDashboard';
+import { MyDashboard } from './MyDashboard';
 
 interface DashboardScreenProps {
   userRole: 'admin' | 'user' | 'manager';
@@ -15,22 +11,11 @@ interface DashboardScreenProps {
 }
 
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ userRole, currentPage, onNavigate }) => {
+  const isOrgView = userRole === 'admin' || userRole === 'manager';
+
   return (
     <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
-
-      <div className="space-y-8 bg-white">
-
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard Coming Soon...</h1>
-        </div>
-
-
-
-        {/* Bottom Section: Milestones & Activity */}
-
-
-      </div>
+      {isOrgView ? <OrgDashboard /> : <MyDashboard />}
     </Layout>
   );
 };

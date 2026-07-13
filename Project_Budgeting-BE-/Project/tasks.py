@@ -77,7 +77,7 @@ def send_task_assignment_email(task_id, user_id):
 def check_running_timers():
     """Check all running timers and auto-stop if allocated hours exceeded"""
     from Project.models import TaskTimerLog
-    from Project.redis_utils import get_active_timer, clear_active_timer
+    from Project.utils.timer import get_active_timer, clear_active_timer
     from channels.layers import get_channel_layer
     from asgiref.sync import async_to_sync
     from decimal import Decimal
@@ -120,7 +120,17 @@ def check_running_timers():
             
             # Clear Redis
             clear_active_timer(user.id)
-            
+
+            # Set stop marker so the user cannot silently restart a timer that was
+            # auto-stopped for exceeding allocated hours (mirrors the manual-stop API).
+            try:
+                from django_redis import get_redis_connection
+                _redis = get_redis_connection("default")
+                _today = timezone.now().date()
+                _redis.setex(f"task_stopped:{user.id}:{task.id}:{_today}", 86400, "1")
+            except Exception as _e:
+                print(f"Warning: could not set stop marker during auto-stop: {_e}")
+
             # Calculate final values
             final_logs = TaskTimerLog.objects.filter(
                 task=task,

@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.db.models import Sum, Max, Q
 from django.db.models.functions import Coalesce
 
-from finances.models import Invoice, InvoicePayment, OutgoingPayment, PurchaseOrder
+from finances.models import Invoice, InvoicePayment, OutgoingPayment, PurchaseOrder, Expense
 from django.db.models import F
 from Project.models import ProjectBudget
 def get_financial_summary(filters):
@@ -77,12 +77,21 @@ def get_all_tab_data(filters):
         # Calculate totals for this client/project group
         total_invoiced = sum(inv.total_amount for inv in invoices)
         
-        expenses = OutgoingPayment.objects.filter(
-            vendor_bill__purchase_order__project=project
-        ).aggregate(
-            total=Coalesce(Sum("amount"), Decimal("0.00"))
-        )["total"] if project else Decimal("0.00")
-        
+        expenses = Decimal("0.00")
+        if project:
+            # Vendor bill payments (via PO) plus directly-logged expenses —
+            # missing the latter previously made "expenses" (and therefore
+            # profit) wrong whenever a project had logged expenses that
+            # weren't tied to a purchase order/vendor bill.
+            expenses = OutgoingPayment.objects.filter(
+                vendor_bill__purchase_order__project=project
+            ).aggregate(
+                total=Coalesce(Sum("amount"), Decimal("0.00"))
+            )["total"]
+            expenses += Expense.objects.filter(project=project).aggregate(
+                total=Coalesce(Sum("amount"), Decimal("0.00"))
+            )["total"]
+
         received = InvoicePayment.objects.filter(
             invoice__client=client,
             invoice__project=project
@@ -227,6 +236,9 @@ def get_project_tab_data(filters):
         expenses = OutgoingPayment.objects.filter(
             vendor_bill__purchase_order__project=pb.project
         ).aggregate(
+            total=Coalesce(Sum("amount"), Decimal("0.00"))
+        )["total"]
+        expenses += Expense.objects.filter(project=pb.project).aggregate(
             total=Coalesce(Sum("amount"), Decimal("0.00"))
         )["total"]
 

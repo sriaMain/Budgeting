@@ -15,7 +15,7 @@ interface UseTaskTimerReturn {
     activeTimerTaskId: string | null;
     getElapsedTime: (taskId: string) => number;
     isTaskRunning: (taskId: string) => boolean;
-    startTimer: (taskId: string, currentElapsed?: number) => Promise<void>;
+    startTimer: (taskId: string) => Promise<void>;
     pauseTimer: (taskId: string) => Promise<void>;
     stopTimer: (taskId: string) => Promise<void>;
     fetchTimerState: (taskId: string) => Promise<void>;
@@ -38,7 +38,7 @@ export const useTaskTimer = (): UseTaskTimerReturn => {
         return { taskId: null, startTime: null, elapsedSeconds: 0, isRunning: false };
     });
 
-    const [currentTime, setCurrentTime] = useState(Date.now());
+    const [currentTime, setCurrentTime] = useState(() => Date.now());
     const intervalRef = useRef<number | null>(null);
     const socketRef = useRef<WebSocket | null>(null);
 
@@ -220,7 +220,7 @@ export const useTaskTimer = (): UseTaskTimerReturn => {
     }, [timerState, getElapsedTime, disconnectWebSocket]);
 
     // Start timer for a task
-    const startTimer = useCallback(async (taskId: string, currentElapsed: number = 0) => {
+    const startTimer = useCallback(async (taskId: string) => {
         try {
             // If another timer is running, pause it first
             if (timerState.isRunning && timerState.taskId && timerState.taskId !== taskId) {

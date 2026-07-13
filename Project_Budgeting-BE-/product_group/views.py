@@ -730,6 +730,14 @@ class QuoteDetailView(APIView):
                 status=status.HTTP_200_OK
             )
 
+        # Only a Confirmed quote may be moved to Closed; every other stage
+        # must go through Confirmed first.
+        if requested_status == "Closed" and old_status != "Confirmed":
+            return Response(
+                {"error": "Only Confirmed quotes can be moved to Closed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         serializer.save(modified_by=request.user)
 
         return Response(serializer.data, status=status.HTTP_200_OK)

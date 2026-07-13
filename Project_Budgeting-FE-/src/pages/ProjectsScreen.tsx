@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { Button } from '../components/Button';
-import { InputField } from '../components/InputField';
-import { Search, Filter, Plus, ChevronDown, MoreHorizontal, Wallet, PieChart, TrendingUp, X } from 'lucide-react';
+import { Search, Filter, Plus, ChevronDown, MoreHorizontal, Wallet, PieChart, TrendingUp, X, Briefcase, Clock, CheckCircle2 } from 'lucide-react';
 import { CreateProjectModal } from '../components/CreateProjectModal';
 import axiosInstance from '../utils/axiosInstance';
+import { toast } from 'react-hot-toast';
 
 interface Project {
 	id: number;
@@ -21,6 +21,7 @@ interface Project {
 	budget: {
 		use_quoted_amounts: boolean;
 		total_hours: number;
+		billable_hours?: number | string;
 		total_budget: string;
 		bills_and_expenses: string;
 		currency: string;
@@ -62,29 +63,43 @@ const ProgressBar = ({ value }: { value: number }) => (
 	</div>
 );
 
-const StatusBadge = ({ status }: { status: string }) => {
-	const styles = {
-		'planning': 'bg-purple-50 text-purple-700 border-purple-200',
-		'in_progress': 'bg-green-50 text-green-700 border-green-200',
-		'In Progress': 'bg-green-50 text-green-700 border-green-200',
-		'Completed': 'bg-blue-50 text-blue-700 border-blue-200',
-		'completed': 'bg-blue-50 text-blue-700 border-blue-200',
-		'On Hold': 'bg-orange-50 text-orange-700 border-orange-200',
-		'on_hold': 'bg-orange-50 text-orange-700 border-orange-200',
-		'Cancelled': 'bg-red-50 text-red-700 border-red-200',
-		'cancelled': 'bg-red-50 text-red-700 border-red-200',
-	};
+const STATUS_STYLES: Record<string, string> = {
+	planning: 'bg-purple-50 text-purple-700 border-purple-200',
+	development: 'bg-blue-50 text-blue-700 border-blue-200',
+	testing: 'bg-amber-50 text-amber-700 border-amber-200',
+	uat: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+	ready_for_deployment: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+	deployed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+	on_hold: 'bg-orange-50 text-orange-700 border-orange-200',
+};
 
-	const defaultStyle = 'bg-gray-50 text-gray-700 border-gray-200';
-	const activeStyle = styles[status as keyof typeof styles] || defaultStyle;
-
-	// Capitalize first letter for display
-	const displayStatus = status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+const StatusSelect = ({
+	project,
+	statusChoices,
+	onChange,
+}: {
+	project: Project;
+	statusChoices: { value: string; label: string }[];
+	onChange: (project: Project, status: string) => void;
+}) => {
+	const activeStyle = STATUS_STYLES[project.status] || 'bg-gray-50 text-gray-700 border-gray-200';
+	// Make sure the project's current status always has a matching <option>,
+	// even if it hasn't loaded into statusChoices yet.
+	const options = statusChoices.some(choice => choice.value === project.status)
+		? statusChoices
+		: [{ value: project.status, label: project.status.replace(/_/g, ' ') }, ...statusChoices];
 
 	return (
-		<span className={`px-3 py-1 rounded-full text-xs font-medium border ${activeStyle}`}>
-			{displayStatus}
-		</span>
+		<select
+			value={project.status}
+			onClick={(e) => e.stopPropagation()}
+			onChange={(e) => onChange(project, e.target.value)}
+			className={`px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer capitalize focus:outline-none focus:ring-2 focus:ring-blue-500 ${activeStyle}`}
+		>
+			{options.map(choice => (
+				<option key={choice.value} value={choice.value}>{choice.label}</option>
+			))}
+		</select>
 	);
 };
 
@@ -106,28 +121,20 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 	
 	const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 	const [advancedFilters, setAdvancedFilters] = useState({
-		project_name: '',
-		min_budget: '',
-		max_budget: '',
-		start_date: '',
-		end_date: ''
+		project_name: ''
 	});
 	const [appliedFilters, setAppliedFilters] = useState({
-		project_name: '',
-		min_budget: '',
-		max_budget: '',
-		start_date: '',
-		end_date: ''
+		project_name: ''
 	});
 
 	useEffect(() => {
 		fetchStatusChoices();
 	}, []);
 
-	// Derive available project names from currently loaded company groups
-	const projectNames = Array.from(
-		new Set(companyGroups.flatMap(company => company.projects.map(p => p.project_name)))
-	).sort();
+	// Full list of project names for the filter dropdown. Kept separate from
+	// companyGroups (which shrinks once a filter is applied) so every project
+	// stays selectable regardless of the currently active filter.
+	const [allProjectNames, setAllProjectNames] = useState<string[]>([]);
 
 	useEffect(() => {
 		const timeoutId = setTimeout(() => {
@@ -155,11 +162,7 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 				params.append('status', filterStatus);
 			}
 			if (appliedFilters.project_name) params.append('project_name', appliedFilters.project_name);
-			if (appliedFilters.min_budget) params.append('min_budget', appliedFilters.min_budget);
-			if (appliedFilters.max_budget) params.append('max_budget', appliedFilters.max_budget);
-			if (appliedFilters.start_date) params.append('start_date', appliedFilters.start_date);
-			if (appliedFilters.end_date) params.append('end_date', appliedFilters.end_date);
-			
+
 			const response = await axiosInstance.get(`projects/?${params.toString()}`);
 
 			// Handle the nested structure: response.data.Projects is an array of companies
@@ -174,7 +177,10 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 						// Parse budget values for KPIs
 						const profit = p.budget?.forecasted_profit ? parseFloat(p.budget.forecasted_profit) : 0;
 						const budget = p.budget?.total_budget ? parseFloat(p.budget.total_budget) : 0;
-						const hours = p.budget?.total_hours || 0;
+						// Prefer billable_hours (falls back to task-allocated hours on the
+						// backend when total_hours/quote hours were never set) over the raw
+						// total_hours field, which can be 0 even when tasks have real hours.
+						const hours = p.budget?.billable_hours != null ? Number(p.budget.billable_hours) : (p.budget?.total_hours || 0);
 
 						totalProfit += profit;
 						totalBudget += budget;
@@ -209,6 +215,12 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 					totalBudget: totalBudget,
 					totalHours: totalHours
 				});
+
+				// Merge in any newly-seen project names without dropping ones
+				// hidden by the current filter, so the filter dropdown always
+				// offers the full project list.
+				const namesInResponse = groups.flatMap(company => company.projects.map(p => p.project_name));
+				setAllProjectNames(prev => Array.from(new Set([...prev, ...namesInResponse])).sort());
 			} else {
 				setCompanyGroups([]);
 			}
@@ -223,10 +235,9 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 	// Filter company groups based on search query and status filters
 	const filteredCompanyGroups = companyGroups.map(company => {
 		const filteredProjects = company.projects.filter(project => {
-			// The backend handles search and status filtering,
-			// but we can apply them here as a safety measure for company name matching.
-			const matchesSearch = project.project_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				company.company_name.toLowerCase().includes(searchQuery.toLowerCase());
+			// The backend handles search and status filtering;
+			// this is a client-side safety net, restricted to project name only.
+			const matchesSearch = project.project_name.toLowerCase().includes(searchQuery.toLowerCase());
 
 			const matchesStatus = filterStatus === 'All' || project.status === filterStatus;
 
@@ -245,6 +256,31 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 	const currency = companyGroups.length > 0 && companyGroups[0].projects.length > 0
 		? companyGroups[0].projects[0].budget.currency
 		: 'INR';
+
+	// Project counts for the overview tiles (derived from the currently loaded/filtered projects)
+	const allProjects = companyGroups.flatMap(company => company.projects);
+	const totalProjectsCount = allProjects.length;
+	const completedProjectsCount = allProjects.filter(project => project.status === 'deployed').length;
+	const inProcessProjectsCount = totalProjectsCount - completedProjectsCount;
+
+	const handleStatusChange = async (project: Project, newStatus: string) => {
+		if (newStatus === project.status) return;
+
+		const previousGroups = companyGroups;
+		setCompanyGroups(prev => prev.map(company => ({
+			...company,
+			projects: company.projects.map(p => p.id === project.id ? { ...p, status: newStatus } : p)
+		})));
+
+		try {
+			await axiosInstance.put(`projects/${project.project_no}/`, { status: newStatus });
+			toast.success(`"${project.project_name}" status updated to ${newStatus.replace(/_/g, ' ')}`);
+		} catch (error) {
+			console.error('Error updating project status:', error);
+			toast.error('Failed to update project status');
+			setCompanyGroups(previousGroups);
+		}
+	};
 
 	return (
 		<Layout userRole={userRole} currentPage="projects" onNavigate={onNavigate}>
@@ -302,6 +338,25 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 							/>
 						</div>
 					</div>
+				</div>
+
+				{/* Project Overview */}
+				<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+					<KPICard
+						label="Total Projects"
+						value={totalProjectsCount.toString()}
+						icon={Briefcase}
+					/>
+					<KPICard
+						label="In Process"
+						value={inProcessProjectsCount.toString()}
+						icon={Clock}
+					/>
+					<KPICard
+						label="Completed"
+						value={completedProjectsCount.toString()}
+						icon={CheckCircle2}
+					/>
 				</div>
 
 				{/* KPIs */}
@@ -373,16 +428,20 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 															<div>{project.end_date}</div>
 														</div>
 														<div className="col-span-2 text-sm text-gray-900 font-medium">
-															{parseFloat(project.budget.total_budget).toLocaleString()} {project.budget.currency}
+															{(parseFloat(project.budget.total_budget) || 0).toLocaleString()} {project.budget.currency}
 														</div>
 														<div className="col-span-2 text-sm text-green-600 font-medium">
-															{parseFloat(project.budget.forecasted_profit).toLocaleString()} {project.budget.currency}
+															{(parseFloat(project.budget.forecasted_profit) || 0).toLocaleString()} {project.budget.currency}
 														</div>
 														<div className="col-span-1 text-sm text-gray-900 font-medium">
-															{project.budget.total_hours}h
+															{project.budget.billable_hours != null ? Number(project.budget.billable_hours) : project.budget.total_hours}h
 														</div>
 														<div className="col-span-2">
-															<StatusBadge status={project.status} />
+															<StatusSelect
+																project={project}
+																statusChoices={statusChoices}
+																onChange={handleStatusChange}
+															/>
 														</div>
 													</div>
 												))}
@@ -423,63 +482,18 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 									className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 								>
 									<option value="">All Projects</option>
-									{projectNames.map((name, idx) => (
+									{allProjectNames.map((name, idx) => (
 										<option key={idx} value={name}>{name}</option>
 									))}
 								</select>
 							</div>
-							<div className="grid grid-cols-2 gap-4">
-								<div>
-									<label className="block text-sm font-medium text-gray-700 mb-1">Min Budget</label>
-									<InputField
-										type="number"
-										value={advancedFilters.min_budget}
-										onChange={(e) => setAdvancedFilters(prev => ({ ...prev, min_budget: e.target.value }))}
-										placeholder="0"
-									/>
-								</div>
-								<div>
-									<label className="block text-sm font-medium text-gray-700 mb-1">Max Budget</label>
-									<InputField
-										type="number"
-										value={advancedFilters.max_budget}
-										onChange={(e) => setAdvancedFilters(prev => ({ ...prev, max_budget: e.target.value }))}
-										placeholder="Any"
-									/>
-								</div>
-							</div>
-							<div className="grid grid-cols-2 gap-4">
-								<div>
-									<label className="block text-sm font-medium text-gray-700 mb-1">Start Date From</label>
-									<InputField
-										type="date"
-										value={advancedFilters.start_date}
-										onChange={(e) => setAdvancedFilters(prev => ({ ...prev, start_date: e.target.value }))}
-									/>
-								</div>
-								<div>
-									<label className="block text-sm font-medium text-gray-700 mb-1">End Date To</label>
-									<InputField
-										type="date"
-										value={advancedFilters.end_date}
-										onChange={(e) => setAdvancedFilters(prev => ({ ...prev, end_date: e.target.value }))}
-									/>
-								</div>
-							</div>
 						</div>
 						<div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50 mt-auto">
 							<Button variant="secondary" onClick={() => {
-								const emptyFilters = {
-									project_name: '',
-									min_budget: '',
-									max_budget: '',
-									start_date: '',
-									end_date: ''
-								};
-								setAdvancedFilters(emptyFilters);
-								setAppliedFilters(emptyFilters);
+								setAdvancedFilters(appliedFilters);
+								setIsFilterModalOpen(false);
 							}}>
-								Clear All
+								Cancel
 							</Button>
 							<Button onClick={() => {
 								setAppliedFilters(advancedFilters);

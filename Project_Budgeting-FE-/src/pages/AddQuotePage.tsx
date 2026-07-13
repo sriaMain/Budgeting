@@ -201,6 +201,10 @@ export default function AddQuotePage() {
           // Store original status to compare later
           setOriginalStatus(data.status || '');
 
+          // Populate the saved tax percentage — this was previously left at
+          // its default of 0 when opening a quote for editing.
+          setTaxPercentage(data.tax_percentage != null ? Number(data.tax_percentage) : 0);
+
           if (data.items && data.items.length > 0) {
             const mappedItems = data.items.map((item: any) => ({
               id: crypto.randomUUID(),

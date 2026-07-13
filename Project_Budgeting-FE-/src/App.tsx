@@ -26,11 +26,13 @@ import ExpenseDetailsPage from "./pages/ExpenseDetailsPage";
 import ReportsPage from "./pages/ReportsPage";
 import { initializeAuth } from "./auth/authThunk";
 import { useAppSelector } from "./hooks/useAppSelector";
+import { useAppDispatch } from "./hooks/useAppDispatch";
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<string>("dashboard");
   // Get userRole from Redux store - this will be set after login
   const userRole = useAppSelector((state) => state.auth.userRole) || "user";
+  const dispatch = useAppDispatch();
 
   const handleNavigate = (page: string) => {
     setCurrentPage(page);
@@ -39,9 +41,9 @@ const App: React.FC = () => {
   useEffect(() => {
     console.log("App mounted, initializing auth...");
 
-    initializeAuth();
+    dispatch(initializeAuth());
     console.log("Auth initialization dispatched.");
-  }, []);
+  }, [dispatch]);
 
 
   return (

@@ -21,7 +21,10 @@ const STAGE_COLORS = {
   oppurtunity: 'bg-gray-50 border-gray-200',
   scoping: 'bg-blue-50 border-blue-200',
   proposal: 'bg-yellow-50 border-yellow-200',
-  confirmed: 'bg-green-50 border-green-200'
+  confirmed: 'bg-green-50 border-green-200',
+  rejected: 'bg-red-50 border-red-200',
+  closed: 'bg-emerald-50 border-emerald-200',
+  cancelled: 'bg-gray-50 border-gray-200'
 };
 
 export default function PipelineScreen({
@@ -137,6 +140,13 @@ export default function PipelineScreen({
 
     const sourceStageId = source.droppableId as StageType;
     const destStageId = destination.droppableId as StageType;
+
+    // Only Confirmed quotes may move to Closed; block Closed as a direct
+    // destination from every other stage.
+    if (destStageId === 'closed' && sourceStageId !== 'confirmed') {
+      toast.error('Only Confirmed quotes can be moved to Closed');
+      return;
+    }
 
     // Find the quote being moved
     const sourceStage = pipelineData.stages.find(s => s.stage === sourceStageId);

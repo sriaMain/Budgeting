@@ -3,7 +3,14 @@
  * Defines all interfaces and types for the pipeline/opportunity management system
  */
 
-export type PipelineStage = 'oppurtunity' | 'scoping' | 'proposal' | 'confirmed';
+export type PipelineStage =
+  | 'oppurtunity'
+  | 'scoping'
+  | 'proposal'
+  | 'confirmed'
+  | 'rejected'
+  | 'closed'
+  | 'cancelled';
 
 export interface Quote {
   quote_no: number;

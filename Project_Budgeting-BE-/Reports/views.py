@@ -1,16 +1,18 @@
 from decimal import Decimal
 
-from django.db.models import Sum, DecimalField
+from django.db.models import Sum, DecimalField, F, Count
 from django.db.models.functions import Coalesce
 from django.core.cache import cache
+from django.utils import timezone
+from dateutil.relativedelta import relativedelta
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from Project.models import ProjectBudget
-from finances.models import Invoice, InvoicePayment, OutgoingPayment
+from Project.models import Project, ProjectBudget
+from finances.models import Invoice, InvoicePayment, OutgoingPayment, Expense
 
 from .serializers import DashboardMetricsSerializer
 from rest_framework.views import APIView
@@ -26,6 +28,33 @@ from .services import (
 )
 
 
+def _money_sum(queryset, amount_field, date_field=None, start=None, end=None):
+    """Sum `amount_field` over `queryset`, optionally restricted to [start, end) on `date_field`."""
+    if date_field is not None:
+        queryset = queryset.filter(**{f"{date_field}__gte": start, f"{date_field}__lt": end})
+    return queryset.aggregate(
+        total=Coalesce(
+            Sum(amount_field),
+            Decimal("0.00"),
+            output_field=DecimalField(max_digits=15, decimal_places=2),
+        )
+    )["total"]
+
+
+def _percent_change(current, previous):
+    """Month-over-month % change. None when there's no baseline to compare against."""
+    if not previous:
+        return None
+    return round(float((current - previous) / previous * 100), 2)
+
+
+def _month_window(months_ago):
+    first_of_this_month = timezone.now().date().replace(day=1)
+    start = first_of_this_month - relativedelta(months=months_ago)
+    end = start + relativedelta(months=1)
+    return start, end
+
+
 class DashboardMetricsAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -39,76 +68,81 @@ class DashboardMetricsAPIView(APIView):
         except Exception:
             cached_data = None
 
-        # 1️⃣ Budget → ProjectBudget.total_budget (only active projects)
-        total_budget = ProjectBudget.objects.filter(
-            project__status__in=[
-                "planning",
-                "development",
-                "testing",
-                "uat",
-                "ready_for_deployment",
-                "deployed",
-            ]
-        ).aggregate(
-            total=Coalesce(
-                Sum("total_budget"),
-                Decimal("0.00"),
-                output_field=DecimalField(max_digits=15, decimal_places=2),
-            )
-        )["total"]
+        # 1️⃣ Budget → ProjectBudget.total_budget (only active projects) — static snapshot, no trend
+        total_budget = _money_sum(
+            ProjectBudget.objects.filter(
+                project__status__in=[
+                    "planning",
+                    "development",
+                    "testing",
+                    "uat",
+                    "ready_for_deployment",
+                    "deployed",
+                ]
+            ),
+            "total_budget",
+        )
 
         # 2️⃣ Invoiced → Invoice.total_amount (valid business statuses)
-        total_invoiced = Invoice.objects.filter(
+        invoiced_qs = Invoice.objects.filter(
             status__in=["Issued", "Partially Paid", "Paid", "Overdue"]
-        ).aggregate(
-            total=Coalesce(
-                Sum("total_amount"),
-                Decimal("0.00"),
-                output_field=DecimalField(max_digits=15, decimal_places=2),
-            )
-        )["total"]
+        )
+        total_invoiced = _money_sum(invoiced_qs, "total_amount")
 
         # 3️⃣ Received → InvoicePayment.amount
-        total_received = InvoicePayment.objects.aggregate(
-            total=Coalesce(
-                Sum("amount"),
-                Decimal("0.00"),
-                output_field=DecimalField(max_digits=15, decimal_places=2),
-            )
-        )["total"]
+        received_qs = InvoicePayment.objects.all()
+        total_received = _money_sum(received_qs, "amount")
 
-        # 4️⃣ Expenses → OutgoingPayment.amount
-        total_expenses = OutgoingPayment.objects.aggregate(
-            total=Coalesce(
-                Sum("amount"),
-                Decimal("0.00"),
-                output_field=DecimalField(max_digits=15, decimal_places=2),
-            )
-        )["total"]
+        # 4️⃣ Expenses → OutgoingPayment.amount (vendor bill payments) + Expense.amount (logged expenses)
+        expenses_qs = OutgoingPayment.objects.all()
+        logged_expenses_qs = Expense.objects.all()
+        total_expenses = _money_sum(expenses_qs, "amount") + _money_sum(logged_expenses_qs, "amount")
 
         # 5️⃣ Profit → Received - Expenses
-        profit = (total_received or Decimal("0.00")) - (total_expenses or Decimal("0.00"))
+        profit = total_received - total_expenses
+
+        # 🔹 Month-over-month % change for the flow metrics (budget is a snapshot, no baseline to diff)
+        this_start, this_end = _month_window(0)
+        last_start, last_end = _month_window(1)
+
+        invoiced_this = _money_sum(invoiced_qs, "total_amount", "issue_date", this_start, this_end)
+        invoiced_last = _money_sum(invoiced_qs, "total_amount", "issue_date", last_start, last_end)
+
+        received_this = _money_sum(received_qs, "amount", "payment_date", this_start, this_end)
+        received_last = _money_sum(received_qs, "amount", "payment_date", last_start, last_end)
+
+        expenses_this = (
+            _money_sum(expenses_qs, "amount", "payment_date", this_start, this_end)
+            + _money_sum(logged_expenses_qs, "amount", "expense_date", this_start, this_end)
+        )
+        expenses_last = (
+            _money_sum(expenses_qs, "amount", "payment_date", last_start, last_end)
+            + _money_sum(logged_expenses_qs, "amount", "expense_date", last_start, last_end)
+        )
+
+        profit_this = received_this - expenses_this
+        profit_last = received_last - expenses_last
 
         data = {
             "budget": {
                 "value": total_budget,
-                "change": 0,
+                "change": None,
             },
             "invoiced": {
                 "value": total_invoiced,
-                "change": 0,
+                "change": _percent_change(invoiced_this, invoiced_last),
             },
             "received": {
                 "value": total_received,
-                "change": 0,
+                "change": _percent_change(received_this, received_last),
             },
             "expenses": {
                 "value": total_expenses,
-                "change": 0,
+                "change": _percent_change(expenses_this, expenses_last),
             },
             "profit": {
                 "value": profit,
-                "change": 0,
+                "change": _percent_change(profit_this, profit_last),
             },
         }
 
@@ -119,6 +153,79 @@ class DashboardMetricsAPIView(APIView):
             pass
 
         return Response(serializer.data)
+
+
+class DashboardOrgOverviewAPIView(APIView):
+    """Revenue trend, project-status breakdown, and top projects by forecasted profit — Admin/Manager only."""
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.roles.filter(
+            role_name__in=["Admin", "Manager", "Project Manager"]
+        ).exists():
+            return Response({"error": "Permission denied"}, status=403)
+
+        cache_key = "dashboard_org_overview"
+        try:
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                return Response(cached_data)
+        except Exception:
+            pass
+
+        # 🔹 Revenue trend — last 6 months, invoiced vs received vs expenses
+        months = []
+        for months_ago in range(5, -1, -1):
+            start, end = _month_window(months_ago)
+            months.append({
+                "month": start.strftime("%Y-%m"),
+                "invoiced": _money_sum(
+                    Invoice.objects.filter(status__in=["Issued", "Partially Paid", "Paid", "Overdue"]),
+                    "total_amount", "issue_date", start, end,
+                ),
+                "received": _money_sum(InvoicePayment.objects.all(), "amount", "payment_date", start, end),
+                "expenses": _money_sum(OutgoingPayment.objects.all(), "amount", "payment_date", start, end),
+            })
+
+        # 🔹 Project status breakdown
+        project_status = list(
+            Project.objects.values("status").annotate(count=Count("project_no")).order_by("-count")
+        )
+
+        # 🔹 Top 5 projects by forecasted profit (only projects with a budget set)
+        top_projects_qs = (
+            ProjectBudget.objects.filter(
+                total_budget__isnull=False, bills_and_expenses__isnull=False, project__isnull=False
+            )
+            .annotate(computed_profit=F("total_budget") - F("bills_and_expenses"))
+            .select_related("project")
+            .order_by("-computed_profit")[:5]
+        )
+        top_projects = [
+            {
+                "project_no": pb.project.project_no,
+                "project_name": pb.project.project_name,
+                "total_budget": pb.total_budget,
+                "bills_and_expenses": pb.bills_and_expenses,
+                "forecasted_profit": pb.computed_profit,
+            }
+            for pb in top_projects_qs
+        ]
+
+        data = {
+            "revenue_trend": months,
+            "project_status": project_status,
+            "top_projects": top_projects,
+        }
+
+        try:
+            cache.set(cache_key, data, timeout=90)
+        except Exception:
+            pass
+
+        return Response(data)
 
 
 

@@ -161,17 +161,6 @@ const ManageUsersTab: React.FC = () => {
     setView('form');
   };
 
-  const handleDelete = async (user: UserDisplay) => {
-    if (window.confirm(`Are you sure you want to delete ${user.first_name}?`)) {
-      try {
-        await axiosInstance.delete(`/accounts/users/${user.id}/`);
-        setUsers(prev => prev.filter(u => u.id !== user.id));
-      } catch (error) {
-        console.error("Failed to delete user", error);
-      }
-    }
-  };
-
   const handleLanguageChange = (lang: string) => {
     setFormData(prev => {
       // Ensure languages is always an array
@@ -412,7 +401,6 @@ const ManageUsersTab: React.FC = () => {
             keyField="id"
             isLoading={isLoading}
             onEdit={handleEdit}
-            onDelete={handleDelete}
           />
         </div>
       ) : (

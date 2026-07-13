@@ -25,6 +25,9 @@ def set_active_timer(user_id, task_id, start_time):
 
 def clear_active_timer(user_id):
     try:
+        import traceback
+        print(f"DEBUG CLEAR_TIMER: Clearing timer for user {user_id}")
+        print(f"DEBUG CLEAR_TIMER: Called from:\n{''.join(traceback.format_stack())}")
         redis_conn.delete(f"{ENV_PREFIX}:active_timer:{user_id}")
         redis_conn.delete(f"{ENV_PREFIX}:timer_start:{user_id}")
     except Exception as e:

@@ -142,11 +142,9 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
     const [loading, setLoading] = useState(true);
 
     // Filter states
-    const [showFilterModal, setShowFilterModal] = useState(false);
     const [projects, setProjects] = useState<Array<{ project_no: number; project_name: string }>>([]);
     const [selectedProject, setSelectedProject] = useState<number | null>(null);
     const [selectedStatus, setSelectedStatus] = useState<string>('');
-    const [selectedReportType, setSelectedReportType] = useState<TabType>('Financial Reports');
     const [dateFrom, setDateFrom] = useState<string>('');
     const [dateTo, setDateTo] = useState<string>('');
     const [exportLoading, setExportLoading] = useState(false);
@@ -219,13 +217,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
     }, []);
 
 
-    // Handle Export based on selected report type from filter
+    // Handle Export based on the currently active report tab
     const handleExport = async (format: 'excel' | 'pdf') => {
-        if (!selectedReportType) {
-            alert('Please select a report type from the filter');
-            return;
-        }
-
         try {
             setExportLoading(true);
 
@@ -247,7 +240,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
             const queryString = params.toString() ? `?${params.toString()}` : '';
             const ext = format === 'excel' ? 'xlsx' : 'pdf';
 
-            switch (selectedReportType) {
+            switch (activeTab) {
                 case 'Financial Reports':
                     exportUrl = `reports/financial/export/${queryString}`;
                     fileName = `financial_report${selectedStatus ? `_${selectedStatus}` : ''}${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.${ext}`;
@@ -295,32 +288,6 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
         } finally {
             setExportLoading(false);
         }
-    };
-
-    // Handle filter reset
-    const handleResetFilters = () => {
-        setSelectedReportType('Financial Reports');
-        setDateFrom('');
-        setDateTo('');
-        // Fetch data without filters
-        fetchData();
-    };
-
-    // Handle apply filters
-    const handleApplyFilters = () => {
-        if (!dateFrom || !dateTo) {
-            alert('Please select both date from and date to');
-            return;
-        }
-
-        // Fetch filtered data with status if selected
-        fetchData({ dateFrom, dateTo, status: selectedStatus });
-
-        // Switch to the selected report type tab
-        setActiveTab(selectedReportType);
-
-        // Close modal
-        setShowFilterModal(false);
     };
 
     // Handle sorting
@@ -833,99 +800,6 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
 
     return (
         <>
-            {/* Filter Modal - Rendered outside Layout for proper z-index */}
-            {showFilterModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowFilterModal(false)}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-                        <div className="px-6 py-5 border-b border-gray-200">
-                            <div className="flex items-center justify-between">
-                                <h2 className="text-xl font-bold text-gray-900">Filter Reports</h2>
-                                <button
-                                    onClick={() => setShowFilterModal(false)}
-                                    className="text-gray-400 hover:text-gray-600 transition-colors"
-                                >
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-
-
-                        <div className="px-6 py-6 space-y-5">
-                            {/* Report Type Selection */}
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                    Select Report Type <span className="text-red-500">*</span>
-                                </label>
-                                <select
-                                    value={selectedReportType}
-                                    onChange={(e) => setSelectedReportType(e.target.value as TabType)}
-                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                >
-                                    <option value="All">All</option>
-                                    <option value="Financial Reports">Financial Reports</option>
-                                    <option value="Project Reports">Project Reports</option>
-                                    <option value="Payment Reports">Payment Reports</option>
-                                    <option value="PO & Invoice Reports">PO & Invoice Reports</option>
-                                </select>
-                            </div>
-
-
-
-                            {/* Date From */}
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                    Date From <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="date"
-                                    value={dateFrom}
-                                    onChange={(e) => setDateFrom(e.target.value)}
-                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                />
-                            </div>
-
-                            {/* Date To */}
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                    Date To <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="date"
-                                    value={dateTo}
-                                    onChange={(e) => setDateTo(e.target.value)}
-                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="px-6 py-4 bg-gray-50 rounded-b-2xl flex items-center justify-between gap-3">
-                            <button
-                                onClick={handleResetFilters}
-                                className="px-4 py-2 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
-                            >
-                                Reset Filters
-                            </button>
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setShowFilterModal(false)}
-                                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleApplyFilters}
-                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all shadow-sm"
-                                >
-                                    Apply Filters
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
                 <div className="space-y-8 animate-in fade-in duration-500">
 

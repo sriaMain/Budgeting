@@ -20,18 +20,14 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   useEffect(() => {
     async function checkAuth() {
-      // No token → Force login
-      if (!auth.accessToken) {
-        setChecking(false);
-        return;
-      }
-
-      // Token exists but user not loaded → fetch user
+      // Not authenticated in memory (e.g. after a page refresh) → try to
+      // restore the session from the httpOnly refresh_token cookie before
+      // giving up and sending the user to login.
       if (!auth.isAuthenticated) {
         try {
           await dispatch(initializeAuth()).unwrap();
         } catch (err) {
-          // Refresh failed, token invalid, etc
+          // Refresh failed, cookie missing/expired, etc.
           console.log("Auth initialization failed", err);
         }
       }
@@ -40,7 +36,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     }
 
     checkAuth();
-  }, [auth.accessToken]);
+  }, [auth.isAuthenticated]);
 
   // Wait while checking token / refreshing
   if (checking) {

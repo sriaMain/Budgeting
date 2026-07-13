@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Layout } from '../components/Layout';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Plus, Calendar, Search, Filter } from 'lucide-react';
+import { Plus, Search, Filter } from 'lucide-react';
+import type { DropResult } from '@hello-pangea/dnd';
 import axiosInstance from '../utils/axiosInstance';
 import { ReusableTable } from '../components/ReusableTable';
 import { AddTaskModal } from '../components/AddTaskModal';
 import { AssignTaskModal } from '../components/AssignTaskModal';
 import { AddExpenseModal } from '../components/AddExpenseModal';
+import { TaskBoardView } from '../components/TaskBoardView';
+import { TaskCalendarView } from '../components/TaskCalendarView';
+import { TaskGanttView } from '../components/TaskGanttView';
+import { ProjectTimeTrackingView } from '../components/ProjectTimeTrackingView';
 import { toast } from 'react-hot-toast';
+import { parseApiErrors } from '../utils/parseApiErrors';
+import store from '../store/store';
 
 
 interface Task {
@@ -15,13 +22,26 @@ interface Task {
     assignee: string;
     assigneeAvatar: string;
     title: string;
-    status: 'Planned' | 'In Progress' | 'Completed';
+    status: 'Planned' | 'In Progress' | 'Completed' | 'Needs Attention';
     activityType: string;
     allocatedHours: string;
     consumedHours: string;
     dueDate: string;
+    dueDateRaw: string | null;
     remaining: string;
+    // Clean numeric hours (decimal), used by the Time/Budget views instead of
+    // the inconsistently-formatted display strings above.
+    allocatedHoursNum: number;
+    consumedHoursNum: number;
+    remainingHoursNum: number;
 }
+
+const TASK_STATUS_TO_API: Record<Task['status'], string> = {
+    'Planned': 'planned',
+    'In Progress': 'in_progress',
+    'Completed': 'completed',
+    'Needs Attention': 'needs_attention',
+};
 
 interface Payment {
     id: number;
@@ -46,7 +66,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const [activeTab, setActiveTab] = useState<string>('Tasks');
     const [activeSubTab, setActiveSubTab] = useState<string>('Task list');
     const [budgetSubTab, setBudgetSubTab] = useState<string>('Budget health');
-    const [budgetHealthSubTab, setBudgetHealthSubTab] = useState<string>('Budget health');
     const [budgetViewMode, setBudgetViewMode] = useState<string>('Budget');
     const [paymentSearch, setPaymentSearch] = useState<string>('');
     const [paymentTypeFilter, setPaymentTypeFilter] = useState<string>('All');
@@ -96,6 +115,11 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         if (normalizedStatus === 'planned') normalizedStatus = 'Planned';
         else if (normalizedStatus === 'in_progress' || normalizedStatus === 'in progress') normalizedStatus = 'In Progress';
         else if (normalizedStatus === 'completed') normalizedStatus = 'Completed';
+        else if (normalizedStatus === 'needs_attention' || normalizedStatus === 'needs attention') normalizedStatus = 'Needs Attention';
+
+        const allocatedHoursNum = Number(task.allocated_hours) || 0;
+        const consumedHoursNum = Number(task.consumed_hours) || 0;
+        const remainingHoursNum = task.remaining_hours != null ? Number(task.remaining_hours) : Math.max(0, allocatedHoursNum - consumedHoursNum);
 
         return {
             id: task.id?.toString() || '',
@@ -107,7 +131,11 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
             allocatedHours: task.allocated_formatted || (task.allocated_hours ? `${task.allocated_hours}h` : '0h'),
             consumedHours: task.consumed_formatted || (task.consumed_hours ? `${task.consumed_hours}h` : '0h'),
             dueDate: task.due_date ? new Date(task.due_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'TBD',
-            remaining: task.remaining_formatted_hms || (task.remaining_hours ? `${task.remaining_hours}h` : task.allocated_hours ? `${task.allocated_hours}h` : '0h')
+            dueDateRaw: task.due_date || null,
+            remaining: task.remaining_formatted_hms || (task.remaining_hours ? `${task.remaining_hours}h` : task.allocated_hours ? `${task.allocated_hours}h` : '0h'),
+            allocatedHoursNum,
+            consumedHoursNum,
+            remainingHoursNum,
         };
     };
 
@@ -431,9 +459,10 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     }, [activeTab, projectId, project]);
 
 
-    // Fetch payments when Payment tab is active
+    // Fetch payments when the Payment tab, or the Budget tab's Revenue/Profit
+    // sub-tabs (which reuse the same invoiced/received figures), are active.
     useEffect(() => {
-        if (activeTab === 'Payment') {
+        if (activeTab === 'Payment' || activeTab === 'Budget') {
             fetchProjectPayments();
         }
     }, [activeTab, projectId]);
@@ -463,23 +492,59 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
             const response = await axiosInstance.patch(`tasks/${taskId}/`, updates);
             if (response.status === 200 || response.status === 204) {
                 toast.success('Task updated');
-                const updatedApiTask = response.data;
-                setTasks(prev => prev.map(t => t.id === taskId ? {
-                    ...t,
-                    assignee: updatedApiTask.assigned_to?.username || 'Unassigned',
-                    assigneeAvatar: updatedApiTask.assigned_to?.username?.substring(0, 2).toUpperCase() || '○',
-                    title: updatedApiTask.title || t.title,
-                    status: (updatedApiTask.status || t.status) as Task['status'],
-                    activityType: updatedApiTask.activity_type || t.activityType,
-                    allocatedHours: updatedApiTask.allocated_hours ? `${updatedApiTask.allocated_hours}h` : t.allocatedHours,
-                    consumedHours: updatedApiTask.consumed_hours ? `${updatedApiTask.consumed_hours}h` : t.consumedHours,
-                    dueDate: updatedApiTask.due_date ? new Date(updatedApiTask.due_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : t.dueDate,
-                    remaining: updatedApiTask.remaining_hours ? `${updatedApiTask.remaining_hours}h` : updatedApiTask.allocated_hours ? `${updatedApiTask.allocated_hours}h` : t.remaining
-                } : t));
+                const updatedApiTask = response.data?.task || response.data;
+                setTasks(prev => prev.map(t => t.id === taskId ? mapApiTaskToTask(updatedApiTask) : t));
             }
         } catch (error) {
             console.error('Failed to update task:', error);
             toast.error('Failed to update task');
+        }
+    };
+
+    // Re-fetches a single task (e.g. after starting/pausing its timer, which
+    // flips status server-side) and merges it back into the tasks list.
+    const refreshTaskById = async (taskId: string) => {
+        try {
+            const resp = await axiosInstance.get(`tasks/${taskId}/`);
+            setTasks(prev => prev.map(t => t.id === taskId ? mapApiTaskToTask(resp.data) : t));
+        } catch (err) {
+            console.error('Failed to refresh task after timer change', err);
+        }
+    };
+
+    // Opens a task in the edit modal — shared by the Task list, Task Board, Calendar and Gantt views.
+    const openTaskForEdit = async (taskId: string) => {
+        try {
+            const resp = await axiosInstance.get(`tasks/${taskId}/`);
+            setSelectedTaskForEdit(resp.data);
+            setIsAddTaskModalOpen(true);
+        } catch (err) {
+            console.error('Failed to fetch task details', err);
+            toast.error('Failed to load task for editing');
+        }
+    };
+
+    // Drag-and-drop handler for the Task Board (Kanban) view — moves a task between
+    // status columns, optimistically updating the UI and reverting on failure
+    // (mirrors the pattern used by the Pipeline board's drag-and-drop).
+    const handleTaskDragEnd = async (result: DropResult) => {
+        const { destination, source, draggableId } = result;
+        if (!destination || destination.droppableId === source.droppableId) return;
+
+        const newStatus = destination.droppableId as Task['status'];
+        const taskId = draggableId;
+        const previousTasks = tasks;
+
+        setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+
+        try {
+            await axiosInstance.patch(`tasks/${taskId}/`, { status: TASK_STATUS_TO_API[newStatus] });
+            toast.success(`Task moved to ${newStatus}`);
+        } catch (error) {
+            console.error('Failed to update task status:', error);
+            const apiErrors = parseApiErrors(error);
+            toast.error(apiErrors.general || 'Failed to update task status');
+            setTasks(previousTasks);
         }
     };
 
@@ -509,12 +574,77 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                 return 'bg-green-500 text-white';
             case 'Completed':
                 return 'bg-blue-500 text-white';
+            case 'Needs Attention':
+                return 'bg-red-500 text-white';
             default:
                 return 'bg-gray-100 text-gray-800';
         }
     };
 
+    // Converts a backend "HH:MM:SS" string (e.g. remaining_billable_hours) to decimal hours.
+    const parseHmsToHours = (hms?: string | null): number => {
+        if (!hms) return 0;
+        const parts = hms.split(':').map(Number);
+        if (parts.length !== 3 || parts.some(Number.isNaN)) return 0;
+        const [h, m, s] = parts;
+        return h + m / 60 + s / 3600;
+    };
 
+    const formatHoursHM = (hours: number): string => {
+        const totalMinutes = Math.max(0, Math.round(hours * 60));
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        return `${h}:${String(m).padStart(2, '0')}`;
+    };
+
+    // Real budget/hours figures for the KPI cards, sourced from project.budget
+    // (backend ProjectBudgetSerializer — includes any timer running right now).
+    const budgetTotalHours = Number(project?.budget?.billable_hours) || 0;
+    const budgetRemainingHours = parseHmsToHours(project?.budget?.remaining_billable_hours);
+    const budgetConsumedHours = Math.max(0, budgetTotalHours - budgetRemainingHours);
+    const consumedHoursPercent = budgetTotalHours > 0 ? Math.round((budgetConsumedHours / budgetTotalHours) * 100) : 0;
+    const remainingHoursPercent = budgetTotalHours > 0 ? Math.round((budgetRemainingHours / budgetTotalHours) * 100) : 0;
+
+    const totalBudgetAmount = Number(project?.budget?.total_budget) || 0;
+    const usedBudgetAmount = Number(project?.budget?.used_budget) || 0;
+    const budgetUsedPercent = totalBudgetAmount > 0 ? Math.round((usedBudgetAmount / totalBudgetAmount) * 100) : 0;
+    const remainingBudgetAmount = project?.budget?.remaining_budget != null
+        ? Number(project.budget.remaining_budget)
+        : Math.max(0, totalBudgetAmount - usedBudgetAmount);
+    const budgetCurrency = project?.budget?.currency || 'INR';
+
+    const budgetHealth = totalBudgetAmount <= 0
+        ? { label: 'No budget set', className: 'bg-gray-50 border-gray-200 text-gray-700', bar: 'bg-gray-400' }
+        : budgetUsedPercent >= 100
+            ? { label: 'Over budget', className: 'bg-red-50 border-red-200 text-red-700', bar: 'bg-red-500' }
+            : budgetUsedPercent >= 80
+                ? { label: 'At risk', className: 'bg-amber-50 border-amber-200 text-amber-700', bar: 'bg-amber-500' }
+                : { label: 'On track', className: 'bg-green-50 border-green-200 text-green-700', bar: 'bg-green-500' };
+
+    // Revenue: quoted amount (contracted value, shown for reference only) vs.
+    // what's actually been invoiced and received. Invoiced/received come from
+    // the same payments summary the Payment tab already fetches.
+    const quotedRevenueAmount = project?.budget?.quoted_amount != null ? Number(project.budget.quoted_amount) : null;
+    const totalInvoicedAmount = Number(paymentSummary?.total_invoiced) || 0;
+    const totalReceivedAmount = Number(paymentSummary?.total_payments) || 0;
+    const outstandingRevenueAmount = Math.max(0, totalInvoicedAmount - totalReceivedAmount);
+    const revenueReceivedPercent = totalInvoicedAmount > 0 ? Math.round((totalReceivedAmount / totalInvoicedAmount) * 100) : 0;
+
+    // Profit: actual invoiced revenue minus actual cost (labor + expenses) —
+    // NOT the quoted/contracted value, so profit only appears once revenue has
+    // actually been invoiced. Used consistently by both Budget health and the
+    // Profit tab so the two never disagree.
+    const profitOrLoss = totalInvoicedAmount > 0 ? totalInvoicedAmount - usedBudgetAmount : null;
+    const profitMarginPercent = profitOrLoss !== null && totalInvoicedAmount > 0
+        ? Math.round((profitOrLoss / totalInvoicedAmount) * 100)
+        : null;
+
+    const currentUsername = store.getState().auth.username;
+
+    const overdueTasksCount = tasks.filter(t => {
+        if (!t.dueDateRaw || t.status === 'Completed') return false;
+        return new Date(t.dueDateRaw) < new Date(new Date().toDateString());
+    }).length;
 
     if (loading) {
         return (
@@ -560,12 +690,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                         </div>
                         <div className="flex gap-4">
                             <button
-                                onClick={() => navigate(`/projects/edit/${projectId}`)}
-                                className="px-4 py-2 bg-purple-200 text-black font-medium rounded-lg hover:bg-purple-300 transition-colors duration-200"
-                            >
-                                ✎ Modify Details
-                            </button>
-                            <button
                                 onClick={() => setActiveTab('Budget')}
                                 className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors duration-200"
                             >
@@ -575,53 +699,36 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                     </div>
 
                     {/* Project Title */}
-                    <h1 className="text-xl font-bold text-gray-900 mb-4">{project.project_name}</h1>
-
-                    {/* Bottom Row: Avatar + Name + Arrow + Add Icon + Date + Progress Bar */}
-                    <div className="flex items-center gap-4">
-
-
-                        {/* Date with Calendar Icon */}
-                        <div className="flex items-center gap-6 text-sm text-gray-600">
-                            <Calendar className="w-4 h-4 text-gray-400" />
-                            <span>{project.end_date || project.start_date}</span>
-                        </div>
-
-                        {/* Progress Bar */}
-                        <div className="flex items-center gap-6 flex-1 max-w-xs">
-                            <div className="flex-1 bg-gray-200 rounded-full h-2">
-                                <div className="bg-blue-600 h-2 rounded-full transition-all duration-100" style={{ width: `${project.progress || 0}%` }}></div>
-                            </div>
-                            <span className="text-xs text-gray-500 whitespace-nowrap">Estimated: {project.estimated_hours || 20}h</span>
-                        </div>
-                    </div>
+                    <h1 className="text-xl font-bold text-gray-900">{project.project_name}</h1>
                 </div>
 
                 {/* Stats Section */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                         <p className="text-xs text-gray-600 mb-2">Billable hours</p>
-                        <p className="text-2xl font-bold text-gray-900 mb-1">0:00</p>
+                        <p className="text-2xl font-bold text-gray-900 mb-1">{formatHoursHM(budgetTotalHours)}</p>
                         <p className="text-xs text-gray-600">h</p>
-                        <p className="text-xs text-gray-600 mt-2">0% of total</p>
+                        <p className="text-xs text-gray-600 mt-2">{formatHoursHM(budgetConsumedHours)}h consumed ({consumedHoursPercent}%)</p>
                     </div>
 
                     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                         <p className="text-xs text-gray-600 mb-2">Remaining Billable hours</p>
-                        <p className="text-2xl font-bold text-gray-900 mb-1">20:00</p>
+                        <p className="text-2xl font-bold text-gray-900 mb-1">{formatHoursHM(budgetRemainingHours)}</p>
                         <p className="text-xs text-gray-600">h</p>
-                        <p className="text-xs text-gray-600 mt-2">100% of total</p>
+                        <p className="text-xs text-gray-600 mt-2">{remainingHoursPercent}% of total</p>
                     </div>
 
                     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                         <p className="text-xs text-gray-600 mb-2">User budget</p>
-                        <p className="text-2xl font-bold text-gray-900 mb-1">{project.budget?.total_budget || 0} {project.budget?.currency || 'INR'}</p>
-                        <p className="text-xs text-gray-600 mt-2">0% of total</p>
+                        <p className="text-2xl font-bold text-gray-900 mb-1">{totalBudgetAmount.toLocaleString()} {project?.budget?.currency || 'INR'}</p>
+                        <p className="text-xs text-gray-600 mt-2">
+                            Used: {usedBudgetAmount.toLocaleString()} {project?.budget?.currency || 'INR'} ({budgetUsedPercent}%)
+                        </p>
                     </div>
 
                     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                         <p className="text-xs text-gray-600 mb-2">Overdue tasks</p>
-                        <p className="text-2xl font-bold text-gray-900">0</p>
+                        <p className="text-2xl font-bold text-gray-900">{overdueTasksCount}</p>
                     </div>
                 </div>
 
@@ -734,16 +841,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                     </div>
                                                                 </td>
                                                                 <td
-                                                                    onClick={async () => {
-                                                                        try {
-                                                                            const resp = await axiosInstance.get(`tasks/${task.id}/`);
-                                                                            setSelectedTaskForEdit(resp.data);
-                                                                            setIsAddTaskModalOpen(true);
-                                                                        } catch (err) {
-                                                                            console.error('Failed to fetch task details', err);
-                                                                            toast.error('Failed to load task for editing');
-                                                                        }
-                                                                    }}
+                                                                    onClick={() => openTaskForEdit(task.id)}
                                                                     className="py-4 px-3 text-sm text-gray-900 cursor-pointer"
                                                                 >{task.title}</td>
                                                                 <td className="py-4 px-3">
@@ -775,35 +873,37 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 )}
 
                                 {activeSubTab === 'Gantt' && (
-                                    <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-                                        <p className="text-gray-600 text-lg font-medium">Gantt Chart View</p>
-                                        <p className="text-gray-500 text-sm mt-2">Visualize your project timeline. This feature is coming soon.</p>
-                                    </div>
+                                    <TaskGanttView
+                                        tasks={tasks}
+                                        projectStartDate={project?.start_date}
+                                        projectEndDate={project?.end_date}
+                                        onTaskClick={(task) => openTaskForEdit(task.id)}
+                                    />
                                 )}
 
                                 {activeSubTab === 'Task Board' && (
-                                    <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-                                        <p className="text-gray-600 text-lg font-medium">Kanban Board View</p>
-                                        <p className="text-gray-500 text-sm mt-2">Manage tasks with a drag-and-drop board. This feature is coming soon.</p>
-                                    </div>
+                                    <TaskBoardView
+                                        tasks={tasks}
+                                        onDragEnd={handleTaskDragEnd}
+                                        onTaskClick={(task) => openTaskForEdit(task.id)}
+                                    />
                                 )}
 
                                 {activeSubTab === 'Calendar' && (
-                                    <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-                                        <p className="text-gray-600 text-lg font-medium">Calendar View</p>
-                                        <p className="text-gray-500 text-sm mt-2">View tasks and deadlines on a calendar. This feature is coming soon.</p>
-                                    </div>
+                                    <TaskCalendarView
+                                        tasks={tasks}
+                                        onTaskClick={(task) => openTaskForEdit(task.id)}
+                                    />
                                 )}
                             </>
                         )}
 
                         {activeTab === 'Time' && (
-                            <div className="space-y-6">
-                                <div className="text-center py-12">
-                                    <p className="text-gray-600 text-lg">Time Tracking Content</p>
-                                    <p className="text-gray-500 text-sm mt-2">Time tracking features coming soon</p>
-                                </div>
-                            </div>
+                            <ProjectTimeTrackingView
+                                tasks={tasks}
+                                currentUsername={currentUsername}
+                                onTimerChange={refreshTaskById}
+                            />
                         )}
 
                         {activeTab === 'Budget' && (
@@ -830,26 +930,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 {/* Budget Health Content */}
                                 {budgetSubTab === 'Budget health' && (
                                     <div className="space-y-4">
-                                        {/* Header with Budget health/Learn more on left and Budget/Time toggle on right */}
-                                        <div className="flex items-center justify-between mb-4">
-                                            {/* Budget health / Learn more tabs on left */}
-                                            <div className="flex gap-6">
-                                                {['Budget health', 'Learn more'].map((healthTab) => (
-                                                    <button
-                                                        key={healthTab}
-                                                        type="button"
-                                                        className={`py-2 px-3 text-sm font-medium rounded-lg transition-colors ${budgetHealthSubTab === healthTab
-                                                            ? 'bg-gray-100 text-gray-900'
-                                                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                                                            }`}
-                                                        onClick={() => setBudgetHealthSubTab(healthTab)}
-                                                    >
-                                                        {healthTab}
-                                                    </button>
-                                                ))}
-                                            </div>
-
-                                            {/* Budget/Time Toggle on right */}
+                                        {/* Budget/Time Toggle */}
+                                        <div className="flex justify-end mb-4">
                                             <div className="flex gap-2 bg-gray-100 rounded-lg p-1">
                                                 {['Budget', 'Time'].map((mode) => (
                                                     <button
@@ -867,69 +949,196 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                             </div>
                                         </div>
 
-                                        {/* Budget Health Sub-Content */}
-                                        {budgetHealthSubTab === 'Budget health' && (
-                                            <div className="bg-gray-50 rounded-lg border border-gray-200 p-8 text-center">
-                                                <div className="max-w-md mx-auto">
-                                                    <div className="mb-4">
-                                                        <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                                        </svg>
-                                                    </div>
-                                                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Budget Health Overview</h3>
-                                                    <p className="text-sm text-gray-600 mb-4">View: {budgetViewMode}</p>
-                                                    <p className="text-sm text-gray-500">Budget health monitoring features are coming soon. Track your project's financial performance in real-time.</p>
+                                                <div className={`rounded-lg border p-4 ${budgetHealth.className}`}>
+                                                    <p className="text-sm font-semibold">{budgetHealth.label}</p>
+                                                    <p className="text-xs mt-0.5 opacity-80">
+                                                        {totalBudgetAmount > 0
+                                                            ? `${budgetUsedPercent}% of budget used so far`
+                                                            : 'Set a budget on this project to track spend against it.'}
+                                                    </p>
                                                 </div>
-                                            </div>
-                                        )}
 
-                                        {/* Learn More Sub-Content */}
-                                        {budgetHealthSubTab === 'Learn more' && (
-                                            <div className="bg-blue-50 rounded-lg border border-blue-200 p-8 text-center">
-                                                <div className="max-w-md mx-auto">
-                                                    <div className="mb-4">
-                                                        <svg className="mx-auto h-12 w-12 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                        </svg>
+                                                {budgetViewMode === 'Budget' ? (
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                            <p className="text-xs text-gray-500 mb-1">Total Budget</p>
+                                                            <p className="text-xl font-bold text-gray-900">{totalBudgetAmount.toLocaleString()} {budgetCurrency}</p>
+                                                        </div>
+                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                            <p className="text-xs text-gray-500 mb-1">Used Budget</p>
+                                                            <p className="text-xl font-bold text-gray-900">{usedBudgetAmount.toLocaleString()} {budgetCurrency}</p>
+                                                            <p className="text-xs text-gray-500 mt-1">{budgetUsedPercent}% of total</p>
+                                                        </div>
+                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                            <p className="text-xs text-gray-500 mb-1">Remaining Budget</p>
+                                                            <p className="text-xl font-bold text-gray-900">{remainingBudgetAmount.toLocaleString()} {budgetCurrency}</p>
+                                                        </div>
                                                     </div>
-                                                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Learn More</h3>
-                                                    <p className="text-sm text-gray-600">Detailed information and guides about budget management will be available here.</p>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                            <p className="text-xs text-gray-500 mb-1">Billable Hours</p>
+                                                            <p className="text-xl font-bold text-gray-900">{formatHoursHM(budgetTotalHours)}</p>
+                                                        </div>
+                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                            <p className="text-xs text-gray-500 mb-1">Consumed Hours</p>
+                                                            <p className="text-xl font-bold text-gray-900">{formatHoursHM(budgetConsumedHours)}</p>
+                                                            <p className="text-xs text-gray-500 mt-1">{consumedHoursPercent}% of total</p>
+                                                        </div>
+                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                            <p className="text-xs text-gray-500 mb-1">Remaining Hours</p>
+                                                            <p className="text-xl font-bold text-gray-900">{formatHoursHM(budgetRemainingHours)}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div>
+                                                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                                        <span>Budget used</span>
+                                                        <span>{budgetUsedPercent}%</span>
+                                                    </div>
+                                                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                        <div
+                                                            className={`h-full ${budgetHealth.bar} transition-all`}
+                                                            style={{ width: `${Math.min(100, budgetUsedPercent)}%` }}
+                                                        />
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        )}
+
+                                                {profitOrLoss !== null ? (
+                                                    <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4">
+                                                        <span className="text-sm text-gray-600">Profit / Loss (invoiced revenue − actual spend)</span>
+                                                        <span className={`text-lg font-bold ${profitOrLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                            {profitOrLoss.toLocaleString()} {budgetCurrency}
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-gray-400">No invoices raised yet — profit will show once this project has been invoiced.</p>
+                                                )}
                                     </div>
                                 )}
 
                                 {/* Revenue Content */}
-                                {budgetSubTab === 'Revenue' && (
-                                    <div className="bg-green-50 rounded-lg border border-green-200 p-12 text-center">
-                                        <div className="max-w-md mx-auto">
-                                            <div className="mb-4">
-                                                <svg className="mx-auto h-16 w-16 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                </svg>
+                                {budgetSubTab === 'Revenue' && (() => {
+                                    const revenueStatus = totalInvoicedAmount <= 0
+                                        ? { label: 'Not yet invoiced', className: 'bg-gray-50 border-gray-200 text-gray-700', bar: 'bg-gray-400' }
+                                        : revenueReceivedPercent >= 100
+                                            ? { label: 'Fully collected', className: 'bg-green-50 border-green-200 text-green-700', bar: 'bg-green-500' }
+                                            : revenueReceivedPercent > 0
+                                                ? { label: 'Partially collected', className: 'bg-amber-50 border-amber-200 text-amber-700', bar: 'bg-amber-500' }
+                                                : { label: 'Awaiting payment', className: 'bg-red-50 border-red-200 text-red-700', bar: 'bg-red-500' };
+
+                                    return (
+                                        <div className="space-y-4">
+                                            <div className={`rounded-lg border p-4 ${revenueStatus.className}`}>
+                                                <p className="text-sm font-semibold">{revenueStatus.label}</p>
+                                                <p className="text-xs mt-0.5 opacity-80">
+                                                    {totalInvoicedAmount > 0
+                                                        ? `${revenueReceivedPercent}% of invoiced revenue received`
+                                                        : 'Create an invoice for this project to start tracking revenue.'}
+                                                </p>
                                             </div>
-                                            <h3 className="text-xl font-bold text-gray-900 mb-2">Revenue Tracking</h3>
-                                            <p className="text-gray-600 mb-4">Monitor your project revenue and income streams</p>
-                                            <p className="text-sm text-gray-500">Revenue tracking features are coming soon.</p>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                    <p className="text-xs text-gray-500 mb-1">Quoted Revenue</p>
+                                                    <p className="text-xl font-bold text-gray-900">
+                                                        {quotedRevenueAmount != null ? `${quotedRevenueAmount.toLocaleString()} ${budgetCurrency}` : 'Not linked to a quote'}
+                                                    </p>
+                                                </div>
+                                                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                    <p className="text-xs text-gray-500 mb-1">Invoiced</p>
+                                                    <p className="text-xl font-bold text-gray-900">{totalInvoicedAmount.toLocaleString()} {budgetCurrency}</p>
+                                                    <p className="text-xs text-gray-500 mt-1">{paymentSummary?.invoice_count || 0} invoices</p>
+                                                </div>
+                                                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                    <p className="text-xs text-gray-500 mb-1">Received</p>
+                                                    <p className="text-xl font-bold text-green-600">{totalReceivedAmount.toLocaleString()} {budgetCurrency}</p>
+                                                    <p className="text-xs text-gray-500 mt-1">{revenueReceivedPercent}% of invoiced</p>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                                    <span>Received of invoiced</span>
+                                                    <span>{revenueReceivedPercent}%</span>
+                                                </div>
+                                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                    <div className={`h-full ${revenueStatus.bar} transition-all`} style={{ width: `${Math.min(100, revenueReceivedPercent)}%` }} />
+                                                </div>
+                                            </div>
+
+                                            {outstandingRevenueAmount > 0 && (
+                                                <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4">
+                                                    <span className="text-sm text-gray-600">Outstanding (invoiced but not yet received)</span>
+                                                    <span className="text-lg font-bold text-amber-600">{outstandingRevenueAmount.toLocaleString()} {budgetCurrency}</span>
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                )}
+                                    );
+                                })()}
 
                                 {/* Profit Content */}
                                 {budgetSubTab === 'Profit' && (
-                                    <div className="bg-purple-50 rounded-lg border border-purple-200 p-12 text-center">
-                                        <div className="max-w-md mx-auto">
-                                            <div className="mb-4">
-                                                <svg className="mx-auto h-16 w-16 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                                                </svg>
-                                            </div>
-                                            <h3 className="text-xl font-bold text-gray-900 mb-2">Profit Analysis</h3>
-                                            <p className="text-gray-600 mb-4">Analyze profit margins and project profitability</p>
-                                            <p className="text-sm text-gray-500">Profit analysis features are coming soon.</p>
+                                    profitOrLoss === null ? (
+                                        <div className="bg-gray-50 rounded-lg border border-gray-200 p-8 text-center">
+                                            <p className="text-sm text-gray-600">
+                                                No invoices have been raised for this project yet, so profit can't be calculated.
+                                                Profit is based on invoiced revenue, not the quoted amount, so it will appear here once an invoice is created.
+                                            </p>
                                         </div>
-                                    </div>
+                                    ) : (() => {
+                                        const profitStatus = profitOrLoss < 0
+                                            ? { label: 'Loss-making', className: 'bg-red-50 border-red-200 text-red-700' }
+                                            : (profitMarginPercent ?? 0) < 20
+                                                ? { label: 'Low margin', className: 'bg-amber-50 border-amber-200 text-amber-700' }
+                                                : { label: 'Healthy margin', className: 'bg-green-50 border-green-200 text-green-700' };
+                                        const costPercentOfRevenue = totalInvoicedAmount > 0
+                                            ? Math.min(100, Math.round((usedBudgetAmount / totalInvoicedAmount) * 100))
+                                            : 0;
+
+                                        return (
+                                            <div className="space-y-4">
+                                                <div className={`rounded-lg border p-4 ${profitStatus.className}`}>
+                                                    <p className="text-sm font-semibold">{profitStatus.label}</p>
+                                                    <p className="text-xs mt-0.5 opacity-80">
+                                                        {profitMarginPercent != null ? `${profitMarginPercent}% profit margin` : ''}
+                                                    </p>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                        <p className="text-xs text-gray-500 mb-1">Invoiced Revenue</p>
+                                                        <p className="text-xl font-bold text-gray-900">{totalInvoicedAmount.toLocaleString()} {budgetCurrency}</p>
+                                                        {quotedRevenueAmount != null && (
+                                                            <p className="text-xs text-gray-500 mt-1">Quoted: {quotedRevenueAmount.toLocaleString()} {budgetCurrency}</p>
+                                                        )}
+                                                    </div>
+                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                        <p className="text-xs text-gray-500 mb-1">Actual Cost</p>
+                                                        <p className="text-xl font-bold text-gray-900">{usedBudgetAmount.toLocaleString()} {budgetCurrency}</p>
+                                                        <p className="text-xs text-gray-500 mt-1">Labor + expenses</p>
+                                                    </div>
+                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                        <p className="text-xs text-gray-500 mb-1">Profit / Loss</p>
+                                                        <p className={`text-xl font-bold ${profitOrLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                            {profitOrLoss.toLocaleString()} {budgetCurrency}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                                        <span>Cost as % of invoiced revenue</span>
+                                                        <span>{costPercentOfRevenue}%</span>
+                                                    </div>
+                                                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                        <div className={`h-full ${profitOrLoss >= 0 ? 'bg-red-400' : 'bg-red-600'} transition-all`} style={{ width: `${costPercentOfRevenue}%` }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()
                                 )}
                             </div>
                         )}
@@ -1768,18 +1977,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                         onTaskUpdated={async (updatedApiTask: any) => {
                             if (updatedApiTask && updatedApiTask.id) {
                                 const taskId = updatedApiTask.id.toString();
-                                setTasks(prev => prev.map(t => t.id === taskId ? {
-                                    ...t,
-                                    assignee: updatedApiTask.assigned_to?.username || 'Unassigned',
-                                    assigneeAvatar: updatedApiTask.assigned_to?.username?.substring(0, 2).toUpperCase() || '○',
-                                    title: updatedApiTask.title || t.title,
-                                    status: (updatedApiTask.status || t.status) as Task['status'],
-                                    activityType: updatedApiTask.activity_type || t.activityType,
-                                    allocatedHours: updatedApiTask.allocated_hours ? `${updatedApiTask.allocated_hours}h` : t.allocatedHours,
-                                    consumedHours: updatedApiTask.consumed_hours ? `${updatedApiTask.consumed_hours}h` : t.consumedHours,
-                                    dueDate: updatedApiTask.due_date ? new Date(updatedApiTask.due_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : t.dueDate,
-                                    remaining: updatedApiTask.remaining_hours ? `${updatedApiTask.remaining_hours}h` : updatedApiTask.allocated_hours ? `${updatedApiTask.allocated_hours}h` : t.remaining
-                                } : t));
+                                setTasks(prev => prev.map(t => t.id === taskId ? mapApiTaskToTask(updatedApiTask) : t));
                             } else {
                                 // fallback to refetch if no data returned
                                 try {

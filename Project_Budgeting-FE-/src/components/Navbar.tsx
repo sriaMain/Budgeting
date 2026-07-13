@@ -51,10 +51,7 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
           {/* Left Side: Logo & Nav Links */}
           <div className="flex items-center gap-8">
             <div className="flex-shrink-0 flex items-center gap-2 cursor-pointer" onClick={() => navigate('/dashboard')}>
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold">
-                SI
-              </div>
-
+              <img src="/sria_logo_gray.png" alt="Logo" className="w-8 h-8 rounded-lg object-contain" />
             </div>
 
             <div className="hidden md:flex space-x-1">
@@ -136,9 +133,7 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
               {/* Drawer Header */}
               <div className="flex items-center justify-between p-4 border-b border-gray-200">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold">
-                    SI
-                  </div>
+                  <img src="/sria_logo_gray.png" alt="Logo" className="w-8 h-8 rounded-lg object-contain" />
                   <span className="font-semibold text-gray-800">Menu</span>
                 </div>
                 <button

@@ -152,6 +152,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [elapsedTimes, setElapsedTimes] = useState<Record<number, number>>({});
   const [exceededTaskId, setExceededTaskId] = useState<number | null>(null);
+  const tasksRef = React.useRef<Task[]>([]);
 
   // Additional Time Requests State
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
@@ -285,6 +286,12 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
             toast.success(`Timer paused - ${data.formatted_time?.formatted || ''}`);
           } else if (data.event === 'TIMER_STOPPED') {
             toast.success('Timer stopped');
+          } else if (data.event === 'TASK_AUTO_STOPPED') {
+            toast.error(
+              `Timer auto-stopped for "${data.task_title || 'task'}": allocated hours exceeded. Please request additional time to continue.`,
+              { duration: 6000 }
+            );
+            fetchTasks();
           }
         }
       } catch (error) {
@@ -303,23 +310,28 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     setWs(websocket);
 
     return () => {
-      if (websocket.readyState === WebSocket.OPEN) {
+      if (
+        websocket.readyState === WebSocket.OPEN ||
+        websocket.readyState === WebSocket.CONNECTING
+      ) {
         websocket.close();
       }
     };
   }, [accessToken]);
 
-  // Update elapsed time for running tasks every second
+  // Keep ref in sync so the interval always sees the latest tasks without restarting
+  React.useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+
+  // Single stable interval — never clears/restarts when tasks change
   React.useEffect(() => {
     const interval = setInterval(() => {
       setElapsedTimes(prev => {
         const updated = { ...prev };
-        tasks.forEach(task => {
-          if (task.running && task.started_at) {
-            const startTime = new Date(task.started_at).getTime();
-            const now = new Date().getTime();
-            const elapsedMs = now - startTime;
-            updated[task.id] = task.total_seconds + Math.floor(elapsedMs / 1000);
+        tasksRef.current.forEach(task => {
+          if (task.running) {
+            updated[task.id] = (prev[task.id] ?? task.total_seconds ?? 0) + 1;
           }
         });
         return updated;
@@ -327,7 +339,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [tasks]);
+  }, []);
 
   // Fetch users and status choices on mount
   React.useEffect(() => {
@@ -421,17 +433,11 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
         });
         setTasks(allTasks);
 
-        // Initialize elapsed times for running tasks
+        // Initialize elapsed times — total_seconds from the API already includes the
+        // current session's elapsed time when running, so use it directly.
         const initialElapsedTimes: Record<number, number> = {};
         allTasks.forEach(task => {
-          if (task.running && task.started_at) {
-            const startTime = new Date(task.started_at).getTime();
-            const now = new Date().getTime();
-            const elapsedMs = now - startTime;
-            initialElapsedTimes[task.id] = task.total_seconds + Math.floor(elapsedMs / 1000);
-          } else {
-            initialElapsedTimes[task.id] = task.total_seconds;
-          }
+          initialElapsedTimes[task.id] = task.total_seconds || 0;
         });
         setElapsedTimes(initialElapsedTimes);
 
@@ -773,7 +779,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                   ...task,
                   running: response.data.running,
                   total_seconds: response.data.total_seconds || task.total_seconds,
-                  started_at: new Date().toISOString()
+                  started_at: new Date().toISOString(),
+                  is_stopped: false
                 };
               }
               return task;

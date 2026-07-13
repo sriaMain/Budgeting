@@ -94,7 +94,12 @@ CACHES = {
 
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        # RedisChannelLayer (channels_redis.core) requires Redis >= 5.0 (BZPOPMIN).
+        # The local Redis server is the old 3.0.504 Windows build, so we use the
+        # Pub/Sub-based layer instead, which only needs SUBSCRIBE/PUBLISH and
+        # works on any Redis version. This app only uses group_add/group_discard/
+        # group_send (no point-to-point channel_layer.send), which PubSub fully supports.
+        "BACKEND": "channels_redis.pubsub.RedisPubSubChannelLayer",
         "CONFIG": {
             "hosts": [("127.0.0.1", 6379)],
         },

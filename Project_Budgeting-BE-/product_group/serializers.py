@@ -239,8 +239,10 @@ class QuoteSerializer(serializers.ModelSerializer):
                     {"error": "Confirmed quotations cannot be moved back."}
                 )
 
-            # ❌ PROJECT EXISTS
-            if Project.objects.filter(
+            # ❌ PROJECT EXISTS (but allow closing a Confirmed quote whose
+            # project has been completed)
+            is_confirmed_to_closed = current == "Confirmed" and new_status == "Closed"
+            if not is_confirmed_to_closed and Project.objects.filter(
                 created_from_quotation=instance.quote_no
             ).exists():
                 raise serializers.ValidationError(
@@ -341,7 +343,7 @@ from core.app_constants import CURRENCY_CHOICES
 
 
 class QuoteSummarySerializer(serializers.ModelSerializer):
-    client_id = serializers.IntegerField(source='client.id')
+    client_id = serializers.IntegerField(allow_null=True)
     client_name = serializers.StringRelatedField(source='client')
     has_project = serializers.SerializerMethodField()
     quote_value = serializers.DecimalField(

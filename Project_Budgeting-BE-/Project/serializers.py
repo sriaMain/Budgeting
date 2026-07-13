@@ -73,6 +73,8 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
             "use_quoted_amounts",
             "quoted_amount",
             "manual_budget",
+            "total_budget",
+            "forecasted_profit",
             "difference_from_quote",
             "billable_hours",
             "remaining_billable_hours",
@@ -116,17 +118,51 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
         project = obj.project
 
         if obj.use_quoted_amounts and project.created_from_quotation:
-            return sum(
+            quoted_hours = sum(
                 item.quantity
                 for item in project.created_from_quotation.items.all()
                 if item.unit == "hours"
             )
+            if quoted_hours:
+                return quoted_hours
 
-        return obj.total_hours or 0
+        if obj.total_hours:
+            return obj.total_hours
+
+        # Neither the quote nor the manual budget has hours set — fall back
+        # to the sum of each task's own allocated hours so this figure isn't
+        # falsely zero when the project's tasks clearly have hours allocated.
+        if project:
+            return sum(
+                (task.allocated_hours or Decimal("0")) for task in project.tasks.all()
+            )
+
+        return Decimal("0")
 
     # ---------------------------
     # 🔹 Remaining Billable Hours
     # -------------------------
+
+    # 🔹 Consumed hours for a task, including the elapsed time of a timer
+    # that is actively running right now (not yet committed to a TaskTimerLog
+    # row), so budget/hours figures update live while someone is tracking time.
+    def _live_consumed_hours(self, task):
+        consumed = task.consumed_hours or Decimal("0")
+
+        if not task.assigned_to_id:
+            return consumed
+
+        from .utils.timer import get_active_timer
+        redis_task, redis_start = get_active_timer(task.assigned_to_id)
+        if redis_task and redis_start and int(redis_task) == task.id:
+            from django.utils import timezone
+            start_time = timezone.datetime.fromisoformat(
+                redis_start.decode() if isinstance(redis_start, bytes) else redis_start
+            )
+            elapsed_seconds = (timezone.now() - start_time).total_seconds()
+            consumed += Decimal(elapsed_seconds) / Decimal(3600)
+
+        return consumed
 
     def get_remaining_billable_hours(self, obj):
         project = obj.project
@@ -136,10 +172,10 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
         # 🔹 Total billable hours (manual or quoted)
         total_hours = self.get_billable_hours(obj) or Decimal("0")
 
-        # 🔹 Sum consumed hours from tasks
+        # 🔹 Sum consumed hours from tasks (including any live-running timer)
         used_hours = Decimal("0")
         for task in project.tasks.all():
-            used_hours += task.consumed_hours or Decimal("0")
+            used_hours += self._live_consumed_hours(task)
 
         remaining_hours = total_hours - used_hours
 
@@ -157,28 +193,30 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
 
 
     # ---------------------------
-    # 🔹 Used Budget (Actual Cost)
+    # 🔹 Used Budget (Actual Cost) — labor cost (live hours × rate) plus any
+    # real logged expenses, so this, Remaining Budget and Profit/Loss all
+    # agree on what "actual cost" means instead of each using a different
+    # basis (which made Total ≠ Used + Remaining in the UI).
     # ---------------------------
- 
+    def _total_actual_cost(self, obj):
+        project = obj.project
+        labor_cost = Decimal("0.00")
+
+        if project:
+            for task in project.tasks.select_related("assigned_to"):
+                if not task.assigned_to:
+                    continue
+
+                hourly_rate = task.assigned_to.charges_per_hour or Decimal("0")
+                labor_cost += self._live_consumed_hours(task) * hourly_rate
+
+        real_expenses = Decimal(obj.actual_expenses or 0)
+        return (labor_cost + real_expenses).quantize(Decimal("0.01"))
 
     def get_used_budget(self, obj):
-        project = obj.project
-        if not project:
+        if not obj.project:
             return Decimal("0.00")
-
-        total_cost = Decimal("0.00")
-
-        for task in project.tasks.select_related("assigned_to"):
-            if not task.assigned_to:
-                continue
-
-            hourly_rate = task.assigned_to.charges_per_hour or Decimal("0")
-            consumed_hours = task.consumed_hours or Decimal("0")
-
-            task_cost = consumed_hours * hourly_rate
-            total_cost += task_cost
-
-        return total_cost.quantize(Decimal("0.01"))
+        return self._total_actual_cost(obj)
 
 
     # ---------------------------
@@ -188,8 +226,7 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
         if obj.total_budget is None:
             return None
 
-        used = obj.bills_and_expenses or 0
-        return obj.total_budget - used
+        return obj.total_budget - self._total_actual_cost(obj)
 
     # ---------------------------
     # 🔹 Profit or Loss (REAL LOGIC)
@@ -202,7 +239,7 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
             return None
 
         quoted_amount = project.created_from_quotation.total_amount
-        used_budget = obj.bills_and_expenses or 0
+        used_budget = self._total_actual_cost(obj)
 
         return quoted_amount - used_budget
 
@@ -553,7 +590,7 @@ class TaskSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not hasattr(request, 'user'):
             return None
-        from Project.redis_utils import get_active_timer
+        from Project.utils.timer import get_active_timer
         from Project.models import TaskTimerLog
         user = request.user
         # Sum all previous logs for this user and task
@@ -573,7 +610,7 @@ class TaskSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not hasattr(request, 'user'):
             return False
-        from Project.redis_utils import get_active_timer
+        from Project.utils.timer import get_active_timer
         redis_task, _ = get_active_timer(request.user.id)
         return bool(redis_task and int(redis_task) == obj.id)
 
@@ -581,16 +618,20 @@ class TaskSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not hasattr(request, 'user'):
             return None
-        from Project.redis_utils import get_active_timer
+        from Project.utils.timer import get_active_timer
         redis_task, redis_start = get_active_timer(request.user.id)
         if redis_task and int(redis_task) == obj.id and redis_start:
             return redis_start.decode()
         return None
 
     def get_is_stopped(self, obj):
-        """Check if task has been stopped today (has timesheet entry for today)"""
+        """Check if task is currently stopped (has a timesheet entry for today and is not actively running)"""
         request = self.context.get('request')
         if not request or not hasattr(request, 'user'):
+            return False
+        # A task that has an active timer session right now is not "stopped",
+        # even if an earlier pause/stop today already logged a timesheet entry.
+        if self.get_running(obj):
             return False
         from django.utils import timezone
         from Project.models import TimesheetEntry

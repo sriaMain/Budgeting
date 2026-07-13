@@ -1,8 +1,14 @@
 from django.urls import path
-from .views import DashboardMetricsAPIView, FinanceOverviewAPIView, ReportExportAPIView
+from .views import (
+    DashboardMetricsAPIView,
+    DashboardOrgOverviewAPIView,
+    FinanceOverviewAPIView,
+    ReportExportAPIView,
+)
 
 urlpatterns = [
     path("dashboard/metrics/",DashboardMetricsAPIView.as_view(),name="dashboard-metrics"),
+    path("dashboard/org-overview/",DashboardOrgOverviewAPIView.as_view(),name="dashboard-org-overview"),
     path("finance/overview/",FinanceOverviewAPIView.as_view(),name="all-tab-data"),
     path("reports/<str:section>/export/",ReportExportAPIView.as_view(),name="report-export"),
 ]

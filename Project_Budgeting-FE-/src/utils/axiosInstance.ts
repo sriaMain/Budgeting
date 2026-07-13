@@ -2,7 +2,7 @@ import axios from "axios";
 import store from "../store/store";
 import { API_BASE_URL } from "./apiConfig";
 
-const axiosRefresh = axios.create({
+export const axiosRefresh = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
 });
@@ -50,11 +50,11 @@ axiosInstance.interceptors.response.use(
 
         store.dispatch({
           type: "auth/setAccessToken",
-          payload: { accessToken: response.data.token },
+          payload: { accessToken: response.data.access_token },
         });
 
         originalRequest.headers["Authorization"] =
-          "Bearer " + response.data.token;
+          "Bearer " + response.data.access_token;
 
         return axiosInstance(originalRequest);
       } catch (err) {
