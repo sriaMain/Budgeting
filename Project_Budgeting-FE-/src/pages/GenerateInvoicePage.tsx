@@ -11,6 +11,13 @@ import { InputField } from '../components/InputField';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
 
+// Normalizes a decimal-string tax value (e.g. "5.00") to match the fixed <select> option values (e.g. "5")
+const normalizeTaxPercentage = (value: unknown): string => {
+    if (value === undefined || value === null || value === '') return '0';
+    const num = parseFloat(value as string);
+    return isNaN(num) ? '0' : num.toString();
+};
+
 interface ProductRow {
     id: string;
     quote_item_id?: number; // Backend quote item ID
@@ -43,6 +50,7 @@ export default function GenerateInvoicePage() {
     const [isLoading, setIsLoading] = useState(true);
     const [invoiceClientId, setInvoiceClientId] = useState<number | null>(null);
     const [invoiceQuoteId, setInvoiceQuoteId] = useState<number | null>(null);
+    const [backProjectId, setBackProjectId] = useState<number | null>(null);
 
     const [productRows, setProductRows] = useState<ProductRow[]>([]);
 
@@ -61,6 +69,7 @@ export default function GenerateInvoicePage() {
                     // Store client and quote IDs for update
                     setInvoiceClientId(invoiceData.client);
                     setInvoiceQuoteId(invoiceData.quote);
+                    setBackProjectId(invoiceData.project?.project_no ?? null);
 
                     // Populate form fields from invoice data
                     setReferenceQuoteNo(invoiceData.invoice_no || invoiceData.quote_no || '');
@@ -71,7 +80,7 @@ export default function GenerateInvoicePage() {
                     setDueDate(invoiceData.due_date || '');
                     setNotes(invoiceData.notes || 'Pay within 30 days');
                     setTermsConditions(invoiceData.terms_conditions || 'No refunds');
-                    setTaxPercentage(invoiceData.tax_percentage || '0');
+                    setTaxPercentage(normalizeTaxPercentage(invoiceData.tax_percentage));
 
                     // Calculate due days from dates
                     if (invoiceData.issue_date && invoiceData.due_date) {
@@ -140,6 +149,8 @@ export default function GenerateInvoicePage() {
                 setClient(quoteData.client?.company_name || '');
                 setReferenceQuoteName(quoteData.quote_name || '');
                 setAuthor(quoteData.author || '');
+                setTaxPercentage(normalizeTaxPercentage(quoteData.tax_percentage));
+                setBackProjectId(quoteData.project?.project_id ?? null);
 
                 // Populate product rows from quote items
                 if (quoteData.items && Array.isArray(quoteData.items)) {
@@ -268,6 +279,15 @@ export default function GenerateInvoicePage() {
 
     const totals = calculateTotals();
 
+    // Back should always return to the project's Finance tab, not raw browser history
+    const handleBack = () => {
+        if (backProjectId) {
+            navigate(`/projects/${backProjectId}?tab=Finances`);
+        } else {
+            navigate(-1);
+        }
+    };
+
     const handleCreateInvoice = async () => {
         try {
             setIsSubmitting(true);
@@ -365,7 +385,7 @@ export default function GenerateInvoicePage() {
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-4">
                         <button
-                            onClick={() => navigate(-1)}
+                            onClick={handleBack}
                             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                         >
                             <ArrowLeft className="w-5 h-5 text-gray-600" />
@@ -576,6 +596,9 @@ export default function GenerateInvoicePage() {
                                                     onChange={(e) => setTaxPercentage(e.target.value)}
                                                     className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 >
+                                                    {['0', '5', '12', '18', '28'].includes(taxPercentage) ? null : (
+                                                        <option value={taxPercentage}>{taxPercentage} %</option>
+                                                    )}
                                                     <option value="0">0 %</option>
                                                     <option value="5">5 %</option>
                                                     <option value="12">12 %</option>

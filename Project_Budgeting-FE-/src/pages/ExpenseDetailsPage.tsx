@@ -58,6 +58,15 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
         fetchExpenseDetails();
     }, [expenseId]);
 
+    // Back should return to the owning project's Finance tab, not raw browser history
+    const handleBack = () => {
+        if (expenseDetails?.project) {
+            navigate(`/projects/${expenseDetails.project}?tab=Finances`);
+        } else {
+            navigate(-1);
+        }
+    };
+
     const formatCurrency = (amount: number | string) => {
         const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
         return `₹${numAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -204,7 +213,7 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-4">
                             <button
-                                onClick={() => navigate(-1)}
+                                onClick={handleBack}
                                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                             >
                                 <ArrowLeft className="w-5 h-5 text-gray-600" />
@@ -372,7 +381,7 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
 
                 {/* Record Payment Modal */}
                 {isRecordPaymentModalOpen && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
                         <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
                             {/* Modal Header */}
                             <div className="px-6 py-4 border-b border-gray-200">

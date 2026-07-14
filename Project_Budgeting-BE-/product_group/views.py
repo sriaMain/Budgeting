@@ -738,6 +738,26 @@ class QuoteDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # A Confirmed quote can only move to Closed once it is fully paid.
+        if requested_status == "Closed" and old_status == "Confirmed":
+            from finances.models import Invoice
+
+            invoices = Invoice.objects.filter(quote=quote).exclude(status="Cancelled")
+            total_balance = invoices.aggregate(
+                total=Sum("balance_amount")
+            )["total"] or Decimal("0.00")
+
+            quote_total = quote.total_amount or Decimal("0.00")
+            is_fully_paid = quote_total <= Decimal("0.00") or (
+                invoices.exists() and total_balance <= Decimal("0.00")
+            )
+
+            if not is_fully_paid:
+                return Response(
+                    {"error": "The payment was not cleared. This quote cannot be closed until the full amount is paid."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         serializer.save(modified_by=request.user)
 
         return Response(serializer.data, status=status.HTTP_200_OK)

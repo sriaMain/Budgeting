@@ -37,6 +37,7 @@ export default function CreatePurchaseOrderPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingVendors, setIsLoadingVendors] = useState(true);
+    const [backProjectId, setBackProjectId] = useState<number | null>(null);
 
     const [productRows, setProductRows] = useState<ProductRow[]>([]);
 
@@ -92,6 +93,7 @@ export default function CreatePurchaseOrderPage() {
 
                 // Populate form fields from quote data
                 setReferenceQuoteNo(quoteData.quote_no || quotationId);
+                setBackProjectId(quoteData.project?.project_id ?? null);
 
                 // Populate product rows from quote items
                 if (quoteData.items && Array.isArray(quoteData.items)) {
@@ -195,6 +197,15 @@ export default function CreatePurchaseOrderPage() {
 
     const totals = calculateTotals();
 
+    // Back should always return to the project's Finance tab, not raw browser history
+    const handleBack = () => {
+        if (backProjectId) {
+            navigate(`/projects/${backProjectId}?tab=Finances`);
+        } else {
+            navigate(-1);
+        }
+    };
+
     const handleCreatePurchaseOrder = async () => {
         try {
             setIsSubmitting(true);
@@ -233,12 +244,11 @@ export default function CreatePurchaseOrderPage() {
 
             if (response.status === 200 || response.status === 201) {
                 toast.success('Purchase order created successfully!');
-                const poId = response.data.id || response.data.purchase_order?.id;
-                // Navigate to the newly created PO or back to list
-                if (poId) {
-                    navigate(`/purchase-orders/${poId}`);
+                // Return to the project's Finance tab where the new PO now shows up
+                if (backProjectId) {
+                    navigate(`/projects/${backProjectId}?tab=Finances`);
                 } else {
-                    navigate('/pipeline'); // or wherever POs are listed
+                    navigate('/pipeline');
                 }
             }
         } catch (error: any) {
@@ -257,7 +267,7 @@ export default function CreatePurchaseOrderPage() {
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-4">
                         <button
-                            onClick={() => navigate(-1)}
+                            onClick={handleBack}
                             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                         >
                             <ArrowLeft className="w-5 h-5 text-gray-600" />

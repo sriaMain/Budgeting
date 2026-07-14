@@ -10,7 +10,6 @@ import { Layout } from '../components/Layout';
 import { RecordPaymentModal, type PaymentData } from '../components/RecordPaymentModal';
 import { toast } from 'react-hot-toast';
 import axiosInstance from '../utils/axiosInstance';
-import { useInvoiceStatusChoices } from '../hooks/useInvoiceStatusChoices';
 
 interface InvoiceDetailsScreenProps {
     userRole?: 'admin' | 'user' | 'manager';
@@ -35,9 +34,7 @@ export default function InvoiceDetailsScreen({
 }: InvoiceDetailsScreenProps) {
     const { invoiceId } = useParams<{ invoiceId: string }>();
     const navigate = useNavigate();
-    const { statusChoices, loading: statusLoading } = useInvoiceStatusChoices();
     const [status, setStatus] = useState<string>('Unpaid');
-    const [showStatusDropdown, setShowStatusDropdown] = useState(false);
     const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [invoiceData, setInvoiceData] = useState<any>(null);
@@ -102,9 +99,9 @@ export default function InvoiceDetailsScreen({
 
     // Handle back button - navigate to project finances tab
     const handleBack = () => {
-        const projectId = invoiceData?.project?.id;
+        const projectId = invoiceData?.project?.project_no;
         if (projectId) {
-            navigate(`/projects/${projectId}?tab=finances`);
+            navigate(`/projects/${projectId}?tab=Finances`);
         } else {
             navigate(-1); // Fallback
         }
@@ -126,58 +123,6 @@ export default function InvoiceDetailsScreen({
             return 'bg-gray-100 text-gray-700 border-gray-200';
         }
         return 'bg-gray-100 text-gray-700 border-gray-200';
-    };
-
-    const handleStatusChange = async (newStatus: string) => {
-        if (!invoiceId || !invoiceData) return;
-
-        try {
-            setIsActionLoading(true);
-
-            // Prepare the complete invoice data for PUT request
-            const updateData = {
-                status: newStatus,
-                client: invoiceData.client,
-                quote: invoiceData.quote,
-                issue_date: invoiceData.issue_date,
-                due_date: invoiceData.due_date,
-                sub_total: invoiceData.sub_total,
-                tax_percentage: invoiceData.tax_percentage,
-                tax_amount: invoiceData.tax_amount,
-                discount_amount: invoiceData.discount_amount,
-                total_amount: invoiceData.total_amount,
-                notes: invoiceData.notes || '',
-                terms_conditions: invoiceData.terms_conditions || '',
-                items: invoiceData.items.map((item: any) => ({
-                    product_service: item.product_service_id,
-                    description: item.description || '',
-                    quantity: item.quantity,
-                    unit: item.unit,
-                    price_per_unit: item.price_per_unit,
-                    discount_percentage: item.discount_percentage || '0.00',
-                    amount: item.amount
-                }))
-            };
-
-            // Send PUT request to update status
-            const response = await axiosInstance.put(`/invoices/${invoiceId}/`, updateData);
-
-            // Update local state with the response
-            setStatus(response.data.status_display || newStatus);
-            setShowStatusDropdown(false);
-
-            // Refetch invoice data to ensure everything is in sync
-            await fetchInvoiceData();
-
-            toast.success(`Invoice status updated to ${newStatus}`);
-        } catch (error) {
-            console.error('Error updating invoice status:', error);
-            toast.error('Failed to update invoice status');
-            // Revert to previous status on error
-            setShowStatusDropdown(false);
-        } finally {
-            setIsActionLoading(false);
-        }
     };
 
     const handleSaveChanges = async () => {
@@ -430,35 +375,14 @@ export default function InvoiceDetailsScreen({
                                     <p className="text-base font-medium text-gray-900">{invoiceData.due_date}</p>
                                 )}
                             </div>
-                            <div className="relative">
+                            <div>
                                 <label className="text-sm text-gray-500 block mb-1">Status:</label>
-                                <div className="relative inline-block">
-                                    <button
-                                        onClick={() => setShowStatusDropdown(!showStatusDropdown)}
-                                        className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(status)} cursor-pointer hover:opacity-80 transition-opacity`}
-                                    >
-                                        {status}
-                                        <Edit className="w-3 h-3" />
-                                    </button>
-
-                                    {/* Status Dropdown */}
-                                    {showStatusDropdown && (
-                                        <div className="absolute top-full left-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                                            <div className="py-1">
-                                                {statusChoices.map((choice) => (
-                                                    <button
-                                                        key={choice.value}
-                                                        onClick={() => handleStatusChange(choice.label)}
-                                                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors ${status === choice.label ? 'bg-gray-100 font-medium' : ''
-                                                            }`}
-                                                    >
-                                                        {choice.label}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                <span
+                                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(status)}`}
+                                    title="Status is calculated automatically from recorded payments"
+                                >
+                                    {status}
+                                </span>
                             </div>
                         </div>
                     </div>

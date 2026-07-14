@@ -1438,7 +1438,7 @@ class DownloadPurchaseOrderView(APIView):
         )
 
         # Render HTML template
-        html = render_to_string('purchase_order_pdf.html', {
+        html = render_to_string('emails/purchase_order_pdf.html', {
             'po': po,
             'items': po.items.all()
         })

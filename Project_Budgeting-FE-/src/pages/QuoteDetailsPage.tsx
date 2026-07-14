@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Edit, FileText, Share2, Send, Receipt, Loader2, Plus } from 'lucide-react';
+import { ArrowLeft, Edit, FileText, Share2, Send, Receipt, Loader2, Plus } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import { InfoDisplay } from '../components/InfoDisplay';
 import { ReusableTable, type Column } from '../components/ReusableTable';
@@ -42,6 +42,7 @@ interface QuoteData {
     status: string;
     author: string;
     has_project?: boolean;
+    project?: { project_id: number; project_name: string } | null;
     client: {
         id?: number;
         company_name: string;
@@ -172,6 +173,15 @@ export default function QuoteDetailsPage({
         navigate(`/pipeline/edit-quote/${quoteNo}`);
     };
 
+    // Back should return to the owning project's Finance tab when this quote belongs to a project
+    const handleBack = () => {
+        if (quoteData?.project?.project_id) {
+            navigate(`/projects/${quoteData.project.project_id}?tab=Finances`);
+        } else {
+            navigate('/pipeline');
+        }
+    };
+
     const handlePOCAdded = (newPOC: POC) => {
         // Refresh quote details to show the new POC
         fetchQuoteDetails();
@@ -209,7 +219,16 @@ export default function QuoteDetailsPage({
             <div className="space-y-6">
                 {/* Header */}
                 <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold text-gray-900">Quote Details</h1>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={handleBack}
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            title="Go back"
+                        >
+                            <ArrowLeft className="w-5 h-5 text-gray-600" />
+                        </button>
+                        <h1 className="text-2xl font-bold text-gray-900">Quote Details</h1>
+                    </div>
                     <div className="flex gap-3">
                         <button
                             onClick={handleEdit}

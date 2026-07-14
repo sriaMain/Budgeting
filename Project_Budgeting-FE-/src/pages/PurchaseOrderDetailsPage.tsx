@@ -66,8 +66,13 @@ export default function PurchaseOrderDetailsPage() {
         fetchPOData();
     }, [poId]);
 
+    // Back should always return to the project's Finance tab, not raw browser history
     const handleBack = () => {
-        navigate(-1);
+        if (poData?.project) {
+            navigate(`/projects/${poData.project}?tab=Finances`);
+        } else {
+            navigate(-1);
+        }
     };
 
     const handleDownloadPDF = async () => {
@@ -126,7 +131,7 @@ export default function PurchaseOrderDetailsPage() {
             setIsActionLoading(true);
             await axiosInstance.delete(`/purchase-orders/${poId}/`);
             toast.success('Purchase order deleted successfully');
-            navigate(-1);
+            handleBack();
         } catch (error) {
             console.error('Error deleting PO:', error);
             toast.error('Failed to delete purchase order');
@@ -146,8 +151,8 @@ export default function PurchaseOrderDetailsPage() {
             
             if (response.status === 200 || response.status === 201) {
                 toast.success('Bill recorded successfully');
-                // Optionally navigate to the bill details page
-                const billId = response.data.id || response.data.bill?.id;
+                // Navigate to the bill details page
+                const billId = response.data.bill_id;
                 if (billId) {
                     navigate(`/bills/${billId}`);
                 }
