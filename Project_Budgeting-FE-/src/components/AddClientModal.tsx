@@ -5,6 +5,14 @@ import axiosInstance from "../utils/axiosInstance";
 import { parseApiErrors } from "../utils/parseApiErrors";
 import { Toast } from "./Toast";
 
+
+const FALLBACK_TAGS: CompanyTag[] = [
+  { id: 1,  name: "IT" },
+  { id: 2,  name: "Pharma" },
+  { id: 3,  name: "Restaurant" },
+  { id: 4,  name: "Real Estate" },
+];
+
 interface AddClientModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -53,23 +61,26 @@ export function AddClientModal({ isOpen, onClose, onClientAdded }: AddClientModa
       setErrors({});
     }
   }, [isOpen]);
-
   const fetchTags = async () => {
     setLoadingTags(true);
     try {
       const res = await axiosInstance.get("/company-tags/");
-      if (res.status === 200) {
+      if (res.status === 200 && Array.isArray(res.data) && res.data.length > 0) {
         setTags(res.data);
+      } else {
+        setTags(FALLBACK_TAGS);
       }
     } catch (err) {
       console.error("Failed to fetch tags", err);
+      setTags(FALLBACK_TAGS);
     } finally {
       setLoadingTags(false);
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
     setErrors({});
   };
 
@@ -125,6 +136,9 @@ export function AddClientModal({ isOpen, onClose, onClientAdded }: AddClientModa
       onClose();
     }
   };
+
+  // If API returns no tags, show fallback tags so UI doesn't appear empty
+  const displayTags = tags.length > 0 ? tags : FALLBACK_TAGS;
 
   if (!isOpen) return null;
 
@@ -309,7 +323,7 @@ export function AddClientModal({ isOpen, onClose, onClientAdded }: AddClientModa
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-3">Industry</p>
                     <div className="flex flex-wrap gap-3">
-                      {tags.map(tag => (
+                      {displayTags.map(tag => (
                         <label key={tag.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900">
                           <input 
                             type="checkbox" 

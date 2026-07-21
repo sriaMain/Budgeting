@@ -14,7 +14,8 @@ A premium, enterprise-grade, end-to-end budgeting, quotation, and project tracki
 7. [Installation & Setup](#-installation--setup)
 8. [Environment Variables Reference](#-environment-variables-reference)
 9. [Production Deployment Considerations](#%EF%B8%8F-production-deployment-considerations)
-10. [Changelog](#-changelog)
+10. [Recent Updates](#-recent-updates)
+11. [Changelog](#-changelog)
 
 ---
 
@@ -80,6 +81,7 @@ graph TD
 ### 4. BI Analytics & Reporting Dashboard
 * Clean spreadsheets with metrics on: *Total Revenue, Invoiced, Received, Outstanding, and Margin %*.
 * Interactive charts powered by **Recharts** with animated KPI cards via **Framer Motion**.
+* Refined dashboard layout, alignment, and spacing for a more polished enterprise experience.
 * Export to **Excel (.xlsx)** and **PDF** formats using client-side `xlsx` and `jsPDF` libraries.
 * Highly parallelized database aggregations using Django aggregates.
 
@@ -378,6 +380,33 @@ VITE_API_BASE_URL=http://localhost:8000
 * **Security Filters**: Update `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` in `myproject/settings.py` to point to production domain URLs instead of wildcards or localhost.
 * **Frontend Build**: Run `npm run build` in `Project_Budgeting-FE-/` to generate the optimized `dist/` bundle and serve it via a CDN or static file server (e.g., Nginx, Vercel, Netlify).
 * **Procfile**: A `Procfile` is included in the backend directory for Heroku/Railway-style deployments.
+
+---
+
+# Recent Updates
+
+## Dashboard
+- Reordered the Financial Overview KPI cards to follow a more intuitive business flow: Total Budget, Total Received, Total Expenses, Forecasted Profit, and Net Profit.
+- Improved dashboard card alignment and spacing for cleaner presentation.
+- Refined the dashboard layout to enhance readability and visual hierarchy.
+
+## Navigation
+- Removed icons from the navigation bar for a cleaner enterprise-style interface.
+- Fixed the active-page highlighting issue so Pipeline is now highlighted correctly alongside other menu items.
+- Corrected active-route detection for all navigation items.
+- Standardized spacing between Dashboard, Pipeline, Projects, and the other top-level menu items.
+- Improved navbar consistency across the application.
+
+## UI Improvements
+- Fixed spacing inconsistencies across dashboard-related pages.
+- Improved overall layout alignment and visual balance.
+- Enhanced responsive behavior and visual consistency.
+- Standardized margins and padding for a more polished professional UI.
+
+## Documentation
+- Updated the README to reflect the latest UI, navigation, and dashboard refinements.
+- Added a dedicated changelog section for recent updates.
+- Improved project documentation for easier onboarding and maintainability.
 
 ---
 

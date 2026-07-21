@@ -308,15 +308,6 @@ export default function DashboardScreen({ userRole, currentPage, onNavigate }: a
                 sparklineData={[12, 14, 15, 14, 18, 19]}
               />
               <PremiumKpiCard
-                title="Forecasted profit"
-                value={metrics?.forecasted_profit.value || 0}
-                change={metrics?.forecasted_profit.change}
-                isLoading={loading}
-                formatter={formatCurrency}
-                icon={<TrendingUp className="w-5 h-5" />}
-                sparklineData={[8, 11, 13, 15, 14, 16]}
-              />
-              <PremiumKpiCard
                 title="Total Received"
                 value={metrics?.received.value || 0}
                 change={metrics?.received.change}
@@ -333,6 +324,15 @@ export default function DashboardScreen({ userRole, currentPage, onNavigate }: a
                 formatter={formatCurrency}
                 icon={<TrendingDown className="w-5 h-5" />}
                 sparklineData={[10, 8, 12, 10, 14, 11]}
+              />
+              <PremiumKpiCard
+                title="Forecasted profit"
+                value={metrics?.forecasted_profit.value || 0}
+                change={metrics?.forecasted_profit.change}
+                isLoading={loading}
+                formatter={formatCurrency}
+                icon={<TrendingUp className="w-5 h-5" />}
+                sparklineData={[8, 11, 13, 15, 14, 16]}
               />
               <PremiumKpiCard
                 title="Net Profit"

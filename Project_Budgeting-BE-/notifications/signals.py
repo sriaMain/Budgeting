@@ -42,8 +42,8 @@ def on_budget_save(sender, instance, created, **kwargs):
             priority='low',
             specific_users=[pm] if pm else None,
             module_name='Budgets',
-            record_id=project.id,
-            redirect_url=f'/projects/{project.id}'
+            record_id=project.project_no,
+            redirect_url=f'/projects/{project.project_no}'
         )
     else:
         # Check if budget is exceeded
@@ -55,13 +55,13 @@ def on_budget_save(sender, instance, created, **kwargs):
             notify_roles_or_users(
                 role_names=['Admin', 'Finance Manager'],
                 title=title,
-                message=message,
+                message=message, 
                 notification_type='budget',
                 priority='high',
                 specific_users=[pm] if pm else None,
                 module_name='Budgets',
-                record_id=project.id,
-                redirect_url=f'/projects/{project.id}'
+                record_id=project.project_no,
+                redirect_url=f'/projects/{project.project_no}'
             )
 
 # 3. BUDGET APPROVAL / REJECTION (via Quote status)
@@ -286,8 +286,8 @@ def on_project_post_save(sender, instance, created, **kwargs):
             priority='medium',
             specific_users=[pm] if pm else None,
             module_name='Projects',
-            record_id=instance.id,
-            redirect_url=f'/projects/{instance.id}'
+            record_id=instance.project_no,
+            redirect_url=f'/projects/{instance.project_no}'
         )
     else:
         old_status = getattr(instance, '_old_status', None)
@@ -305,8 +305,8 @@ def on_project_post_save(sender, instance, created, **kwargs):
                 priority='high',
                 specific_users=[pm] if pm else None,
                 module_name='Projects',
-                record_id=instance.id,
-                redirect_url=f'/projects/{instance.id}'
+                record_id=instance.project_no,
+                redirect_url=f'/projects/{instance.project_no}'
             )
         # 2. Project Manager Changed
         elif old_manager_id != instance.project_manager_id:
@@ -320,8 +320,8 @@ def on_project_post_save(sender, instance, created, **kwargs):
                     notification_type='project',
                     priority='medium',
                     module_name='Projects',
-                    record_id=instance.id,
-                    redirect_url=f'/projects/{instance.id}'
+                    record_id=instance.project_no,
+                    redirect_url=f'/projects/{instance.project_no}'
                 )
         # 3. General Update
         else:
@@ -335,8 +335,8 @@ def on_project_post_save(sender, instance, created, **kwargs):
                 priority='low',
                 specific_users=[pm] if pm else None,
                 module_name='Projects',
-                record_id=instance.id,
-                redirect_url=f'/projects/{instance.id}'
+                record_id=instance.project_no,
+                redirect_url=f'/projects/{instance.project_no}'
             )
 
 # 8. TASK ASSIGNED / COMPLETED

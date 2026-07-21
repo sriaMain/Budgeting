@@ -7,6 +7,7 @@ from unittest.mock import patch, MagicMock
 from django.test import TestCase, RequestFactory
 from django.utils import timezone
 from django.core import signing
+from rest_framework.test import APITestCase
 
 from accounts.models import Account
 from Project.models import Project, Task, TaskAssignmentAuditLog
@@ -174,7 +175,7 @@ class TaskAssignmentServiceTests(TestCase):
 # API / Deep-Link Endpoint Tests
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TaskDeepLinkViewTests(TestCase):
+class TaskDeepLinkViewTests(APITestCase):
 
     def setUp(self):
         from django.urls import reverse
@@ -217,7 +218,7 @@ class TaskDeepLinkViewTests(TestCase):
     def test_deleted_task_returns_404(self):
         token = self._token(self.task.id, self.client_user.id)
         self.task.delete()
-        self.client.force_login(self.client_user)
+        self.client.force_authenticate(user=self.client_user)
         resp = self.client.get(self.url, {"token": token})
         self.assertEqual(resp.status_code, 404)
         self.assertEqual(resp.json()["status"], "not_found")
@@ -228,7 +229,7 @@ class TaskDeepLinkViewTests(TestCase):
         self.task.assigned_to = new_user
         self.task.save()
         token = self._token(self.task.id, self.client_user.id)
-        self.client.force_login(self.client_user)
+        self.client.force_authenticate(user=self.client_user)
         resp = self.client.get(self.url, {"token": token})
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.json()["status"], "reassigned")
@@ -236,7 +237,7 @@ class TaskDeepLinkViewTests(TestCase):
     def test_unauthorized_user_returns_403(self):
         """A valid token but the wrong authenticated user should return 'unauthorized'."""
         token = self._token(self.task.id, self.client_user.id)
-        self.client.force_login(self.other_user)
+        self.client.force_authenticate(user=self.other_user)
         resp = self.client.get(self.url, {"token": token})
         self.assertEqual(resp.status_code, 403)
         self.assertEqual(resp.json()["status"], "unauthorized")
@@ -244,7 +245,7 @@ class TaskDeepLinkViewTests(TestCase):
     def test_correct_user_returns_ok(self):
         """The correct authenticated user with a valid token gets 'ok'."""
         token = self._token(self.task.id, self.client_user.id)
-        self.client.force_login(self.client_user)
+        self.client.force_authenticate(user=self.client_user)
         resp = self.client.get(self.url, {"token": token})
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
@@ -255,7 +256,7 @@ class TaskDeepLinkViewTests(TestCase):
         """Admin user should be able to access any task link regardless of assignee."""
         admin = make_user(username="superadmin", email="sa@example.com", is_superuser=True)
         token = self._token(self.task.id, self.client_user.id)
-        self.client.force_login(admin)
+        self.client.force_authenticate(user=admin)
         resp = self.client.get(self.url, {"token": token})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["status"], "ok")
@@ -265,7 +266,7 @@ class TaskDeepLinkViewTests(TestCase):
 # Notification Tests
 # ──────────────────────────────────────────────────────────────────────────────
 
-class NotificationFilterTests(TestCase):
+class NotificationFilterTests(APITestCase):
 
     def setUp(self):
         self.user = make_user(username="notif_user", email="notif@example.com")
@@ -293,7 +294,7 @@ class NotificationFilterTests(TestCase):
         )
 
     def test_task_filter_returns_both_types(self):
-        self.client.force_login(self.user)
+        self.client.force_authenticate(user=self.user)
         resp = self.client.get("/api/notifications/", {"type": "task"})
         data = resp.json()["notifications"]
         types = [n["notification_type"] for n in data]
@@ -302,7 +303,7 @@ class NotificationFilterTests(TestCase):
         self.assertNotIn("budget", types)
 
     def test_budget_filter_returns_only_budget(self):
-        self.client.force_login(self.user)
+        self.client.force_authenticate(user=self.user)
         resp = self.client.get("/api/notifications/", {"type": "budget"})
         data = resp.json()["notifications"]
         types = [n["notification_type"] for n in data]

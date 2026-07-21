@@ -168,6 +168,19 @@ const App: React.FC = () => {
 
           {/* Task Management */}
           <Route
+            path="/tasks"
+            element={
+              <ProtectedRoute>
+                <TaskManagement
+                  userRole={userRole}
+                  currentPage={currentPage}
+                  onNavigate={handleNavigate}
+                />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/task-management"
             element={
               <ProtectedRoute>

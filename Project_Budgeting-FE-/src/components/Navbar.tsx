@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, NavLink } from 'react-router-dom';
 import {
-  LayoutGrid, Briefcase, FileText, Users, CheckSquare, Settings,
-  Bell, Search, Menu, X, Check, Trash, Trash2, AlertCircle, Info,
+  Briefcase, FileText, Users, Settings,
+  Bell, Menu, X, Check, Trash2, AlertCircle, Info,
   DollarSign, CheckCircle2, LogIn, CreditCard
 } from 'lucide-react';
 import { useAppDispatch } from '../hooks/useAppDispatch';
@@ -74,7 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
       } else if (type === 'budget') {
         navigate(`/projects/${recordId}`, { state: { activeTab: 'Budget' } });
       } else if (type === 'task') {
-        navigate(`/task-management`, { state: { taskId: recordId } });
+        navigate(`/tasks`, { state: { taskId: recordId } });
       } else if (type === 'contact') {
         navigate(`/contacts`, { state: { clientId: recordId } });
       } else if (redirectUrl) {
@@ -194,14 +194,14 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
   }
 
   const navItems = [
-    { label: 'Pipeline', icon: <LayoutGrid size={18} />, roles: ['admin', 'manager'], path: '/pipeline' },
-    { label: 'Projects', icon: <Briefcase size={18} />, roles: ['admin', 'manager', 'user'], path: '/projects' },
-    { label: 'Reports', icon: <FileText size={18} />, roles: ['admin', 'manager', 'user'], path: '/reports' },
-    { label: 'Contacts', icon: <Users size={18} />, roles: ['admin', 'manager'], path: '/contacts' },
-    { label: 'Tasks', icon: <CheckSquare size={18} />, roles: ['admin', 'manager', 'user', 'employee'], path: '/task-management' },
-    { label: 'Profile', icon: <Users size={18} />, roles: ['employee'], path: '/profile' },
+    { label: 'Pipeline', roles: ['admin', 'manager'], path: '/pipeline' },
+    { label: 'Projects', roles: ['admin', 'manager', 'user'], path: '/projects' },
+    { label: 'Reports', roles: ['admin', 'manager', 'user'], path: '/reports' },
+    { label: 'Contacts', roles: ['admin', 'manager'], path: '/contacts' },
+    { label: 'Tasks', roles: ['admin', 'manager', 'user', 'employee'], path: '/tasks' },
+    { label: 'Profile', roles: ['employee'], path: '/profile' },
     // Administration for both admin and manager, but manager only sees Manage Modules tab
-    { label: 'Administration', icon: <Settings size={18} />, roles: ['admin', 'manager'], path: '/administration' },
+    { label: 'Administration', roles: ['admin', 'manager'], path: '/administration' },
   ];
 
   return (
@@ -215,44 +215,40 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
         <div className="flex justify-between h-[72px] max-w-[1600px] mx-auto items-center">
 
           {/* Left Side: Logo & Nav Links */}
-          <div className="flex items-center gap-8">
-            <button
-              onClick={() => navigate('/dashboard')}
-              className={`
-                flex-shrink-0 px-3.5 py-2 rounded-xl text-sm font-semibold transition-premium flex items-center gap-2
-                ${window.location.pathname.startsWith('/dashboard')
-                  ? 'bg-blue-55 text-blue-700 bg-blue-50/70 shadow-sm border border-blue-100/50'
+          <div className="flex items-center gap-6">
+            <NavLink
+              to="/dashboard"
+              className={({ isActive }) => `
+                group h-10 px-3.5 rounded-xl text-sm font-semibold transition-premium inline-flex items-center justify-center whitespace-nowrap
+                ${isActive
+                  ? 'bg-blue-50/70 text-blue-700 shadow-sm border border-blue-100/50'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
                 }
               `}
             >
               Dashboard
-            </button>
+            </NavLink>
 
-            <div className="hidden md:flex space-x-1.5">
+            <div className="hidden md:flex items-center gap-6">
               {navItems.map((item) => {
                 const userRoleLower = userRole?.toLowerCase();
                 const hasAccess = item.roles.some(role => role.toLowerCase() === userRoleLower);
                 if (!hasAccess) return null;
 
-                const isActive = window.location.pathname.startsWith(item.path);
                 return (
-                  <button
+                  <NavLink
                     key={item.label}
-                    onClick={() => navigate(item.path)}
-                    className={`
-                      px-3.5 py-2 rounded-xl text-sm font-semibold transition-premium flex items-center gap-2
+                    to={item.path}
+                    className={({ isActive }) => `
+                      group h-10 px-3.5 rounded-xl text-sm font-semibold transition-premium inline-flex items-center justify-center whitespace-nowrap
                       ${isActive
-                        ? 'bg-blue-55 text-blue-700 bg-blue-50/70 shadow-sm border border-blue-100/50'
+                        ? 'bg-blue-50/70 text-blue-700 shadow-sm border border-blue-100/50'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
                       }
                     `}
                   >
-                    <span className={isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}>
-                      {item.icon}
-                    </span>
                     {item.label}
-                  </button>
+                  </NavLink>
                 );
               })}
             </div>
@@ -489,17 +485,14 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
                   if (!hasAccess) return null;
 
                   return (
-                    <button
+                    <NavLink
                       key={item.label}
-                      onClick={() => {
-                        navigate(item.path);
-                        setIsMobileMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 transition-colors"
+                      to={item.path}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={({ isActive }) => `w-full block px-4 py-3 font-medium transition-colors ${isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
                     >
-                      <span className="text-gray-600">{item.icon}</span>
-                      <span className="font-medium">{item.label}</span>
-                    </button>
+                      {item.label}
+                    </NavLink>
                   );
                 })}
               </nav>
