@@ -3,33 +3,17 @@ import type { Client, POC } from "../pages/ClientListPage";
 import { ClientListPage } from "../pages/ClientListPage";
 import { AddClientPage } from "../pages/AddClientPage";
 import { ClientDetailsPage } from "../pages/ClientDetailsPage";
-import { VendorListPage } from "../pages/VendorListPage";
-import { AddVendorPage } from "../pages/AddVendorPage";
-import { VendorDetailsPage } from "../pages/VendorDetailsPage";
 import { Layout } from "../components/Layout";
 import axiosInstance from "../utils/axiosInstance";
-
-export interface Vendor {
-  id: number;
-  name: string;
-  vendor_type: string;
-  email: string;
-  phone: string;
-  created_at?: string;
-  updated_at?: string;
-}
+import { VendorListContent } from "./vendor-onboarding/VendorListPage";
 
 export default function ContactsScreen() {
   const [activeTab, setActiveTab] = useState<'clients' | 'vendors'>('clients');
   const [currentView, setCurrentView] = useState<'list' | 'add' | 'details' | 'edit'>('list');
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
-  const [selectedVendorId, setSelectedVendorId] = useState<number | null>(null);
 
   // Application State - Clients
   const [clients, setClients] = useState<Client[]>([]);
-  
-  // Application State - Vendors
-  const [vendors, setVendors] = useState<Vendor[]>([]);
 
   // Application State - POCs (populated from API)
   const [pocs, setPocs] = useState<POC[]>([]);
@@ -42,10 +26,11 @@ export default function ContactsScreen() {
         setClients(clientsData);
 
         // Extract and flatten all POCs from all clients
+        type RawPoc = { id: number; poc_name: string; designation: string; poc_mobile: string; poc_email: string };
         const allPocs: POC[] = [];
-        clientsData.forEach((client: any) => {
+        clientsData.forEach((client: Client & { pocs?: RawPoc[] }) => {
           if (client.pocs && Array.isArray(client.pocs)) {
-            client.pocs.forEach((poc: any) => {
+            client.pocs.forEach((poc: RawPoc) => {
               allPocs.push({
                 id: poc.id,
                 company: client.id,
@@ -66,37 +51,18 @@ export default function ContactsScreen() {
     }
   };
 
-  const fetchVendors = async () => {
-    try {
-      const response = await axiosInstance.get("/accounts/vendors/");
-      if (response.status === 200) {
-        setVendors(response.data);
-      }
-      console.log("Fetched vendors:", response.data);
-    } catch (error) {
-      console.error("Failed to fetch vendors:", error);
-    }
-  };
-
   useEffect(() => {
     fetchClients();
-    fetchVendors();
   }, []);
 
   // Reset view when switching tabs
   useEffect(() => {
     setCurrentView('list');
     setSelectedClientId(null);
-    setSelectedVendorId(null);
   }, [activeTab]);
 
   const handleNavigateToClientDetails = (clientId: number) => {
     setSelectedClientId(clientId);
-    setCurrentView('details');
-  };
-
-  const handleNavigateToVendorDetails = (vendorId: number) => {
-    setSelectedVendorId(vendorId);
     setCurrentView('details');
   };
 
@@ -110,23 +76,8 @@ export default function ContactsScreen() {
     handleNavigateToClientDetails(updatedClient.id);
   };
 
-  const handleVendorCreated = (newVendor: Vendor) => {
-    setVendors(prev => [...prev, newVendor]);
-    handleNavigateToVendorDetails(newVendor.id);
-  };
-
-  const handleVendorUpdated = (updatedVendor: Vendor) => {
-    setVendors(prev => prev.map(v => v.id === updatedVendor.id ? updatedVendor : v));
-    handleNavigateToVendorDetails(updatedVendor.id);
-  };
-
   const handleEditClient = (clientId: number) => {
     setSelectedClientId(clientId);
-    setCurrentView('edit');
-  };
-
-  const handleEditVendor = (vendorId: number) => {
-    setSelectedVendorId(vendorId);
     setCurrentView('edit');
   };
 
@@ -136,7 +87,6 @@ export default function ContactsScreen() {
 
   const getClientById = (id: number) => clients.find(c => c.id === id);
   const getPocsByClientId = (id: number) => pocs.filter(p => p.company === id);
-  const getVendorById = (id: number) => vendors.find(v => v.id === id);
 
   return (
     <Layout userRole="admin" currentPage="contacts" onNavigate={() => { }}>
@@ -209,40 +159,7 @@ export default function ContactsScreen() {
           )}
 
           {/* Vendors Tab Content */}
-          {activeTab === 'vendors' && (
-            <>
-              {currentView === 'list' && (
-                <VendorListPage
-                  vendors={vendors}
-                  onAddVendor={() => setCurrentView('add')}
-                  onSelectVendor={handleNavigateToVendorDetails}
-                />
-              )}
-
-              {currentView === 'add' && (
-                <AddVendorPage
-                  onSave={handleVendorCreated}
-                  onCancel={() => setCurrentView('list')}
-                />
-              )}
-
-              {currentView === 'edit' && selectedVendorId && (
-                <AddVendorPage
-                  vendor={getVendorById(selectedVendorId)}
-                  onSave={handleVendorUpdated}
-                  onCancel={() => setCurrentView('details')}
-                />
-              )}
-
-              {currentView === 'details' && selectedVendorId && (
-                <VendorDetailsPage
-                  vendor={getVendorById(selectedVendorId)!}
-                  onEdit={() => handleEditVendor(selectedVendorId)}
-                  onBack={() => setCurrentView('list')}
-                />
-              )}
-            </>
-          )}
+          {activeTab === 'vendors' && <VendorListContent />}
         </div>
       </div>
     </Layout>

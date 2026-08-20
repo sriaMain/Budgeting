@@ -214,6 +214,9 @@ def get_project_tab_data(filters):
     if filters.get("project"):
         qs = qs.filter(project_id=filters["project"])
 
+    from_date = filters.get("from_date")
+    to_date = filters.get("to_date")
+
     data = []
 
     for pb in qs:
@@ -221,24 +224,41 @@ def get_project_tab_data(filters):
         if pb.project is None:
             continue
 
-        invoiced = Invoice.objects.filter(
-            project=pb.project
-        ).aggregate(
+        invoice_qs = Invoice.objects.filter(project=pb.project)
+        if from_date:
+            invoice_qs = invoice_qs.filter(issue_date__gte=from_date)
+        if to_date:
+            invoice_qs = invoice_qs.filter(issue_date__lte=to_date)
+        invoiced = invoice_qs.aggregate(
             total=Coalesce(Sum("total_amount"), Decimal("0.00"))
         )["total"]
 
-        received = InvoicePayment.objects.filter(
-            invoice__project=pb.project
-        ).aggregate(
+        payment_qs = InvoicePayment.objects.filter(invoice__project=pb.project)
+        if from_date:
+            payment_qs = payment_qs.filter(payment_date__gte=from_date)
+        if to_date:
+            payment_qs = payment_qs.filter(payment_date__lte=to_date)
+        received = payment_qs.aggregate(
             total=Coalesce(Sum("amount"), Decimal("0.00"))
         )["total"]
 
-        expenses = OutgoingPayment.objects.filter(
+        outgoing_qs = OutgoingPayment.objects.filter(
             vendor_bill__purchase_order__project=pb.project
-        ).aggregate(
+        )
+        if from_date:
+            outgoing_qs = outgoing_qs.filter(payment_date__gte=from_date)
+        if to_date:
+            outgoing_qs = outgoing_qs.filter(payment_date__lte=to_date)
+        expenses = outgoing_qs.aggregate(
             total=Coalesce(Sum("amount"), Decimal("0.00"))
         )["total"]
-        expenses += Expense.objects.filter(project=pb.project).aggregate(
+
+        expense_qs = Expense.objects.filter(project=pb.project)
+        if from_date:
+            expense_qs = expense_qs.filter(expense_date__gte=from_date)
+        if to_date:
+            expense_qs = expense_qs.filter(expense_date__lte=to_date)
+        expenses += expense_qs.aggregate(
             total=Coalesce(Sum("amount"), Decimal("0.00"))
         )["total"]
 
@@ -281,6 +301,12 @@ def get_payment_tab_data(filters):
 
 def get_po_invoice_tab_data(filters):
     qs = PurchaseOrder.objects.select_related("vendor")
+
+    if filters.get("from_date"):
+        qs = qs.filter(issue_date__gte=filters["from_date"])
+
+    if filters.get("to_date"):
+        qs = qs.filter(issue_date__lte=filters["to_date"])
 
     qs = qs.annotate(
         paid=Coalesce(

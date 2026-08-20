@@ -10,7 +10,13 @@ import { Layout } from '../components/Layout';
 import { InputField } from '../components/InputField';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
-import type { Vendor } from './ContactsScreen';
+interface Vendor {
+    id: number;
+    name: string;
+    vendor_type: string;
+    email: string;
+    phone: string;
+}
 
 interface ProductRow {
     id: string;

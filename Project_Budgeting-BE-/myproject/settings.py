@@ -77,8 +77,9 @@ INSTALLED_APPS = [
     'Reports',
     'core',
     'phonenumber_field',
+    'vendor_onboarding',
 
-    
+
 ]
 ASGI_APPLICATION = "myproject.asgi.application"
 
@@ -209,12 +210,6 @@ STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.AllowAny',
-    ),
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
     ],
@@ -222,9 +217,15 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "EXCEPTION_HANDLER": "myproject.exceptions.custom_exception_handler",
-    
-    
+    "DEFAULT_THROTTLE_RATES": {
+        # Public, token-authenticated vendor onboarding endpoints - no login,
+        # so they're rate-limited per IP instead of per user.
+        "vendor_public": "60/hour",
+    },
 }
+
+# Vendor Self-Service Onboarding
+VENDOR_ONBOARDING_TOKEN_TTL_DAYS = 90
 
 
 
@@ -285,6 +286,30 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+
+# Public URL the Vendor Onboarding portal is reachable at - used only to build
+# the secure onboarding link sent in the invite/request-changes emails. Never
+# hard-code localhost here: a vendor opening the email is on their own
+# computer/network, not the dev machine. Set this in .env:
+#   local:      VENDOR_PORTAL_URL=http://localhost:5173
+#   tunnel:     VENDOR_PORTAL_URL=https://xxxx.ngrok-free.app
+#   production: VENDOR_PORTAL_URL=https://vendor.yourcompany.com
+# Falls back to FRONTEND_BASE_URL (shared with other features' email links)
+# if not set, so this is a no-op change until VENDOR_PORTAL_URL is configured.
+VENDOR_PORTAL_URL = os.environ.get("VENDOR_PORTAL_URL", FRONTEND_BASE_URL).rstrip("/")
+
+# So a tunneled/production vendor-portal origin can call the public
+# vendor-onboarding API directly (see CORS_ALLOWED_ORIGINS above) without
+# needing that origin hand-added every time VENDOR_PORTAL_URL changes.
+if VENDOR_PORTAL_URL not in CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS.append(VENDOR_PORTAL_URL)
+
+# Branding used in Vendor Onboarding emails. COMPANY_LOGO_URL must be a full
+# https:// URL to a hosted image (email clients can't load relative/local
+# paths) - leave it blank to fall back to a text-only header, which is the
+# same convention this codebase's other email templates already use.
+COMPANY_NAME = os.environ.get("COMPANY_NAME", "SRIA INFOTECH PRIVATE LTD")
+COMPANY_LOGO_URL = os.environ.get("COMPANY_LOGO_URL", "")
 # print("Cloud Name:", os.environ.get("CLOUDINARY_CLOUD_NAME"))
 # print("APiKey", os.environ.get("CLOUDINARY_API_KEY"))
 CLOUDINARY_STORAGE = {
@@ -328,6 +353,17 @@ CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
+
+# Run tasks (emails, etc.) synchronously in-process instead of via a
+# separate Celery worker consuming Redis. Tied to DEBUG rather than a
+# standalone flag: if a worker silently isn't running (easy to miss - it's
+# a separate process from `runserver`), queued emails just sit unsent with
+# no visible error. Eager mode makes that failure mode impossible in dev at
+# the cost of blocking ~4-5s (real SMTP send time) on any action that sends
+# mail. EAGER_PROPAGATES=True so a failing task raises here instead of
+# silently vanishing, since there's no worker log to check anymore.
+CELERY_TASK_ALWAYS_EAGER = DEBUG
+CELERY_TASK_EAGER_PROPAGATES = DEBUG
 
 APPEND_SLASH=False 
 PHONENUMBER_DEFAULT_REGION = "IN"

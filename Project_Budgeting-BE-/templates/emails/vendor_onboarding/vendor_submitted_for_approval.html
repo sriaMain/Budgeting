@@ -1,0 +1,23 @@
+{% extends "emails/vendor_onboarding/_layout.html" %}
+
+{% block title %}Vendor Onboarding Submitted – {{ vendor_reference }} | {{ vendor_name }}{% endblock %}
+{% block preheader %}{{ vendor_name }} has submitted their vendor onboarding request for review.{% endblock %}
+{% block heading %}Vendor Onboarding Submitted{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;">Hello Team,</p>
+<p style="margin:0 0 16px;">The vendor <strong>{{ vendor_name }}</strong> has successfully completed and submitted the vendor onboarding request for review{% if level %} at stage "{{ level.name }}"{% endif %}.</p>
+
+{% include "emails/vendor_onboarding/_vendor_info_card.html" %}
+
+<p style="margin:22px 0 16px;">The submitted vendor information and supporting documents are now available in the Vendor Requests section for review.</p>
+<p style="margin:0 0 16px;">Please review the submitted information and proceed with the approval process or request additional information if required.</p>
+
+<p style="text-align:center;margin:0;">
+  <a href="{{ admin_review_url }}" style="display:inline-block;background-color:#2563eb;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;font-family:Arial,Helvetica,sans-serif;">Review Vendor Request</a>
+</p>
+{% endblock %}
+
+{% block footer %}
+<p style="margin:0;">This is an automated notification from the {{ company_name }} Vendor Onboarding system.</p>
+{% endblock %}

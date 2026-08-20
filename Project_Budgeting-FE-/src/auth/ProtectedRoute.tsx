@@ -48,10 +48,14 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/" replace />;
   }
 
-  // Role check
-if (allowedRoles && auth.userRole && !allowedRoles.includes(auth.userRole)) {
-  return <div>Access Denied</div>;
-}
+  // Role check (case-insensitive, since role casing isn't guaranteed consistent from the backend)
+  if (allowedRoles && auth.userRole) {
+    const normalizedRole = auth.userRole.toLowerCase();
+    const hasAccess = allowedRoles.some((role) => role.toLowerCase() === normalizedRole);
+    if (!hasAccess) {
+      return <div>Access Denied</div>;
+    }
+  }
 
 
   // All good → show protected page

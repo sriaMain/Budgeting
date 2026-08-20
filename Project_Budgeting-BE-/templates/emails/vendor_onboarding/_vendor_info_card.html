@@ -1,0 +1,23 @@
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;margin:18px 0;">
+  <tr>
+    <td style="padding:16px 20px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;">
+        {% if vendor_reference %}
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280;width:38%;">Vendor Reference</td><td style="padding:4px 0;color:#111827;font-weight:700;">{{ vendor_reference }}</td></tr>
+        {% endif %}
+        {% if vendor_name %}
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280;">Vendor Name</td><td style="padding:4px 0;color:#111827;font-weight:600;">{{ vendor_name }}</td></tr>
+        {% endif %}
+        {% if vendor_type %}
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280;">Vendor Type</td><td style="padding:4px 0;color:#111827;">{{ vendor_type }}</td></tr>
+        {% endif %}
+        {% if extra_label %}
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280;">{{ extra_label }}</td><td style="padding:4px 0;color:#111827;">{{ extra_value }}</td></tr>
+        {% endif %}
+        {% if status_label %}
+        <tr><td style="padding:8px 12px 0 0;color:#6b7280;">Status</td><td style="padding:8px 0 0;">{% include "emails/vendor_onboarding/_status_badge.html" %}</td></tr>
+        {% endif %}
+      </table>
+    </td>
+  </tr>
+</table>

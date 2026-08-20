@@ -437,11 +437,13 @@ class VendorListCreateView(APIView):
     authentication_classes = [JWTAuthentication]
     def get(self, request, vendor_id=None):
 
-    # Decide queryset
+    # Decide queryset - only approved vendors are real/selectable here; an
+    # in-progress onboarding request (invited/draft/submitted/etc.) must not
+    # show up as a usable vendor for POs/Bills/Expenses until it's approved.
         if vendor_id:
-            vendors = Vendor.objects.filter(id=vendor_id)
+            vendors = Vendor.objects.filter(id=vendor_id, status="approved")
         else:
-            vendors = Vendor.objects.all()
+            vendors = Vendor.objects.filter(status="approved")
 
         result = []
 

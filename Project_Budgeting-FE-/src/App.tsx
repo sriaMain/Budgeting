@@ -24,6 +24,11 @@ import PurchaseOrderDetailsPage from "./pages/PurchaseOrderDetailsPage";
 import BillDetailsPage from "./pages/BillDetailsPage";
 import ExpenseDetailsPage from "./pages/ExpenseDetailsPage";
 import ReportsPage from "./pages/ReportsPage";
+import VendorListPage from "./pages/vendor-onboarding/VendorListPage";
+import VendorOnboardingWizardPage from "./pages/vendor-onboarding/VendorOnboardingWizardPage";
+import VendorDetailsPage from "./pages/vendor-onboarding/VendorDetailsPage";
+import VendorApprovalQueuePage from "./pages/vendor-onboarding/VendorApprovalQueuePage";
+import VendorPortalPage from "./pages/vendor-onboarding/public/VendorPortalPage";
 import { initializeAuth } from "./auth/authThunk";
 import { useAppSelector } from "./hooks/useAppSelector";
 import { useAppDispatch } from "./hooks/useAppDispatch";
@@ -55,6 +60,11 @@ const App: React.FC = () => {
 
           <Route path="/forgot-password" element={<ForgotPasswordForm />} />
           <Route path="/verification" element={<VerificationScreen />} />
+
+          {/* Vendor self-service onboarding portal - secure token in the URL is the only
+              access control; must NOT be wrapped in ProtectedRoute since the vendor has
+              no account/login at all. */}
+          <Route path="/vendor-onboarding/:token" element={<VendorPortalPage />} />
 
 
           {/* Protect Dashboard */}
@@ -307,6 +317,48 @@ const App: React.FC = () => {
                   currentPage={currentPage}
                   onNavigate={handleNavigate}
                 />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Vendor Onboarding */}
+          <Route
+            path="/vendors"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                <VendorListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/vendors/add"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                <VendorOnboardingWizardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/vendors/:vendorId/edit"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                <VendorOnboardingWizardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/vendors/:vendorId"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                <VendorDetailsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/vendors/approvals"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                <VendorApprovalQueuePage />
               </ProtectedRoute>
             }
           />

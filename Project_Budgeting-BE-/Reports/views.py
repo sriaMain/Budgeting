@@ -237,8 +237,8 @@ class FinanceOverviewAPIView(APIView):
         section = request.query_params.get("section", "all")
 
         filters = {
-            "from_date": request.query_params.get("from_date"),
-            "to_date": request.query_params.get("to_date"),
+            "from_date": request.query_params.get("date_from"),
+            "to_date": request.query_params.get("date_to"),
             "client": request.query_params.get("client"),
             "project": request.query_params.get("project"),
         }
