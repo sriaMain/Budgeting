@@ -180,7 +180,8 @@ const VendorPortalPage: React.FC = () => {
       setCompletedSteps(new Set(Array.from({ length: step - 1 }, (_, i) => i + 1)));
     } catch (err) {
       console.error(err);
-      setLoadError('This onboarding link is invalid or has expired. Please contact the person who sent it to you for a new link.');
+      const errors = parseApiErrors(err);
+      setLoadError(errors.general || 'Invalid or unavailable vendor onboarding link.');
     } finally {
       setLoading(false);
     }

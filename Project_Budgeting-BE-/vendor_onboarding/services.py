@@ -14,8 +14,14 @@ from .models import (
 
 
 class InvalidTokenError(Exception):
-    """Raised for any invalid/expired/revoked public access token. The public
-    views map this to a generic 404 - never leak *why* a token failed."""
+    """Raised for any invalid/expired/revoked public access token. `reason` is
+    either "expired" (the link used to work, tell the vendor to ask for a new
+    one) or "invalid" (never existed / was revoked - don't distinguish those
+    two further, no benefit to the vendor and it's a smaller surface to leak)."""
+
+    def __init__(self, message, reason="invalid"):
+        self.reason = reason
+        super().__init__(message)
 
 
 def resolve_approval_chain(company_code=None, plant=None, vendor_type=None):
@@ -80,10 +86,12 @@ def validate_public_token(raw_token, ip_address=None, user_agent=""):
     try:
         token = VendorAccessToken.objects.select_related("vendor").get(token=raw_token)
     except VendorAccessToken.DoesNotExist:
-        raise InvalidTokenError("Invalid onboarding link.")
+        raise InvalidTokenError("Invalid onboarding link.", reason="invalid")
 
-    if not token.is_valid():
-        raise InvalidTokenError("This onboarding link has expired or is no longer active.")
+    if token.expires_at <= timezone.now():
+        raise InvalidTokenError("This onboarding link has expired.", reason="expired")
+    if not token.is_active:
+        raise InvalidTokenError("This onboarding link is no longer active.", reason="invalid")
 
     token.last_used_at = timezone.now()
     token.save(update_fields=["last_used_at"])
