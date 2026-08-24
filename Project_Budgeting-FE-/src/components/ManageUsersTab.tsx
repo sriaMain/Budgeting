@@ -1,13 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus, Search, ArrowLeft, Loader2, User as UserIcon,
-  ChevronDown, Building2
+  ChevronDown, Building2, UserPlus
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { ReusableTable } from '../components/ReusableTable';
 import { FormRow } from '../components/FormRow';
+import { StatusBadge } from './StatusBadge';
+import { Modal } from './Modal';
+import { Button } from './Button';
+import { InputField } from './InputField';
+import { SendEmployeeOnboardingModal } from '../pages/employee-onboarding/SendEmployeeOnboardingModal';
 import type { Column } from '../components/ReusableTable';
 import axiosInstance from '../utils/axiosInstance';
+import * as employeeOnboardingApi from '../services/employeeOnboarding';
 import type { Role, Module, User, UserDisplay } from '../types';
+import type { EmployeeOnboardingChoices, EmployeeOnboardingDetail } from '../types/employeeOnboarding.types';
 import { Toast } from './Toast';
 import { parseApiErrors } from '../utils/parseApiErrors';
 import companyLogo from '../assets/company-logo.png';
@@ -16,11 +25,43 @@ const ManageUsersTab: React.FC = () => {
   const [view, setView] = useState<'list' | 'form'>('list');
   const [users, setUsers] = useState<UserDisplay[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  // Defaults to "active" so a deleted (deactivated) user drops out of view
+  // immediately, instead of lingering in the list looking unchanged - it's
+  // still recoverable by switching this filter to "Inactive".
+  const [statusFilter, setStatusFilter] = useState("active");
   const [moduleFilter, setModuleFilter] = useState("all");
   const [roles, setRoles] = useState<Role[]>([]);
   const [modules, setModules] = useState<Module[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
+
+  // --- Employee Self-Onboarding ---
+  const [onboardingByAccount, setOnboardingByAccount] = useState<Record<number, EmployeeOnboardingDetail>>({});
+  const [employeeChoices, setEmployeeChoices] = useState<EmployeeOnboardingChoices | null>(null);
+  const [inviteModalUser, setInviteModalUser] = useState<UserDisplay | null>(null);
+
+  // --- Quick "just an email" employee invite (replaces the old full Create User form) ---
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [isInviting, setIsInviting] = useState(false);
+
+  const fetchOnboardingData = async () => {
+    try {
+      const [list, choices] = await Promise.all([
+        employeeOnboardingApi.listEmployeeOnboarding(),
+        employeeOnboardingApi.getChoices(),
+      ]);
+      const byAccount: Record<number, EmployeeOnboardingDetail> = {};
+      list.forEach((r) => { byAccount[r.account.id] = r; });
+      setOnboardingByAccount(byAccount);
+      setEmployeeChoices(choices);
+    } catch (error) {
+      // Non-fatal: if the current role lacks employee_onboarding permissions,
+      // Manage Users should still work - onboarding status just won't show.
+      console.error('Failed to fetch employee onboarding data', error);
+    }
+  };
 
   const filteredUsers = users.filter(u => {
     const searchLower = (searchQuery || "").toLowerCase();
@@ -66,7 +107,7 @@ const ManageUsersTab: React.FC = () => {
     languages: [] as string[],
     is_active: true,
     profile_picture: null as string | null, // Cloudinary image URL from backend
-    profile_image_file: null as File | null // New field for the actual file object
+    profile_image_file: null as File | null, // New field for the actual file object
   };
 
   const [formData, setFormData] = useState(initialFormState);
@@ -81,6 +122,7 @@ const ManageUsersTab: React.FC = () => {
   // --- Fetch Data ---
   useEffect(() => {
     fetchData();
+    fetchOnboardingData();
   }, []);
 
   // Clear errors when switching to list view
@@ -155,10 +197,100 @@ const ManageUsersTab: React.FC = () => {
       languages: Array.isArray(user.languages) ? user.languages : [],
       is_active: user.is_active,
       profile_picture: user.profile_picture,
-      profile_image_file: null // Reset file on edit start
+      profile_image_file: null, // Reset file on edit start
     });
     setErrors({});
     setView('form');
+  };
+
+  const handleDelete = async (user: UserDisplay) => {
+    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
+    if (window.confirm(`Are you sure you want to delete user ${fullName}?`)) {
+      try {
+        await axiosInstance.delete(`/accounts/users/${user.id}/`);
+        toast.success('User deleted successfully!');
+        // The backend soft-deletes (is_active becomes false) rather than
+        // removing the row - reflect that locally right away instead of
+        // waiting on a refetch, otherwise the row appears unchanged and it
+        // looks like nothing happened.
+        setUsers(prev => prev.map(u => (u.id === user.id ? { ...u, is_active: false } : u)));
+      } catch (error) {
+        console.error("Failed to delete user", error);
+        toast.error('Failed to delete user.');
+      }
+    }
+  };
+
+  const handleQuickInvite = async () => {
+    const email = inviteEmail.trim();
+    if (!email) {
+      setInviteError('Email is required.');
+      return;
+    }
+
+    setIsInviting(true);
+    setInviteError('');
+
+    try {
+      let accountId: number | null = null;
+
+      try {
+        const formDataToSend = new FormData();
+        formDataToSend.append('email', email);
+        // DRF treats a missing boolean field on a multipart request as an
+        // unchecked HTML checkbox (false), not "use the model default" - so
+        // this must be sent explicitly or the account is created inactive.
+        formDataToSend.append('is_active', 'true');
+
+        // Backend defaults a bare invite (no role given) to the Employee role
+        // and auto-generates the Employee ID once the invite is sent below.
+        const createRes = await axiosInstance.post('/accounts/users/create/', formDataToSend, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        // UserCreateView returns { message, user_id, email, profile_picture } - not { id }.
+        accountId = createRes.data?.user_id;
+      } catch (createErr: any) {
+        const emailError: string = createErr?.response?.data?.errors?.email || '';
+        if (!/already exists/i.test(emailError)) throw createErr;
+
+        // The account already exists (e.g. it was invited before) - reuse it
+        // instead of dead-ending on a "already exists" error, since sending
+        // the invite is clearly what the admin is trying to do here.
+        const existing = users.find(u => (u.email || '').toLowerCase() === email.toLowerCase());
+        if (!existing) throw createErr;
+
+        accountId = Number(existing.id);
+        if (!existing.is_active) {
+          const reactivateData = new FormData();
+          reactivateData.append('is_active', 'true');
+          await axiosInstance.put(`/accounts/users/${accountId}/`, reactivateData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        }
+      }
+
+      try {
+        await employeeOnboardingApi.sendOnboardingInvite(accountId as number);
+        toast.success("Invite sent! The employee will get an email to complete their own onboarding.");
+      } catch (sendErr) {
+        // The account exists either way - don't lose that fact behind a
+        // generic failure. The admin can retry the invite from the
+        // Onboarding column.
+        console.error("Account ready, but sending the onboarding invite failed", sendErr);
+        toast.error("Account ready, but the invite email failed to send. You can resend it from the Onboarding column.");
+      }
+
+      setShowInviteModal(false);
+      setInviteEmail('');
+      await fetchData();
+      await fetchOnboardingData();
+    } catch (error: any) {
+      // UserCreateView returns validation errors as { errors: { field: message } }.
+      const backendErrors = error?.response?.data?.errors;
+      setInviteError(backendErrors?.email || error?.response?.data?.error || 'Failed to send invite.');
+    } finally {
+      setIsInviting(false);
+    }
   };
 
   const handleLanguageChange = (lang: string) => {
@@ -226,21 +358,16 @@ const ManageUsersTab: React.FC = () => {
       // Headers for multipart form data are automatically set by browser/axios when passing FormData
       // but sometimes we need to ensure the Content-Type header isn't forced to application/json by an interceptor.
 
-      if (formData.id) {
-        await axiosInstance.put(`/accounts/users/${formData.id}/`, formDataToSend, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
-      } else {
-        await axiosInstance.post('/accounts/users/create/', formDataToSend, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
-      }
+      await axiosInstance.put(`/accounts/users/${formData.id}/`, formDataToSend, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
 
       await fetchData(); // Refresh list
+      await fetchOnboardingData();
 
       // Show toast and navigate back after delay
       setIsNavigating(true);
-      setToastMessage(formData.id ? "User updated successfully!" : "User created successfully!");
+      setToastMessage("User updated successfully!");
       setShowToast(true);
       setTimeout(() => {
         setView('list');
@@ -330,6 +457,34 @@ const ManageUsersTab: React.FC = () => {
         </span>
       )
     },
+    {
+      header: 'Onboarding',
+      accessor: (user) => {
+        const accountId = Number(user.id);
+        const onboarding = onboardingByAccount[accountId];
+        if (!onboarding) {
+          return (
+            <button
+              onClick={(e) => { e.stopPropagation(); setInviteModalUser(user); }}
+              className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800"
+            >
+              <UserPlus size={14} /> Send Onboarding Invite
+            </button>
+          );
+        }
+        return (
+          <div className="flex items-center gap-2">
+            <StatusBadge status={onboarding.status} />
+            <button
+              onClick={(e) => { e.stopPropagation(); navigate(`/employee-onboarding/review/${accountId}`); }}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+            >
+              Review
+            </button>
+          </div>
+        );
+      },
+    },
   ];
 
   // --- Render ---
@@ -386,10 +541,10 @@ const ManageUsersTab: React.FC = () => {
               </div>
               
               <button
-                onClick={() => { setFormData(initialFormState); setErrors({}); setView('form'); }}
+                onClick={() => { setInviteEmail(''); setInviteError(''); setShowInviteModal(true); }}
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold shadow-sm transition-all whitespace-nowrap"
               >
-                <Plus size={18} /> Create User
+                <Plus size={18} /> Invite Employee
               </button>
             </div>
           </div>
@@ -401,6 +556,7 @@ const ManageUsersTab: React.FC = () => {
             keyField="id"
             isLoading={isLoading}
             onEdit={handleEdit}
+            onDelete={handleDelete}
           />
         </div>
       ) : (
@@ -416,7 +572,7 @@ const ManageUsersTab: React.FC = () => {
             <div className="flex items-center gap-2 text-sm">
               <span className="font-bold text-gray-900 text-lg">Users and groups</span>
               <span className="text-gray-400 text-lg">›</span>
-              <span className="text-gray-500">{formData.id ? 'Edit User' : 'New User'}</span>
+              <span className="text-gray-500">Edit User</span>
             </div>
             <button onClick={() => { setErrors({}); setView('list'); }} className="text-gray-400 hover:text-gray-600">
               <ArrowLeft size={20} />
@@ -688,6 +844,54 @@ const ManageUsersTab: React.FC = () => {
           message={toastMessage}
           type="success"
           onClose={() => setShowToast(false)}
+        />
+      )}
+
+      {/* Quick "just an email" employee invite modal */}
+      <Modal
+        isOpen={showInviteModal}
+        onClose={() => { setShowInviteModal(false); setInviteEmail(''); setInviteError(''); }}
+        title="Invite Employee"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              className="!w-auto px-6"
+              onClick={() => { setShowInviteModal(false); setInviteEmail(''); setInviteError(''); }}
+              disabled={isInviting}
+            >
+              Cancel
+            </Button>
+            <Button className="!w-auto px-6" onClick={handleQuickInvite} isLoading={isInviting}>
+              Send Invite
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-500 mb-4">
+          Enter the employee's email address. An Employee ID is generated automatically and they'll
+          receive an email with a secure link to fill in their own details - the same way vendors self-onboard.
+        </p>
+        <InputField
+          label="Employee Email *"
+          type="email"
+          value={inviteEmail}
+          onChange={(e) => setInviteEmail(e.target.value)}
+          error={inviteError}
+          placeholder="employee@example.com"
+        />
+      </Modal>
+
+      {/* Employee Self-Onboarding invite modal */}
+      {inviteModalUser && (
+        <SendEmployeeOnboardingModal
+          isOpen
+          onClose={() => setInviteModalUser(null)}
+          onSent={() => { setInviteModalUser(null); fetchOnboardingData(); }}
+          accountId={Number(inviteModalUser.id)}
+          employeeName={`${inviteModalUser.first_name} ${inviteModalUser.last_name}`.trim()}
+          employmentTypeOptions={employeeChoices?.employment_types || []}
+          managerOptions={users}
         />
       )}
     </div>

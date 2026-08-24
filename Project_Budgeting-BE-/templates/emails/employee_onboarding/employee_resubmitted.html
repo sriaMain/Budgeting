@@ -1,0 +1,14 @@
+{% extends "emails/employee_onboarding/_layout.html" %}
+
+{% block title %}Employee Onboarding Resubmitted – {{ employee_name }}{% endblock %}
+{% block preheader %}{{ employee_name }} has resubmitted their employee onboarding information for review.{% endblock %}
+{% block heading %}Employee Onboarding Resubmitted{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;">Hello,</p>
+<p style="margin:0 0 16px;"><strong>{{ employee_name }}</strong> has updated the requested information and resubmitted their employee onboarding for review.</p>
+
+{% include "emails/employee_onboarding/_employee_info_card.html" %}
+
+<p style="margin:22px 0 0;">Please log in to review the updated information and either approve it or request further changes.</p>
+{% endblock %}

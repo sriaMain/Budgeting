@@ -5,86 +5,83 @@ import toast from 'react-hot-toast';
 import { CheckCircle2, Clock } from 'lucide-react';
 import { Button } from '../../../components/Button';
 import { StatusBadge } from '../../../components/StatusBadge';
-import { VendorStepper, type StepConfig } from '../components/VendorStepper';
-import { Step1VendorDetails } from '../steps/Step1VendorDetails';
-import { Step2KycCompliance } from '../steps/Step2KycCompliance';
-import { Step3BankDetails } from '../steps/Step3BankDetails';
-import { Step4BusinessProcurement } from '../steps/Step4BusinessProcurement';
-import { Step5Documents } from '../steps/Step5Documents';
-import { Step6ReviewSubmit } from '../steps/Step6ReviewSubmit';
-import { ActionRequiredBanner } from './ActionRequiredBanner';
+import { VendorStepper, type StepConfig } from '../../vendor-onboarding/components/VendorStepper';
+import { Step1PersonalDetails } from '../steps/Step1PersonalDetails';
+import { Step2Address } from '../steps/Step2Address';
+import { Step3EmploymentDetails } from '../steps/Step3EmploymentDetails';
+import { Step4StatutoryDetails } from '../steps/Step4StatutoryDetails';
+import { Step5BankDetails } from '../steps/Step5BankDetails';
+import { Step6EmergencyContact } from '../steps/Step6EmergencyContact';
+import { Step7Documents } from '../steps/Step7Documents';
+import { Step8ReviewSubmit } from '../steps/Step8ReviewSubmit';
+import { EmployeeActionRequiredBanner } from './EmployeeActionRequiredBanner';
 import {
-  EMPTY_FORM_VALUES, vendorDetailsSchema, kycComplianceSchema, bankDetailsSchema,
-  businessProcurementSchema, computeMissingDocuments,
-  type VendorOnboardingFormValues,
-} from '../../../schemas/vendorOnboarding.schemas';
-import { SECTION_TO_STEP } from '../../../types/vendorOnboarding.types';
-import type { VendorPublicChoices } from '../../../types/vendorOnboarding.types';
-import type { VendorPublicDetail } from '../../../types/vendorOnboardingPublic.types';
-import type { VendorDocument } from '../../../types/vendorOnboarding.types';
-import * as api from '../../../services/vendorOnboardingPublic';
+  EMPTY_FORM_VALUES, personalDetailsSchema, addressSchema, statutoryDetailsSchema,
+  bankDetailsSchema, emergencyContactSchema, computeMissingDocuments,
+  type EmployeeOnboardingFormValues,
+} from '../../../schemas/employeeOnboarding.schemas';
+import { SECTION_TO_STEP } from '../../../types/employeeOnboarding.types';
+import type { EmployeePublicChoices, EmployeeDocument } from '../../../types/employeeOnboarding.types';
+import type { EmployeePublicDetail } from '../../../types/employeeOnboardingPublic.types';
+import * as api from '../../../services/employeeOnboardingPublic';
 import { parseApiErrors } from '../../../utils/parseApiErrors';
 
+const TOTAL_STEPS = 8;
+
 const STEPS: StepConfig[] = [
-  { index: 1, label: 'Vendor Details' },
-  { index: 2, label: 'KYV / Compliance' },
-  { index: 3, label: 'Bank Details' },
-  { index: 4, label: 'Business / Procurement' },
-  { index: 5, label: 'Documents' },
-  { index: 6, label: 'Review & Submit' },
+  { index: 1, label: 'Personal Details' },
+  { index: 2, label: 'Address' },
+  { index: 3, label: 'Employment Details' },
+  { index: 4, label: 'Statutory Details' },
+  { index: 5, label: 'Bank Details' },
+  { index: 6, label: 'Emergency Contact' },
+  { index: 7, label: 'Documents' },
+  { index: 8, label: 'Review & Submit' },
 ];
 
-function detailToFormValues(detail: VendorPublicDetail): VendorOnboardingFormValues {
-  const p = detail.profile;
-  const k = detail.kyc;
+function detailToFormValues(detail: EmployeePublicDetail): EmployeeOnboardingFormValues {
+  const p = detail.personal_detail;
+  const a = detail.address_detail;
+  const s = detail.statutory_detail;
   const b = detail.bank_detail;
-  const proc = detail.procurement_detail;
+  const e = detail.emergency_contact;
 
   return {
     step1: {
-      name: detail.name || '', vendor_type: detail.vendor_type || '', email: detail.email || '', phone: detail.phone || '',
-      company_code: p?.company_code || detail.company_code || '', plant: p?.plant || detail.plant || '',
-      contact_person_name: p?.contact_person_name || detail.contact_person_name || '', contact_person_designation: p?.contact_person_designation || '',
-      gst_registered: p?.gst_registered || false, gstin: p?.gstin || '',
-      msme_registered: p?.msme_registered || false, udyam_number: p?.udyam_number || '', msme_category: p?.msme_category || '',
-      address_line1: p?.address_line1 || '', address_line2: p?.address_line2 || '', city: p?.city || '',
-      district: p?.district || '', state: p?.state || '', country: p?.country || '', pin_code: p?.pin_code || '',
-      landmark: p?.landmark || '', vendor_introduction: p?.vendor_introduction || '',
-      finance_manager_name: p?.finance_manager_name || '', finance_manager_email: p?.finance_manager_email || '',
-      finance_manager_mobile: p?.finance_manager_mobile || '',
+      first_name: detail.account.first_name || '', last_name: detail.account.last_name || '',
+      middle_name: p?.middle_name || '', personal_email: p?.personal_email || '', alternate_email: p?.alternate_email || '',
+      mobile_number: p?.mobile_number || '', alternate_mobile: p?.alternate_mobile || '',
+      date_of_birth: p?.date_of_birth || '', gender: p?.gender || '', marital_status: p?.marital_status || '',
+      blood_group: p?.blood_group || '', nationality: p?.nationality || '',
     },
     step2: {
-      country_of_tax_residence: k?.country_of_tax_residence || '', pan: k?.pan || '', cin: k?.cin || '',
-      incorporation_date: k?.incorporation_date || '', tan: k?.tan || '', tan_mobile: k?.tan_mobile || '',
-      epf_number: k?.epf_number || '', esic_number: k?.esic_number || '', esic_district: k?.esic_district || '',
-      vendor_type: detail.vendor_type || '',
-    },
-    step3: {
-      bank_name: b?.bank_name || '', account_holder_name: b?.account_holder_name || '', account_number: b?.account_number || '',
-      ifsc_code: b?.ifsc_code || '', bank_id: b?.bank_id || '', bank_country_key: b?.bank_country_key || '',
-      bank_control_key: b?.bank_control_key || '', branch: b?.branch || '', region: b?.region || '',
-      street: b?.street || '', city: b?.city || '',
+      current_address: a?.current_address || '', city: a?.city || '', state: a?.state || '',
+      country: a?.country || '', pin_code: a?.pin_code || '',
     },
     step4: {
-      account_group: proc?.account_group || '', purchasing_org: proc?.purchasing_org || '', payment_terms: proc?.payment_terms || '',
-      order_currency: proc?.order_currency || '', grouping_key: proc?.grouping_key || '', partner_category: proc?.partner_category || '',
-      incoterms_1: proc?.incoterms_1 || '', incoterms_2: proc?.incoterms_2 || '', reconciliation_account: proc?.reconciliation_account || '',
-      schema_group: proc?.schema_group || '', gr_based_invoice_verification: proc?.gr_based_invoice_verification || false,
-      check_double_invoice: proc?.check_double_invoice || false,
+      pan: s?.pan || '', aadhaar_number: s?.aadhaar_number || '', uan_number: s?.uan_number || '',
+      tan: s?.tan || '', esic_number: s?.esic_number || '', pf_applicable: detail.pf_applicable,
+    },
+    step5: {
+      account_holder_name: b?.account_holder_name || '', bank_name: b?.bank_name || '',
+      account_number: b?.account_number || '', ifsc_code: b?.ifsc_code || '',
+    },
+    step6: {
+      contact_name: e?.contact_name || '', contact_number: e?.contact_number || '', relationship: e?.relationship || '',
     },
   };
 }
 
 const EDITABLE_STATUSES = new Set(['invited', 'draft', 'action_required']);
-const UNDER_REVIEW_STATUSES = new Set(['submitted', 'resubmitted', 'approval_in_progress']);
+const UNDER_REVIEW_STATUSES = new Set(['submitted', 'resubmitted']);
 
-const PortalHeader: React.FC<{ detail: VendorPublicDetail }> = ({ detail }) => (
+const PortalHeader: React.FC<{ detail: EmployeePublicDetail }> = ({ detail }) => (
   <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-    <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Vendor Onboarding</p>
+    <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Employee Onboarding</p>
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">{detail.name}</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Reference: {detail.vendor_reference_no}</p>
+        <h1 className="text-2xl font-bold text-gray-900">{detail.account.display_name}</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Employee ID: {detail.employee_code}</p>
       </div>
       <StatusBadge status={detail.status} />
     </div>
@@ -103,12 +100,12 @@ const PortalHeader: React.FC<{ detail: VendorPublicDetail }> = ({ detail }) => (
   </div>
 );
 
-const VendorPortalPage: React.FC = () => {
+const EmployeeOnboardingPortalPage: React.FC = () => {
   const { token } = useParams<{ token: string }>();
 
-  const [choices, setChoices] = useState<VendorPublicChoices | null>(null);
-  const [detail, setDetail] = useState<VendorPublicDetail | null>(null);
-  const [documents, setDocuments] = useState<VendorDocument[]>([]);
+  const [choices, setChoices] = useState<EmployeePublicChoices | null>(null);
+  const [detail, setDetail] = useState<EmployeePublicDetail | null>(null);
+  const [documents, setDocuments] = useState<EmployeeDocument[]>([]);
   const [hasSavedBankAccount, setHasSavedBankAccount] = useState(false);
   const [savedAccountNumberMasked, setSavedAccountNumberMasked] = useState<string | undefined>(undefined);
   const [currentStep, setCurrentStep] = useState(1);
@@ -118,15 +115,11 @@ const VendorPortalPage: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const methods = useForm<VendorOnboardingFormValues>({
+  const methods = useForm<EmployeeOnboardingFormValues>({
     defaultValues: EMPTY_FORM_VALUES,
     shouldUnregister: false,
   });
 
-  // Manually-set errors (via methods.setError below) don't clear themselves
-  // as the user types, since this form validates with zod outside RHF's
-  // resolver - clear a field's error the moment its value changes so a
-  // corrected field doesn't keep showing a stale error message.
   useEffect(() => {
     const subscription = methods.watch((_value, { name }) => {
       if (name && methods.getFieldState(name as never).error) {
@@ -137,10 +130,6 @@ const VendorPortalPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Whenever the visible step changes (Next, Back, step-click, or the
-  // initial load resuming at a saved step), scroll back to the top so the
-  // new step is never left showing from wherever the previous step had
-  // scrolled to.
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [currentStep]);
@@ -171,7 +160,7 @@ const VendorPortalPage: React.FC = () => {
       setHasSavedBankAccount(!!detailData.bank_detail?.account_number_masked);
       setSavedAccountNumberMasked(detailData.bank_detail?.account_number_masked || undefined);
 
-      const step = Math.min(Math.max(detailData.last_saved_step || 1, 1), 6);
+      const step = Math.min(Math.max(detailData.last_saved_step || 1, 1), TOTAL_STEPS);
       if (detailData.status === 'action_required' && detailData.open_change_request) {
         setCurrentStep(SECTION_TO_STEP[detailData.open_change_request.section] || step);
       } else {
@@ -181,7 +170,7 @@ const VendorPortalPage: React.FC = () => {
     } catch (err) {
       console.error(err);
       const errors = parseApiErrors(err);
-      setLoadError(errors.general || 'Invalid or unavailable vendor onboarding link.');
+      setLoadError(errors.general || 'Invalid or unavailable employee onboarding link.');
     } finally {
       setLoading(false);
     }
@@ -201,85 +190,90 @@ const VendorPortalPage: React.FC = () => {
     if (!token) return;
     const values = methods.getValues();
     if (step === 1) {
-      await api.patchIdentityByToken(token, {
-        name: values.step1.name, vendor_type: values.step1.vendor_type,
-        email: values.step1.email, phone: values.step1.phone,
-      });
-      await api.patchProfileByToken(token, {
-        company_code: values.step1.company_code, plant: values.step1.plant,
-        contact_person_name: values.step1.contact_person_name, contact_person_designation: values.step1.contact_person_designation,
-        gst_registered: values.step1.gst_registered, gstin: values.step1.gstin,
-        msme_registered: values.step1.msme_registered, udyam_number: values.step1.udyam_number, msme_category: values.step1.msme_category,
-        address_line1: values.step1.address_line1, address_line2: values.step1.address_line2, city: values.step1.city,
-        district: values.step1.district, state: values.step1.state, country: values.step1.country, pin_code: values.step1.pin_code,
-        landmark: values.step1.landmark, vendor_introduction: values.step1.vendor_introduction,
-        finance_manager_name: values.step1.finance_manager_name, finance_manager_email: values.step1.finance_manager_email,
-        finance_manager_mobile: values.step1.finance_manager_mobile,
+      await api.patchIdentityByToken(token, { first_name: values.step1.first_name, last_name: values.step1.last_name });
+      await api.patchPersonalByToken(token, {
+        middle_name: values.step1.middle_name, personal_email: values.step1.personal_email,
+        alternate_email: values.step1.alternate_email, mobile_number: values.step1.mobile_number,
+        alternate_mobile: values.step1.alternate_mobile, date_of_birth: values.step1.date_of_birth,
+        gender: values.step1.gender, marital_status: values.step1.marital_status,
+        blood_group: values.step1.blood_group, nationality: values.step1.nationality,
       });
     } else if (step === 2) {
-      const { vendor_type: _vt2, ...kycRest } = values.step2;
-      void _vt2;
-      await api.patchKYCByToken(token, { ...kycRest, incorporation_date: kycRest.incorporation_date || null });
-    } else if (step === 3) {
-      const bankPayload = { ...values.step3 };
+      await api.patchAddressByToken(token, values.step2);
+    } else if (step === 4) {
+      const { pf_applicable: _pf, ...statutoryRest } = values.step4;
+      void _pf;
+      await api.patchStatutoryByToken(token, statutoryRest);
+    } else if (step === 5) {
+      const bankPayload = { ...values.step5 };
       if (!bankPayload.account_number) delete (bankPayload as Partial<typeof bankPayload>).account_number;
       await api.patchBankDetailByToken(token, bankPayload);
-      if (values.step3.account_number) setHasSavedBankAccount(true);
-    } else if (step === 4) {
-      await api.patchProcurementDetailByToken(token, values.step4);
+      if (values.step5.account_number) setHasSavedBankAccount(true);
+    } else if (step === 6) {
+      await api.patchEmergencyContactByToken(token, values.step6);
     }
   };
 
   const validateStep = (step: number): boolean => {
     const values = methods.getValues();
     if (step === 1) {
-      const result = vendorDetailsSchema.safeParse(values.step1);
+      const result = personalDetailsSchema.safeParse(values.step1);
       if (!result.success) {
         result.error.issues.forEach((issue) => methods.setError(`step1.${issue.path.join('.')}` as never, { message: issue.message }));
         focusFirstInvalidField(`step1.${result.error.issues[0].path.join('.')}`);
         return false;
       }
     } else if (step === 2) {
-      const result = kycComplianceSchema.safeParse({ ...values.step2, vendor_type: values.step1.vendor_type });
+      const result = addressSchema.safeParse(values.step2);
       if (!result.success) {
         result.error.issues.forEach((issue) => methods.setError(`step2.${issue.path.join('.')}` as never, { message: issue.message }));
         focusFirstInvalidField(`step2.${result.error.issues[0].path.join('.')}`);
         return false;
       }
-    } else if (step === 3) {
-      const result = bankDetailsSchema.safeParse(values.step3);
-      if (!result.success) {
-        result.error.issues.forEach((issue) => methods.setError(`step3.${issue.path.join('.')}` as never, { message: issue.message }));
-        focusFirstInvalidField(`step3.${result.error.issues[0].path.join('.')}`);
-        return false;
-      }
-      if (!values.step3.account_number && !hasSavedBankAccount) {
-        methods.setError('step3.account_number', { message: 'Account number is required' });
-        focusFirstInvalidField('step3.account_number');
-        return false;
-      }
     } else if (step === 4) {
-      const result = businessProcurementSchema.safeParse(values.step4);
+      const result = statutoryDetailsSchema.safeParse(values.step4);
       if (!result.success) {
         result.error.issues.forEach((issue) => methods.setError(`step4.${issue.path.join('.')}` as never, { message: issue.message }));
         focusFirstInvalidField(`step4.${result.error.issues[0].path.join('.')}`);
+        return false;
+      }
+    } else if (step === 5) {
+      const result = bankDetailsSchema.safeParse(values.step5);
+      if (!result.success) {
+        result.error.issues.forEach((issue) => methods.setError(`step5.${issue.path.join('.')}` as never, { message: issue.message }));
+        focusFirstInvalidField(`step5.${result.error.issues[0].path.join('.')}`);
+        return false;
+      }
+      if (!values.step5.account_number && !hasSavedBankAccount) {
+        methods.setError('step5.account_number', { message: 'Account number is required' });
+        focusFirstInvalidField('step5.account_number');
+        return false;
+      }
+    } else if (step === 6) {
+      const result = emergencyContactSchema.safeParse(values.step6);
+      if (!result.success) {
+        result.error.issues.forEach((issue) => methods.setError(`step6.${issue.path.join('.')}` as never, { message: issue.message }));
+        focusFirstInvalidField(`step6.${result.error.issues[0].path.join('.')}`);
         return false;
       }
     }
     return true;
   };
 
+  const isPersistableStep = (step: number) => [1, 2, 4, 5, 6].includes(step);
+  const isValidatableStep = (step: number) => [1, 2, 4, 5, 6].includes(step);
+
   const handleNext = async () => {
-    if (currentStep <= 4 && !validateStep(currentStep)) {
+    if (isValidatableStep(currentStep) && !validateStep(currentStep)) {
       toast.error('Please fix the highlighted fields before continuing.');
       return;
     }
     setIsSaving(true);
     try {
-      if (currentStep <= 4) await persistStep(currentStep);
-      if (token) await api.patchIdentityByToken(token, { last_saved_step: Math.min(currentStep + 1, 6) });
+      if (isPersistableStep(currentStep)) await persistStep(currentStep);
+      if (token) await api.patchIdentityByToken(token, { last_saved_step: Math.min(currentStep + 1, TOTAL_STEPS) });
       setCompletedSteps((prev) => new Set(prev).add(currentStep));
-      setCurrentStep((s) => Math.min(s + 1, 6));
+      setCurrentStep((s) => Math.min(s + 1, TOTAL_STEPS));
     } catch (err) {
       const errors = parseApiErrors(err);
       toast.error(errors.general || 'Failed to save this step');
@@ -298,7 +292,7 @@ const VendorPortalPage: React.FC = () => {
     if (!token) return;
     setIsSaving(true);
     try {
-      if (currentStep <= 4) {
+      if (isPersistableStep(currentStep)) {
         methods.clearErrors();
         await persistStep(currentStep);
       }
@@ -317,30 +311,26 @@ const VendorPortalPage: React.FC = () => {
   const { missingItems, completionPercent } = useMemo(() => {
     const values = methods.getValues();
     const missing: string[] = [];
-    const bankDetailsComplete = bankDetailsSchema.safeParse(values.step3).success
-      && (!!values.step3.account_number || hasSavedBankAccount);
+    const bankDetailsComplete = bankDetailsSchema.safeParse(values.step5).success
+      && (!!values.step5.account_number || hasSavedBankAccount);
 
-    if (!vendorDetailsSchema.safeParse(values.step1).success) missing.push('Vendor Details (Step 1) is incomplete');
-    if (!kycComplianceSchema.safeParse({ ...values.step2, vendor_type: values.step1.vendor_type }).success) missing.push('KYV / Compliance (Step 2) is incomplete');
-    if (!bankDetailsComplete) missing.push('Bank Details (Step 3) is incomplete');
-    if (!businessProcurementSchema.safeParse(values.step4).success) missing.push('Business / Procurement (Step 4) is incomplete');
+    if (!personalDetailsSchema.safeParse(values.step1).success) missing.push('Personal Details (Step 1) is incomplete');
+    if (!addressSchema.safeParse(values.step2).success) missing.push('Address (Step 2) is incomplete');
+    if (!statutoryDetailsSchema.safeParse(values.step4).success) missing.push('Statutory Details (Step 4) is incomplete');
+    if (!bankDetailsComplete) missing.push('Bank Details (Step 5) is incomplete');
+    if (!emergencyContactSchema.safeParse(values.step6).success) missing.push('Emergency Contact (Step 6) is incomplete');
 
     const categoriesPresent = new Set(documents.map((d) => d.category));
-    const missingDocs = computeMissingDocuments(categoriesPresent, {
-      vendorType: values.step1.vendor_type,
-      gstRegistered: values.step1.gst_registered,
-      msmeRegistered: values.step1.msme_registered,
-      hasEpf: !!values.step2.epf_number,
-      hasEsic: !!values.step2.esic_number,
-    });
+    const missingDocs = computeMissingDocuments(categoriesPresent);
     missingDocs.forEach((d) => missing.push(`Missing document: ${d}`));
 
-    const totalSections = 5;
+    const totalSections = 6;
     const passedSections = totalSections - [
-      !vendorDetailsSchema.safeParse(values.step1).success,
-      !kycComplianceSchema.safeParse({ ...values.step2, vendor_type: values.step1.vendor_type }).success,
+      !personalDetailsSchema.safeParse(values.step1).success,
+      !addressSchema.safeParse(values.step2).success,
+      !statutoryDetailsSchema.safeParse(values.step4).success,
       !bankDetailsComplete,
-      !businessProcurementSchema.safeParse(values.step4).success,
+      !emergencyContactSchema.safeParse(values.step6).success,
       missingDocs.length > 0,
     ].filter(Boolean).length;
 
@@ -354,7 +344,7 @@ const VendorPortalPage: React.FC = () => {
     try {
       const updated = await api.submitByToken(token);
       setDetail(updated);
-      toast.success('Thank you! Your information has been submitted for approval.');
+      toast.success('Employee Onboarding Submitted Successfully');
     } catch (err) {
       const errors = parseApiErrors(err);
       toast.error(errors.general || 'Submission failed - please review the missing items.');
@@ -385,16 +375,16 @@ const VendorPortalPage: React.FC = () => {
       <PortalHeader detail={detail} />
 
       {detail.status === 'action_required' && detail.open_change_request && (
-        <ActionRequiredBanner changeRequest={detail.open_change_request} />
+        <EmployeeActionRequiredBanner changeRequest={detail.open_change_request} />
       )}
 
       {UNDER_REVIEW_STATUSES.has(detail.status) && (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center shadow-sm">
           <Clock className="w-10 h-10 text-blue-500 mx-auto mb-3" />
-          <h2 className="text-lg font-bold text-gray-900 mb-1">Your information is under review</h2>
+          <h2 className="text-lg font-bold text-gray-900 mb-1">Employee Onboarding Submitted Successfully</h2>
           <p className="text-sm text-gray-600">
-            Thank you for completing your vendor onboarding. Our team is reviewing your submission
-            ({detail.current_stage}) and will contact you if anything else is needed.
+            Your employee information has been successfully submitted and is now under review. Our HR team will
+            contact you if anything else is needed.
           </p>
         </div>
       )}
@@ -402,9 +392,9 @@ const VendorPortalPage: React.FC = () => {
       {detail.status === 'approved' && (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center shadow-sm">
           <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-3" />
-          <h2 className="text-lg font-bold text-gray-900 mb-1">You're approved!</h2>
+          <h2 className="text-lg font-bold text-gray-900 mb-1">Employee Onboarding Approved</h2>
           <p className="text-sm text-gray-600">
-            Your vendor onboarding has been fully approved. Thank you for completing the process.
+            Your employee onboarding process is now complete. No further action is required from you at this time.
           </p>
         </div>
       )}
@@ -422,12 +412,14 @@ const VendorPortalPage: React.FC = () => {
           </div>
 
           <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-            {currentStep === 1 && <Step1VendorDetails vendorTypeOptions={choices.vendor_types} />}
-            {currentStep === 2 && <Step2KycCompliance />}
-            {currentStep === 3 && <Step3BankDetails existingAccountNumberMasked={savedAccountNumberMasked} />}
-            {currentStep === 4 && <Step4BusinessProcurement currencyOptions={choices.currencies} />}
-            {currentStep === 5 && (
-              <Step5Documents
+            {currentStep === 1 && <Step1PersonalDetails genderOptions={choices.genders} />}
+            {currentStep === 2 && <Step2Address />}
+            {currentStep === 3 && <Step3EmploymentDetails detail={detail} />}
+            {currentStep === 4 && <Step4StatutoryDetails pfApplicable={detail.pf_applicable} />}
+            {currentStep === 5 && <Step5BankDetails existingAccountNumberMasked={savedAccountNumberMasked} />}
+            {currentStep === 6 && <Step6EmergencyContact />}
+            {currentStep === 7 && (
+              <Step7Documents
                 documents={documents}
                 onUpload={async (category, file) => {
                   if (!token) return;
@@ -446,13 +438,16 @@ const VendorPortalPage: React.FC = () => {
                 }}
               />
             )}
-            {currentStep === 6 && (
-              <Step6ReviewSubmit
+            {currentStep === 8 && (
+              <Step8ReviewSubmit
+                detail={detail}
                 documents={documents}
                 completionPercent={completionPercent}
                 missingItems={missingItems}
                 onEditStep={setCurrentStep}
                 existingAccountNumberMasked={savedAccountNumberMasked}
+                onSubmit={handleSubmit}
+                isSubmitting={isSubmitting}
               />
             )}
           </div>
@@ -469,14 +464,9 @@ const VendorPortalPage: React.FC = () => {
               <Button variant="secondary" className="!w-auto px-6" onClick={handleSaveDraft} isLoading={isSaving}>
                 Save Draft
               </Button>
-              {currentStep < 6 && (
+              {currentStep < TOTAL_STEPS && (
                 <Button className="!w-auto px-6" onClick={handleNext} isLoading={isSaving}>
                   Next
-                </Button>
-              )}
-              {currentStep === 6 && completionPercent === 100 && (
-                <Button className="!w-auto px-6" onClick={handleSubmit} isLoading={isSubmitting}>
-                  {detail.status === 'action_required' ? 'Resubmit' : 'Submit'}
                 </Button>
               )}
             </div>
@@ -487,4 +477,4 @@ const VendorPortalPage: React.FC = () => {
   );
 };
 
-export default VendorPortalPage;
+export default EmployeeOnboardingPortalPage;

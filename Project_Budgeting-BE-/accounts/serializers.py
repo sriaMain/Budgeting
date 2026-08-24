@@ -325,15 +325,14 @@ class UserDetailSerializer(serializers.ModelSerializer):
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
+    # Only email is required - a bare invite (just an email address) defaults
+    # to the Employee role in create() below, and the employee fills in
+    # everything else (name, position, department, ...) themselves via the
+    # self-onboarding link, the same way vendors do.
     roles = serializers.PrimaryKeyRelatedField(
-        queryset=Role.objects.all(),   # allow lookup
+        queryset=Role.objects.all(),
         many=True,
-        required=True,
-        allow_empty=False,
-        error_messages={
-            'required': 'The roles field is required.',
-            'allow_empty': 'At least one role must be selected.',
-        }
+        required=False,
     )
 
     email = serializers.EmailField(
@@ -346,25 +345,21 @@ class UserCreateSerializer(serializers.ModelSerializer):
         ]
     )
 
-    first_name = serializers.CharField(required=True)
-    position = serializers.CharField(required=True)
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    position = serializers.CharField(required=False, allow_blank=True)
 
     modules = serializers.PrimaryKeyRelatedField(
         queryset=Product_Services.objects.all(),
         many=True,
-        required=True,
-        allow_empty=False,
-        error_messages={
-            "required": "At least one module must be selected.",
-            "allow_empty": "At least one module must be selected.",
-        }
+        required=False,
     )
 
 
     charges_per_hour = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
-        required=True
+        required=False,
+        allow_null=True,
     )
     currency = serializers.ChoiceField(
         choices=[("INR", "INR"), ("USD", "USD"), ("EUR", "EUR")],
@@ -401,7 +396,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return roles
 
     def validate_charges_per_hour(self, value):
-        if value < 0:
+        if value is not None and value < 0:
             raise serializers.ValidationError(
                 "Charges per hour must be positive."
             )
@@ -409,10 +404,11 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         import random
+        import re
         import string
 
-        roles = validated_data.pop("roles")
-        modules = validated_data.pop("modules")
+        roles = validated_data.pop("roles", [])
+        modules = validated_data.pop("modules", [])
         email = validated_data.pop("email").lower().strip()
 
         # 🔥 create username from first + last name
@@ -420,6 +416,10 @@ class UserCreateSerializer(serializers.ModelSerializer):
         last_name = validated_data.get("last_name", "").strip().lower()
 
         base_username = f"{first_name}{last_name}".replace(" ", "")
+        if not base_username:
+            # Bare email-only invite - no name to build a username from yet,
+            # so fall back to the email's local part.
+            base_username = re.sub(r"[^a-z0-9]", "", email.split("@")[0]) or "user"
         username = base_username
 
         # Ensure username uniqueness (VERY IMPORTANT)
@@ -439,6 +439,13 @@ class UserCreateSerializer(serializers.ModelSerializer):
             password=password,
             **validated_data
         )
+
+        # A bare invite (no role chosen) always defaults to Employee - the
+        # quick "just an email" self-onboarding flow never asks for a role.
+        if not roles:
+            default_role = Role.objects.filter(role_name__iexact="employee").first()
+            if default_role:
+                roles = [default_role]
 
         # Assign ManyToMany fields
         user.roles.set(roles)

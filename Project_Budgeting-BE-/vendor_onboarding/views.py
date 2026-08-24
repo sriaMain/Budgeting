@@ -648,8 +648,12 @@ class _VendorPublicView(APIView):
                 ip_address=_client_ip(request),
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
             )
-        except InvalidTokenError:
-            raise NotFound("This onboarding link is invalid or has expired.")
+        except InvalidTokenError as exc:
+            if exc.reason == "expired":
+                raise NotFound(
+                    "This vendor onboarding link has expired. Please contact the organization that sent the invitation."
+                )
+            raise NotFound("Invalid or unavailable vendor onboarding link.")
 
 
 class VendorPublicDetailView(_VendorPublicView):

@@ -1,0 +1,32 @@
+{% extends "emails/employee_onboarding/_layout.html" %}
+
+{% block title %}Action Required – Employee Onboarding Update | {{ employee_name }}{% endblock %}
+{% block preheader %}Your employee onboarding information requires an update.{% endblock %}
+{% block heading %}Employee Onboarding – Action Required{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;">Dear {{ employee_name }},</p>
+<p style="margin:0 0 16px;">Your employee onboarding information has been reviewed by our HR team.</p>
+<p style="margin:0 0 16px;">Additional information or corrections are required before your onboarding can be approved.</p>
+
+{% include "emails/employee_onboarding/_employee_info_card.html" %}
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fffbeb;border-left:4px solid #f59e0b;border-radius:4px;margin:22px 0;">
+  <tr>
+    <td style="padding:16px 20px;">
+      <p style="margin:0 0 12px;font-weight:700;color:#92400e;font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Required Changes</p>
+      <p style="margin:0 0 4px;color:#92400e;"><strong>Section:</strong> {{ section }}</p>
+      {% if field %}<p style="margin:0 0 4px;color:#92400e;"><strong>Field:</strong> {{ field }}</p>{% endif %}
+      <p style="margin:0 0 4px;color:#92400e;"><strong>Required Update:</strong> {{ reason }}</p>
+      {% if comments %}<p style="margin:6px 0 0;color:#92400e;font-style:italic;">Comments: {{ comments }}</p>{% endif %}
+    </td>
+  </tr>
+</table>
+
+<p style="text-align:center;margin:0 0 22px;">
+  <a href="{{ secure_employee_url }}" style="display:inline-block;background-color:#2563eb;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;font-family:Arial,Helvetica,sans-serif;">Update Employee Information</a>
+</p>
+
+<p style="margin:0 0 16px;">Please use the same secure link to review the requested changes and update your information.</p>
+<p style="margin:0;font-size:12px;color:#9ca3af;">If the button above doesn't work, copy and paste this link into your browser:<br><span style="word-break:break-all;">{{ secure_employee_url }}</span></p>
+{% endblock %}

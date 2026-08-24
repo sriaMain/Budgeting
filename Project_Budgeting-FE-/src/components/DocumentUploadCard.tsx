@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Upload, FileText, Download, Trash2, CheckCircle2, Loader2 } from 'lucide-react';
+import { Upload, FileText, Download, Trash2, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { formatFileSize } from '../utils/fileHelpers';
 
 interface ExistingDoc {
@@ -15,6 +15,9 @@ interface DocumentUploadCardProps {
   label: string;
   required: boolean;
   accept?: string;
+  /** Human-readable form of `accept`, used in the help text and in the
+   * "only accepts X files" validation message (e.g. "JPG, JPEG or PNG"). */
+  allowedTypesText?: string;
   maxSizeMb?: number;
   existingDoc?: ExistingDoc;
   onUpload: (file: File) => Promise<void>;
@@ -23,8 +26,24 @@ interface DocumentUploadCardProps {
   disabled?: boolean;
 }
 
+/** Checks `file` against an HTML `accept` attribute string (comma-separated
+ * extensions like ".pdf" and/or MIME types like "image/png"). Checks both the
+ * browser-reported MIME type and the filename extension, since some OSes /
+ * camera apps produce files with an empty or generic `file.type`. */
+function isFileTypeAllowed(file: File, accept: string): boolean {
+  const tokens = accept.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const fileName = file.name.toLowerCase();
+  const mimeType = (file.type || '').toLowerCase();
+  return tokens.some((token) => {
+    if (token.startsWith('.')) return fileName.endsWith(token);
+    if (token.includes('/')) return mimeType === token;
+    return false;
+  });
+}
+
 export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
-  label, required, accept = '.pdf,.jpg,.jpeg,.png', maxSizeMb = 10,
+  label, required, accept = '.pdf,.jpg,.jpeg,.png', allowedTypesText = 'PDF, JPG, JPEG or PNG', maxSizeMb = 10,
   existingDoc, onUpload, onDelete, onDownload, disabled,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -32,13 +51,28 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
+  const resetFileInput = () => {
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Guards against a duplicate upload firing while one is already in
+    // flight for this exact document slot (each slot has its own state, so
+    // this can never be tripped by a different document's upload).
+    if (isUploading) return;
     setError(undefined);
 
+    if (!isFileTypeAllowed(file, accept)) {
+      setError(`${label} only accepts ${allowedTypesText} files.`);
+      resetFileInput();
+      return;
+    }
+
     if (file.size > maxSizeMb * 1024 * 1024) {
-      setError(`File exceeds ${maxSizeMb}MB limit`);
+      setError(`${label}: Maximum file size is ${maxSizeMb}MB.`);
+      resetFileInput();
       return;
     }
 
@@ -46,11 +80,16 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
     try {
       await onUpload(file);
     } catch (err) {
-      setError('Upload failed. Please try again.');
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 429) {
+        setError(`${label} upload is temporarily rate-limited. Please try again later.`);
+      } else {
+        setError(`${label} upload failed. Please try again.`);
+      }
       console.error(err);
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      resetFileInput();
     }
   };
 
@@ -81,7 +120,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
                 {existingDoc.fileName} &middot; {formatFileSize(existingDoc.sizeBytes)}
               </p>
             ) : (
-              <p className="text-xs text-gray-400">PDF, JPG, JPEG or PNG, up to {maxSizeMb}MB</p>
+              <p className="text-xs text-gray-400">{allowedTypesText}, up to {maxSizeMb}MB</p>
             )}
             {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
           </div>
@@ -91,6 +130,11 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
           {existingDoc && (
             <span className="inline-flex items-center gap-1 text-xs text-green-700">
               <CheckCircle2 className="w-4 h-4" /> Uploaded
+            </span>
+          )}
+          {!existingDoc && !isUploading && error && (
+            <span className="inline-flex items-center gap-1 text-xs text-red-600">
+              <XCircle className="w-4 h-4" /> Upload failed
             </span>
           )}
           {existingDoc && onDownload && (
@@ -113,7 +157,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
               >
                 {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                {existingDoc ? 'Replace' : 'Upload'}
+                {isUploading ? 'Uploading...' : existingDoc ? 'Replace' : 'Upload'}
               </button>
             </>
           )}
