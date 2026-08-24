@@ -1,0 +1,15 @@
+{% extends "emails/employee_onboarding/_layout.html" %}
+
+{% block title %}Employee Onboarding Approved – {{ employee_name }}{% endblock %}
+{% block preheader %}Your employee onboarding information has been approved.{% endblock %}
+{% block heading %}Employee Onboarding Approved{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;">Dear {{ employee_name }},</p>
+<p style="margin:0 0 16px;">We are pleased to inform you that your employee onboarding information has been successfully reviewed and approved by our HR team.</p>
+
+{% include "emails/employee_onboarding/_employee_info_card.html" %}
+
+<p style="margin:22px 0 16px;">Your employee onboarding process is now complete.</p>
+<p style="margin:0;">No further action is required from you at this time.</p>
+{% endblock %}

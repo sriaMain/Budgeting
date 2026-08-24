@@ -29,6 +29,9 @@ import VendorOnboardingWizardPage from "./pages/vendor-onboarding/VendorOnboardi
 import VendorDetailsPage from "./pages/vendor-onboarding/VendorDetailsPage";
 import VendorApprovalQueuePage from "./pages/vendor-onboarding/VendorApprovalQueuePage";
 import VendorPortalPage from "./pages/vendor-onboarding/public/VendorPortalPage";
+import EmployeeOnboardingPortalPage from "./pages/employee-onboarding/public/EmployeeOnboardingPortalPage";
+import EmployeeOnboardingReviewPage from "./pages/employee-onboarding/EmployeeOnboardingReviewPage";
+import AdminFillOnboardingPage from "./pages/employee-onboarding/AdminFillOnboardingPage";
 import { initializeAuth } from "./auth/authThunk";
 import { useAppSelector } from "./hooks/useAppSelector";
 import { useAppDispatch } from "./hooks/useAppDispatch";
@@ -65,6 +68,11 @@ const App: React.FC = () => {
               access control; must NOT be wrapped in ProtectedRoute since the vendor has
               no account/login at all. */}
           <Route path="/vendor-onboarding/:token" element={<VendorPortalPage />} />
+
+          {/* Employee self-service onboarding portal - secure token in the URL is the only
+              access control; must NOT be wrapped in ProtectedRoute since the employee has
+              no need to log in to complete onboarding. */}
+          <Route path="/employee-onboarding/:token" element={<EmployeeOnboardingPortalPage />} />
 
 
           {/* Protect Dashboard */}
@@ -359,6 +367,26 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute allowedRoles={['admin', 'manager']}>
                 <VendorApprovalQueuePage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Employee Onboarding - admin review */}
+          <Route
+            path="/employee-onboarding/review/:accountId"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                <EmployeeOnboardingReviewPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Employee Onboarding - admin fills the onboarding wizard on the employee's behalf */}
+          <Route
+            path="/employee-onboarding/fill/:accountId"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                <AdminFillOnboardingPage />
               </ProtectedRoute>
             }
           />

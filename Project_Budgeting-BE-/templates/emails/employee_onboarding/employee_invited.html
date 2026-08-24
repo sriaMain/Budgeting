@@ -1,0 +1,22 @@
+{% extends "emails/employee_onboarding/_layout.html" %}
+
+{% block title %}Employee Onboarding Invitation – {{ employee_name }}{% endblock %}
+{% block preheader %}You're invited to complete your employee onboarding with {{ company_name }}.{% endblock %}
+{% block heading %}Employee Onboarding{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;">Dear {{ employee_name }},</p>
+<p style="margin:0 0 16px;">Welcome to {{ company_name }}.</p>
+<p style="margin:0 0 16px;">You have been invited to complete your employee onboarding process.</p>
+<p style="margin:0 0 16px;">Please provide the required personal, statutory, banking, emergency contact, and supporting document information through our secure Employee Onboarding Portal.</p>
+
+{% include "emails/employee_onboarding/_employee_info_card.html" %}
+
+<p style="text-align:center;margin:22px 0;">
+  <a href="{{ secure_employee_url }}" style="display:inline-block;background-color:#2563eb;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;font-family:Arial,Helvetica,sans-serif;">Complete Employee Onboarding</a>
+</p>
+
+<p style="margin:0 0 16px;">No account creation or login is required.</p>
+<p style="margin:0 0 16px;">You can save your progress and continue later using the same secure link.</p>
+<p style="margin:0;font-size:12px;color:#9ca3af;">If the button above doesn't work, copy and paste this link into your browser:<br><span style="word-break:break-all;">{{ secure_employee_url }}</span></p>
+{% endblock %}

@@ -802,34 +802,103 @@ class SendQuoteEmailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        subject = f"Quotation: {quote.quote_name} (Ref: {quote.quote_no})"
         recipient_email = quote.client.email
+        sender = request.user
+        sender_name = sender.get_full_name() or sender.username or 'The Team'
 
-        # Generate public link (set FRONTEND_BASE_URL in your settings.py)
-        from django.conf import settings
-        public_link = f"{settings.FRONTEND_BASE_URL}/pipeline/quote/{pk}/"
-
-        message = f"""
-        Dear {quote.client.company_name},
-
-        Please find the details of your quotation '{quote.quote_name}' below.
-
-        Quote No: {quote.quote_no}
-        Total Amount: {quote.total_amount}
-        Due Date: {quote.due_date.strftime('%d-%b-%Y')}
-
-        You can view your quote online here:
-        {public_link}
-
-        Thank you for your business.
-
-        Best regards,
-        {request.user.first_name or 'Your Company'}
-        """
-
-        send_quote_email(subject, message, recipient_email)
-        return Response({"success": f"Quote is being sent to {recipient_email}.", "link": public_link}, status=status.HTTP_200_OK)
+        # No web link is sent - the quotation goes out only as the attached
+        # PDF (same document as the "Download PDF" button), never a URL to
+        # click, per the customer-facing "no quotation link" requirement.
+        send_quote_email(
+            quote_id=quote.pk,
+            sender_name=sender_name,
+            sender_designation=getattr(sender, 'position', '') or '',
+            sender_email=sender.email or '',
+        )
+        return Response({"success": f"Quote is being sent to {recipient_email}."}, status=status.HTTP_200_OK)
     
+
+
+def _quote_money(value):
+    try:
+        return f"{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
+
+
+def quote_reference_for(quote):
+    """Canonical human-facing reference for a quote - used by the PDF, the
+    download filename, and the "Send Quotation" email so they never drift
+    apart into different numbering schemes."""
+    return f"QUO-{quote.quote_no:06d}"
+
+
+def generate_quote_pdf(quote):
+    """Builds the quotation PDF for a Quote instance. Single source of truth
+    for quote PDF generation - both the download endpoint and the "Send
+    Quotation" email attach this exact same output, so there is never a
+    second/divergent quotation document floating around."""
+    from xhtml2pdf import pisa
+    from io import BytesIO
+    import os
+
+    logo_path = os.path.join(settings.BASE_DIR, 'static', 'img', 'sria_logo.png')
+
+    client = quote.client
+    address_parts = []
+    client_email = ''
+    client_phone = ''
+    client_gstin = ''
+    if client:
+        address_parts = [p for p in (
+            client.street_address, client.city, client.state, client.postal_code, client.country
+        ) if p]
+        client_email = client.email
+        client_phone = str(client.mobile_number) if client.mobile_number else ''
+        client_gstin = client.gstin
+
+    items = [
+        {
+            'description': item.description,
+            'quantity': item.quantity,
+            'unit': item.unit,
+            'price_per_unit': _quote_money(item.price_per_unit),
+            'amount': _quote_money(item.amount),
+        }
+        for item in quote.items.all()
+    ]
+
+    tax_amount = quote.total_amount - quote.sub_total
+
+    context = {
+        'quote_no': quote.quote_no,
+        'quote_reference': quote_reference_for(quote),
+        'quote_name': quote.quote_name,
+        'date_of_issue': quote.date_of_issue,
+        'due_date': quote.due_date,
+        'status': quote.status,
+        'author': quote.author,
+        'currency': quote.currency,
+        'client_name': client.company_name if client else '',
+        'client_address': ', '.join(address_parts),
+        'client_email': client_email,
+        'client_phone': client_phone,
+        'client_gstin': client_gstin,
+        'sub_total': _quote_money(quote.sub_total),
+        'tax_percentage': quote.tax_percentage,
+        'tax_amount': _quote_money(tax_amount),
+        'total_amount': _quote_money(quote.total_amount),
+        'in_house_cost': _quote_money(quote.in_house_cost),
+        'outsourced_cost': _quote_money(quote.outsourced_cost),
+        'invoiced_sum': _quote_money(quote.invoiced_sum),
+        'to_be_invoiced_sum': _quote_money(quote.to_be_invoiced_sum),
+        'items': items,
+        'logo_path': logo_path,
+    }
+    html_string = render_to_string('quote_invoice.html', context)
+    pdf_buffer = BytesIO()
+    pisa.CreatePDF(html_string, pdf_buffer)
+    return pdf_buffer.getvalue()
 
 
 # CBV for PDF Invoice Download
@@ -837,41 +906,12 @@ class QuoteInvoiceDownloadView(APIView):
     permission_classes = []  # Public access
 
     def get(self, request, pk):
-        from django.template.loader import render_to_string
-        from xhtml2pdf import pisa
         from django.http import HttpResponse
         from .models import Quote
-        from io import BytesIO
         from django.shortcuts import get_object_or_404
 
         quote = get_object_or_404(Quote, pk=pk)
-        import os
-        from django.conf import settings
-        logo_path = os.path.join(settings.BASE_DIR, 'static', 'img', 'sria_logo.png')
-        context = {
-            'quote_no': quote.quote_no,
-            'quote_name': quote.quote_name,
-            'date_of_issue': quote.date_of_issue,
-            'due_date': quote.due_date,
-            'status': quote.status,
-            'author': quote.author,
-            'client_name': quote.client.company_name if quote.client else '',
-            'client_address': f"{quote.client.street_address}, {quote.client.city}, {quote.client.state}, {quote.client.country}" if quote.client else '',
-            'sub_total': quote.sub_total,
-            'tax_percentage': quote.tax_percentage,
-            'total_amount': quote.total_amount,
-            'total_cost': quote.total_cost,
-            'in_house_cost': quote.in_house_cost,
-            'outsourced_cost': quote.outsourced_cost,
-            'invoiced_sum': quote.invoiced_sum,
-            'to_be_invoiced_sum': quote.to_be_invoiced_sum,
-            'items': quote.items.all(),
-            'logo_path': logo_path,
-        }
-        html_string = render_to_string('quote_invoice.html', context)
-        pdf_buffer = BytesIO()
-        pisa.CreatePDF(html_string, pdf_buffer)
-        pdf_file = pdf_buffer.getvalue()
+        pdf_file = generate_quote_pdf(quote)
         response = HttpResponse(pdf_file, content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="invoice_{quote.quote_no}.pdf"'
-        return response 
+        response['Content-Disposition'] = f'attachment; filename="quote_{quote.quote_no}.pdf"'
+        return response

@@ -12,6 +12,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+from dotenv import load_dotenv
+
+# Load .env before anything below reads an environment variable - this must
+# come first, or SECRET_KEY/DEBUG/etc. below would read the process
+# environment before .env's values ever reached it.
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,16 +26,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-a6f*$eh4p!6=lh-+h#*)afw4*t^_5c*sp-is_7gq(=y!sxkyv_'
+# SECURITY WARNING: keep the secret key used in production secret! Set a real
+# value in .env (SECRET_KEY=...) - never hard-code one here, this file is
+# committed to a public repo.
+SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-CHANGE-ME-for-local-dev-only")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-
-
-DEBUG = True
-# DEBUG = os.getenv("DEBUG", "False") == "True"
-# ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
-# SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME")
+DEBUG = os.environ.get("DEBUG", "False") == "True"
 # ALLOWED_HOSTS = [
 #     "localhost",
 #     "127.0.0.1",
@@ -78,6 +81,7 @@ INSTALLED_APPS = [
     'core',
     'phonenumber_field',
     'vendor_onboarding',
+    'employee_onboarding',
 
 
 ]
@@ -218,14 +222,27 @@ REST_FRAMEWORK = {
     ],
     "EXCEPTION_HANDLER": "myproject.exceptions.custom_exception_handler",
     "DEFAULT_THROTTLE_RATES": {
-        # Public, token-authenticated vendor onboarding endpoints - no login,
-        # so they're rate-limited per IP instead of per user.
+        # Public, token-authenticated vendor/employee onboarding endpoints -
+        # no login, so they're rate-limited per IP instead of per user.
         "vendor_public": "60/hour",
+        # A single employee onboarding session legitimately fires 40-60+
+        # requests before reaching the documents step (choices + detail on
+        # load, an identity/last_saved_step PATCH per step advance, a section
+        # PATCH per step, a documents-list refetch after every upload/delete,
+        # etc.), so 60/hour was exhausted mid-session and caused genuine
+        # users to be 429'd (e.g. after PAN/Aadhaar upload, by the time Bank
+        # Proof/Photo were reached the bucket was already empty). Rate-limit
+        # per-minute instead of per-hour so a legitimate burst has headroom
+        # and an accidental trip recovers in seconds, not up to an hour.
+        "employee_onboarding_public": "300/min",
     },
 }
 
 # Vendor Self-Service Onboarding
 VENDOR_ONBOARDING_TOKEN_TTL_DAYS = 90
+
+# Employee Self-Service Onboarding
+EMPLOYEE_ONBOARDING_TOKEN_TTL_DAYS = 30
 
 
 
@@ -241,12 +258,6 @@ CSRF_COOKIE_SAMESITE = "Lax"
 
     
 
-# EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-# EMAIL_HOST = "smtp.gmail.com"
-# EMAIL_PORT = 587
-# EMAIL_HOST_USER = "vanumushashidhar@gmail.com"
-# EMAIL_HOST_PASSWORD = "qtye gvwm puhm twsa"   # DO NOT commit to repo
-# EMAIL_USE_TLS = True
 # DEFAULT_FROM_EMAIL = "Your App <no-reply@yourdomain.com>"
 
 
@@ -282,10 +293,6 @@ SIMPLE_JWT = {
 }
 
 FRONTEND_BASE_URL = "http://localhost:5173"
-from dotenv import load_dotenv
-load_dotenv()
-
-import os
 
 # Public URL the Vendor Onboarding portal is reachable at - used only to build
 # the secure onboarding link sent in the invite/request-changes emails. Never
@@ -304,12 +311,23 @@ VENDOR_PORTAL_URL = os.environ.get("VENDOR_PORTAL_URL", FRONTEND_BASE_URL).rstri
 if VENDOR_PORTAL_URL not in CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS.append(VENDOR_PORTAL_URL)
 
+# Public URL the Employee Onboarding portal is reachable at - same idea as
+# VENDOR_PORTAL_URL above, kept as its own env var so the two portals can be
+# pointed at different deployments later even though they currently share the
+# same frontend app. Set this in .env, e.g.:
+#   production: EMPLOYEE_PORTAL_URL=https://project.nxsys.in
+EMPLOYEE_PORTAL_URL = os.environ.get("EMPLOYEE_PORTAL_URL", FRONTEND_BASE_URL).rstrip("/")
+
+if EMPLOYEE_PORTAL_URL not in CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS.append(EMPLOYEE_PORTAL_URL)
+
 # Branding used in Vendor Onboarding emails. COMPANY_LOGO_URL must be a full
 # https:// URL to a hosted image (email clients can't load relative/local
 # paths) - leave it blank to fall back to a text-only header, which is the
 # same convention this codebase's other email templates already use.
 COMPANY_NAME = os.environ.get("COMPANY_NAME", "SRIA INFOTECH PRIVATE LTD")
 COMPANY_LOGO_URL = os.environ.get("COMPANY_LOGO_URL", "")
+COMPANY_WEBSITE = os.environ.get("COMPANY_WEBSITE", "www.sriainfotech.com")
 # print("Cloud Name:", os.environ.get("CLOUDINARY_CLOUD_NAME"))
 # print("APiKey", os.environ.get("CLOUDINARY_API_KEY"))
 CLOUDINARY_STORAGE = {
@@ -342,8 +360,10 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'teerdavenigedela@gmail.com'
-EMAIL_HOST_PASSWORD = 'vcig blpb lbdg sact'  # Gmail App Password
+# Set these in .env - never hard-code a real mailbox/App Password here, this
+# file is committed to a public repo.
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = "teerdavenigedela@gmail.com"
 
 

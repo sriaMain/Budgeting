@@ -3,6 +3,7 @@ import {
   Plus, Search, ArrowLeft, Loader2, User as UserIcon,
   ChevronDown, Building2
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { ReusableTable } from '../components/ReusableTable';
 import { FormRow } from '../components/FormRow';
 import type { Column } from '../components/ReusableTable';
@@ -16,7 +17,10 @@ const ManageUsersTab: React.FC = () => {
   const [view, setView] = useState<'list' | 'form'>('list');
   const [users, setUsers] = useState<UserDisplay[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  // Defaults to "active" so a deleted (deactivated) user drops out of view
+  // immediately, instead of lingering in the list looking unchanged - it's
+  // still recoverable by switching this filter to "Inactive".
+  const [statusFilter, setStatusFilter] = useState("active");
   const [moduleFilter, setModuleFilter] = useState("all");
   const [roles, setRoles] = useState<Role[]>([]);
   const [modules, setModules] = useState<Module[]>([]);
@@ -66,7 +70,7 @@ const ManageUsersTab: React.FC = () => {
     languages: [] as string[],
     is_active: true,
     profile_picture: null as string | null, // Cloudinary image URL from backend
-    profile_image_file: null as File | null // New field for the actual file object
+    profile_image_file: null as File | null, // New field for the actual file object
   };
 
   const [formData, setFormData] = useState(initialFormState);
@@ -155,10 +159,28 @@ const ManageUsersTab: React.FC = () => {
       languages: Array.isArray(user.languages) ? user.languages : [],
       is_active: user.is_active,
       profile_picture: user.profile_picture,
-      profile_image_file: null // Reset file on edit start
+      profile_image_file: null, // Reset file on edit start
     });
     setErrors({});
     setView('form');
+  };
+
+  const handleDelete = async (user: UserDisplay) => {
+    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
+    if (window.confirm(`Are you sure you want to delete user ${fullName}?`)) {
+      try {
+        await axiosInstance.delete(`/accounts/users/${user.id}/`);
+        toast.success('User deleted successfully!');
+        // The backend soft-deletes (is_active becomes false) rather than
+        // removing the row - reflect that locally right away instead of
+        // waiting on a refetch, otherwise the row appears unchanged and it
+        // looks like nothing happened.
+        setUsers(prev => prev.map(u => (u.id === user.id ? { ...u, is_active: false } : u)));
+      } catch (error) {
+        console.error("Failed to delete user", error);
+        toast.error('Failed to delete user.');
+      }
+    }
   };
 
   const handleLanguageChange = (lang: string) => {
@@ -401,6 +423,7 @@ const ManageUsersTab: React.FC = () => {
             keyField="id"
             isLoading={isLoading}
             onEdit={handleEdit}
+            onDelete={handleDelete}
           />
         </div>
       ) : (
