@@ -951,7 +951,9 @@ class PurchaseOrderCreateAPIView(APIView):
 
         # 🔗 Fetch objects safely
         quote = get_object_or_404(Quote, quote_no=quote_no)
-        vendor = get_object_or_404(Vendor, id=vendor_id)
+        # Only an approved vendor can receive a PO - an in-progress onboarding
+        # request must not be usable here.
+        vendor = get_object_or_404(Vendor, id=vendor_id, status="approved")
 
         # 🔢 Generate PO number
         po_no = f"PO-{quote.quote_no}-{PurchaseOrder.objects.count() + 1}"
@@ -1438,7 +1440,7 @@ class DownloadPurchaseOrderView(APIView):
         )
 
         # Render HTML template
-        html = render_to_string('purchase_order_pdf.html', {
+        html = render_to_string('emails/purchase_order_pdf.html', {
             'po': po,
             'items': po.items.all()
         })

@@ -1,0 +1,23 @@
+{% extends "emails/vendor_onboarding/_layout.html" %}
+
+{% block title %}Vendor Onboarding Resubmitted – {{ vendor_reference }} | {{ vendor_name }}{% endblock %}
+{% block preheader %}{{ vendor_name }} has resubmitted their vendor onboarding request.{% endblock %}
+{% block heading %}Vendor Onboarding Resubmitted{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;">Hello Team,</p>
+<p style="margin:0 0 16px;">{{ vendor_name }} has updated the requested vendor information and successfully resubmitted the onboarding request{% if level %} for review at stage "{{ level.name }}"{% endif %}.</p>
+
+{% include "emails/vendor_onboarding/_vendor_info_card.html" %}
+
+<p style="margin:22px 0 16px;">The updated information and documents are now available for review.</p>
+<p style="margin:0 0 16px;">Please review the latest submission and continue with the approval process.</p>
+
+<p style="text-align:center;margin:0;">
+  <a href="{{ admin_review_url }}" style="display:inline-block;background-color:#2563eb;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;font-family:Arial,Helvetica,sans-serif;">Review Updated Request</a>
+</p>
+{% endblock %}
+
+{% block footer %}
+<p style="margin:0;">This is an automated notification from the {{ company_name }} Vendor Onboarding system.</p>
+{% endblock %}

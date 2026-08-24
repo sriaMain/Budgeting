@@ -1,0 +1,20 @@
+{% extends "emails/vendor_onboarding/_layout.html" %}
+
+{% block title %}Vendor Approval In Progress – {{ vendor_reference }}{% endblock %}
+{% block preheader %}A vendor onboarding request is awaiting your approval.{% endblock %}
+{% block heading %}Vendor Awaiting Your Approval{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;">Hello,</p>
+<p style="margin:0 0 16px;">Vendor <strong>{{ vendor_name }}</strong> has cleared the previous approval stage and now needs your review{% if level %} at stage "{{ level.name }}"{% endif %}.</p>
+
+{% include "emails/vendor_onboarding/_vendor_info_card.html" %}
+
+<p style="text-align:center;margin:22px 0 0;">
+  <a href="{{ admin_review_url }}" style="display:inline-block;background-color:#2563eb;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;font-family:Arial,Helvetica,sans-serif;">Review Vendor Request</a>
+</p>
+{% endblock %}
+
+{% block footer %}
+<p style="margin:0;">This is an automated notification from the {{ company_name }} Vendor Onboarding system.</p>
+{% endblock %}

@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from datetime import timedelta
 import uuid
@@ -114,12 +114,34 @@ class PasswordResetOTP(models.Model):
 
 
 
-from django.db import models
-
 class Vendor(models.Model):
+    """The single Vendor table doubles as both the onboarding request and the
+    eventual master record - there is no separate request model. A row is
+    created as soon as an admin raises a vendor request (status='invited'),
+    and is gated out of general vendor pickers (accounts.views.VendorListCreateView,
+    finances' PO/Bill vendor lookups) until status='approved', so an
+    in-progress onboarding request can't be selected as a real vendor before
+    it's actually approved."""
+
     VENDOR_TYPE_CHOICES = [
-        ('freelancer', 'Freelancer'),
+        ('freelancer', 'Individual / Freelancer'),
         ('company', 'Company'),
+        ('partnership', 'Partnership'),
+        ('proprietorship', 'Proprietorship'),
+        ('llp', 'LLP'),
+        ('government', 'Government'),
+        ('non_profit', 'Non-Profit'),
+        ('other', 'Other'),
+    ]
+
+    STATUS_CHOICES = [
+        ('invited', 'Invited'),
+        ('draft', 'Draft'),
+        ('submitted', 'Submitted'),
+        ('action_required', 'Action Required'),
+        ('resubmitted', 'Resubmitted'),
+        ('approval_in_progress', 'Approval In Progress'),
+        ('approved', 'Approved'),
     ]
 
     name = models.CharField(max_length=255, unique=True)
@@ -136,6 +158,61 @@ class Vendor(models.Model):
 
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # --- Vendor Onboarding workflow fields (backend-managed except last_saved_step) ---
+    vendor_reference_no = models.CharField(
+        max_length=20, unique=True, null=True, blank=True, editable=False, db_index=True
+    )
+    contact_person_name = models.CharField(max_length=150, blank=True)
+    company_code = models.CharField(max_length=50, blank=True)
+    plant = models.CharField(max_length=50, blank=True)
+    internal_requester = models.CharField(max_length=150, blank=True)
+    initial_comments = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=25, choices=STATUS_CHOICES, default='approved', db_index=True
+    )
+    # Client-writable (the wizard advances this every step) - not part of the
+    # "backend-managed" group above, so it must NOT be editable=False, or DRF
+    # silently treats it as read_only and drops it from every PATCH payload.
+    last_saved_step = models.PositiveSmallIntegerField(default=1)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        editable=False,
+        related_name='vendors_created',
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True, editable=False)
+    approved_at = models.DateTimeField(null=True, blank=True, editable=False)
+    # Hides a request from the default Vendor Requests list/tabs without
+    # deleting it - the record and its full approval history stay intact and
+    # remain viewable with the "show archived" filter. Purely a visibility
+    # flag; does not affect status or block any workflow action.
+    is_archived = models.BooleanField(default=False, db_index=True)
 
     def __str__(self):
         return self.name
+
+    def assign_reference_number(self):
+        """Atomically assigns VR-<year>-<seq> the first time a vendor is saved."""
+        if self.vendor_reference_no:
+            return self.vendor_reference_no
+        year = (self.created_at or timezone.now()).year
+        with transaction.atomic():
+            seq, _ = VendorReferenceSequence.objects.select_for_update().get_or_create(year=year)
+            seq.last_number += 1
+            seq.save(update_fields=['last_number'])
+            self.vendor_reference_no = f"VR-{year}-{seq.last_number:06d}"
+        return self.vendor_reference_no
+
+    def current_token(self):
+        return self.access_tokens.filter(is_active=True).order_by('-created_at').first()
+
+
+class VendorReferenceSequence(models.Model):
+    year = models.PositiveIntegerField(unique=True)
+    last_number = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.year}: {self.last_number}"

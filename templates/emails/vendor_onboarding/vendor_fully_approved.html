@@ -1,0 +1,16 @@
+{% extends "emails/vendor_onboarding/_layout.html" %}
+
+{% block title %}Vendor Onboarding Approved – {{ vendor_reference }} | {{ vendor_name }}{% endblock %}
+{% block preheader %}Your vendor onboarding request has been approved.{% endblock %}
+{% block heading %}Vendor Onboarding Approved{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;">Dear {{ vendor_contact_name }},</p>
+<p style="margin:0 0 16px;">We are pleased to inform you that the vendor onboarding request for <strong>{{ vendor_name }}</strong> has been successfully reviewed and approved.</p>
+
+{% include "emails/vendor_onboarding/_vendor_info_card.html" %}
+
+<p style="margin:22px 0 16px;">Your vendor information and submitted documents have been successfully completed and approved by our team.</p>
+<p style="margin:0 0 16px;">No further action is required from you at this time.</p>
+<p style="margin:0;">Thank you for completing the vendor onboarding process with us.</p>
+{% endblock %}

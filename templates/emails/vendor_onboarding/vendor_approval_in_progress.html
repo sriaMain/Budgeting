@@ -1,0 +1,14 @@
+{% extends "emails/vendor_onboarding/_layout.html" %}
+
+{% block title %}Vendor Onboarding Under Review – {{ vendor_reference }}{% endblock %}
+{% block preheader %}Your vendor onboarding request is currently under review.{% endblock %}
+{% block heading %}Vendor Onboarding Under Review{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;">Dear {{ vendor_contact_name }},</p>
+<p style="margin:0 0 16px;">Thank you for submitting the required vendor information. Your vendor onboarding request for <strong>{{ vendor_name }}</strong> is currently under review by our team.</p>
+
+{% include "emails/vendor_onboarding/_vendor_info_card.html" %}
+
+<p style="margin:22px 0 0;">No further action is required from you at this time. We will notify you if any additional information or clarification is required.</p>
+{% endblock %}

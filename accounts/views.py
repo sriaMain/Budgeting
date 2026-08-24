@@ -150,13 +150,16 @@ class RefreshTokenCookieView(APIView):
             return Response({"error": "Invalid refresh token"}, status=401)
 
         new_access = str(refresh.access_token)
+        roles = [role.role_name for role in user.roles.all()]
 
         return Response({
             "access_token": new_access,
             "is_authenticated": user.is_active,  # Check if user account is active
             "username": user.username,
-            "email":  user.email
-        }) 
+            "email":  user.email,
+            "role": roles[0] if roles else None,
+            "roles": roles,
+        })
 
 
 
@@ -397,6 +400,22 @@ class UserDetailVieW(APIView):
             logger.error(f"UserDetailView PUT Error: {str(e)}", exc_info=True)
             return Response({"error": "Internal server error", "details": str(e)}, status=500)
     
+    def delete(self, request, id):
+        try:
+            user = User.objects.get(id=id)
+            user.is_active = False
+            user.save(update_fields=['is_active'])
+            try:
+                cache.delete("users_list")
+            except Exception as cache_err:
+                logger.warning(f"Failed to delete cache: {cache_err}")
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"UserDetailView DELETE Error: {str(e)}", exc_info=True)
+            return Response({"error": "Internal server error", "details": str(e)}, status=500)
+    
 
 class CurrencyListAPIView(APIView):
     permission_classes = [AllowAny]
@@ -418,11 +437,13 @@ class VendorListCreateView(APIView):
     authentication_classes = [JWTAuthentication]
     def get(self, request, vendor_id=None):
 
-    # Decide queryset
+    # Decide queryset - only approved vendors are real/selectable here; an
+    # in-progress onboarding request (invited/draft/submitted/etc.) must not
+    # show up as a usable vendor for POs/Bills/Expenses until it's approved.
         if vendor_id:
-            vendors = Vendor.objects.filter(id=vendor_id)
+            vendors = Vendor.objects.filter(id=vendor_id, status="approved")
         else:
-            vendors = Vendor.objects.all()
+            vendors = Vendor.objects.filter(status="approved")
 
         result = []
 

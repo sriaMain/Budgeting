@@ -1,0 +1,14 @@
+{% extends "emails/employee_onboarding/_layout.html" %}
+
+{% block title %}Employee Onboarding Submitted – {{ employee_name }}{% endblock %}
+{% block preheader %}{{ employee_name }} has submitted their employee onboarding information for review.{% endblock %}
+{% block heading %}Employee Onboarding Submitted{% endblock %}
+
+{% block body %}
+<p style="margin:0 0 16px;">Hello,</p>
+<p style="margin:0 0 16px;"><strong>{{ employee_name }}</strong> has submitted their employee onboarding information and it is now awaiting your review.</p>
+
+{% include "emails/employee_onboarding/_employee_info_card.html" %}
+
+<p style="margin:22px 0 0;">Please log in to review the submitted information and either approve it or request changes.</p>
+{% endblock %}

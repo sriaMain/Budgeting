@@ -520,15 +520,19 @@ class TaskAPIView(APIView):
                 status=400
             )
 
-        user = Account.objects.get(id=assigned_to)
-
-        # 🔒 SAFETY CHECK: user must belong to same service as task creator (optional)
-        # if user.module != task.project.service:
-        #     return Response({"error": "User does not belong to selected service"}, status=400)
+        try:
+            user = Account.objects.get(id=assigned_to)
+        except Account.DoesNotExist:
+            return Response(
+                {"error": "Selected employee not found"},
+                status=400
+            )
 
         task.assigned_to = user
         task.status = "planned"
         task.save()
+
+        first_module = user.modules.first()
 
         return Response({
             "message": "Task assigned successfully",
@@ -536,7 +540,7 @@ class TaskAPIView(APIView):
             "assigned_to": {
                 "id": user.id,
                 "name": user.get_full_name(),
-                "service": user.module.product_service_name if user.module else None
+                "service": first_module.product_service_name if first_module else None
             }
         })
     def patch(self, request, task_id):
@@ -866,7 +870,6 @@ class SubmitTimesheetAPIView(APIView):
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from .utils.timer import  set_active_timer, get_active_timer
-from .redis_utils import has_active_timer,seconds_to_hms
 
 
 def seconds_to_hms(seconds: int) -> str:
@@ -987,13 +990,6 @@ class StartTaskTimerAPIView(APIView):
         except Task.DoesNotExist:
             return Response({"error": "Task not found"}, status=404)
 
-        # 🔐 PERMISSION CHECK
-        if user.is_staff:
-            return Response(
-                {"error": "Admins are not allowed to start task timers"},
-                status=403
-            )
-
         if task.assigned_to_id != user.id:
             return Response(
                 {"error": "You are not assigned to this task"},
@@ -1039,9 +1035,8 @@ class StartTaskTimerAPIView(APIView):
             )
 
         # ⏱ Check if another timer is already running
-        if has_active_timer(user.id):
-            running_task_id, running_start = get_active_timer(user.id)
-
+        running_task_id, running_start = get_active_timer(user.id)
+        if running_task_id:
             running_task = None
             if running_task_id:
                 try:
@@ -1176,6 +1171,9 @@ class PauseTaskTimerAPIView(APIView):
 
     def post(self, request, task_id):
         user = request.user
+        import traceback
+        print(f"DEBUG PAUSE: Task {task_id}, User {user.id}")
+        print(f"DEBUG PAUSE: Called from:\n{''.join(traceback.format_stack())}")
 
         timer = TaskTimerLog.objects.filter(
             task_id=task_id,
@@ -1934,9 +1932,9 @@ class TaskGroupedByStatusAPIView(APIView):
         if status_param:
             queryset = queryset.filter(status=status_param)
 
-        from .utils.timer import get_active_timer
+        from Project.utils.timer import get_active_timer
         from django.utils import timezone
-        
+
         redis_task, redis_start = get_active_timer(user.id)
         active_task_id = int(redis_task) if redis_task else None
         
@@ -2233,5 +2231,76 @@ class ExtraHoursHistoryAPIView(APIView):
                 "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
                 "reason": r.reason,
             })
+
+        return Response(data)
+
+
+class MyTaskExtrasAPIView(APIView):
+    """Upcoming deadlines and pending extra-hours count for the current user's personal dashboard."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        user = request.user
+        today = timezone.now().date()
+
+        upcoming = (
+            Task.objects.filter(assigned_to=user, due_date__gte=today)
+            .select_related("project")
+            .order_by("due_date")[:5]
+        )
+
+        upcoming_deadlines = [
+            {
+                "id": task.id,
+                "title": task.title,
+                "due_date": task.due_date,
+                "project_name": task.project.project_name if task.project else None,
+                "status": task.status,
+            }
+            for task in upcoming
+        ]
+
+        extra_hours_pending = TaskExtraHoursRequest.objects.filter(
+            requested_by=user, status="pending"
+        ).count()
+
+        return Response({
+            "upcoming_deadlines": upcoming_deadlines,
+            "extra_hours_pending": extra_hours_pending,
+        })
+
+
+class MyActiveTimerAPIView(APIView):
+    """The current user's active timer (if any), for the personal dashboard widget."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from .utils.timer import get_active_timer
+
+        redis_task, redis_start = get_active_timer(request.user.id)
+        if not redis_task:
+            return Response({"has_active_timer": False, "task": None})
+
+        try:
+            task = Task.objects.select_related("project").get(id=int(redis_task))
+        except Task.DoesNotExist:
+            return Response({"has_active_timer": False, "task": None})
+
+        redis_start_str = redis_start.decode() if isinstance(redis_start, bytes) else redis_start
+        start_time = timezone.datetime.fromisoformat(redis_start_str)
+        elapsed_seconds = int((timezone.now() - start_time).total_seconds())
+
+        return Response({
+            "has_active_timer": True,
+            "task": {
+                "id": task.id,
+                "title": task.title,
+                "project_name": task.project.project_name if task.project else None,
+                "elapsed_seconds": elapsed_seconds,
+                "formatted_time": format_seconds(elapsed_seconds)["formatted"],
+            },
+        })
 
         return Response(data)
