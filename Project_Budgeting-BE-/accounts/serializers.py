@@ -2,7 +2,9 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
 from django.contrib.auth.hashers import make_password
-from django.core.mail import send_mail
+from django.core.mail import send_mail, EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
@@ -448,19 +450,33 @@ class UserCreateSerializer(serializers.ModelSerializer):
         user.is_staff = any(role.role_name == "Admin" for role in roles)
         user.save(update_fields=["is_staff"])
 
-        # Send Email
-        send_mail(
-            subject="Your Account Registration",
-            message=(
-                f"Hello {user.get_full_name() or user.username},\n\n"
-                f"Your account has been created.\n"
-                f"Password: {password}\n\n"
-                f"Please change your password after logging in."
-            ),
+        # Send Email - professional HTML welcome email with the production
+        # login URL (never localhost) built from EMPLOYEE_PORTAL_URL, the
+        # same env var already used for Employee Onboarding invite links.
+        context = {
+            "company_name": settings.COMPANY_NAME,
+            "company_logo": settings.COMPANY_LOGO_URL,
+            "company_email": settings.COMPANY_EMAIL,
+            "company_phone": settings.COMPANY_PHONE,
+            "company_website": settings.COMPANY_WEBSITE,
+            "employee_name": user.get_full_name() or user.username,
+            "employee_id": user.id,
+            "position": user.position,
+            "department": "",
+            "username_or_email": user.email or user.username,
+            "temporary_password": password,
+            "production_login_url": settings.EMPLOYEE_PORTAL_URL,
+        }
+        html_message = render_to_string("emails/accounts/employee_account_created.html", context)
+        plain_message = strip_tags(html_message)
+        email = EmailMultiAlternatives(
+            subject=f"Welcome to {settings.COMPANY_NAME} – Your Employee Account Details",
+            body=plain_message,
             from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False
+            to=[user.email],
         )
+        email.attach_alternative(html_message, "text/html")
+        email.send(fail_silently=False)
 
         return user
 

@@ -328,6 +328,10 @@ if EMPLOYEE_PORTAL_URL not in CORS_ALLOWED_ORIGINS:
 COMPANY_NAME = os.environ.get("COMPANY_NAME", "SRIA INFOTECH PRIVATE LTD")
 COMPANY_LOGO_URL = os.environ.get("COMPANY_LOGO_URL", "")
 COMPANY_WEBSITE = os.environ.get("COMPANY_WEBSITE", "www.sriainfotech.com")
+# Shown in the account-created email footer when set - blank hides the line,
+# same convention as COMPANY_LOGO_URL above.
+COMPANY_EMAIL = os.environ.get("COMPANY_EMAIL", "")
+COMPANY_PHONE = os.environ.get("COMPANY_PHONE", "")
 # print("Cloud Name:", os.environ.get("CLOUDINARY_CLOUD_NAME"))
 # print("APiKey", os.environ.get("CLOUDINARY_API_KEY"))
 CLOUDINARY_STORAGE = {
