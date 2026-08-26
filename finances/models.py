@@ -117,11 +117,11 @@ class Invoice(models.Model):
         ordering = ['-created_at']
         constraints = [
             models.CheckConstraint(
-                check=models.Q(total_amount__gte=0),
+                condition=models.Q(total_amount__gte=0),
                 name='invoice_total_non_negative'
             ),
             models.CheckConstraint(
-                check=models.Q(balance_amount__gte=0),
+                condition=models.Q(balance_amount__gte=0),
                 name='invoice_balance_non_negative'
             ),
         ]
