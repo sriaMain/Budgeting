@@ -33,13 +33,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-CHANGE-ME-for-local-d
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "False") == "True"
-# ALLOWED_HOSTS = [
-#     "localhost",
-#     "127.0.0.1",
-#     # "t847rjkh-3000.inc1.devtunnels.ms",
-#     # 't847rjkh-5173.inc1.devtunnels.ms'
-# ]
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:8000",
@@ -90,7 +84,7 @@ ASGI_APPLICATION = "myproject.asgi.application"
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "LOCATION": os.environ.get("REDIS_CACHE_URL", "redis://127.0.0.1:6379/4"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         }
@@ -106,7 +100,7 @@ CHANNEL_LAYERS = {
         # group_send (no point-to-point channel_layer.send), which PubSub fully supports.
         "BACKEND": "channels_redis.pubsub.RedisPubSubChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [os.environ.get("CHANNEL_LAYERS_REDIS_URL", "redis://127.0.0.1:6379/5")],
         },
     },
 }
@@ -146,28 +140,25 @@ WSGI_APPLICATION = 'myproject.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-        "OPTIONS": {
-            "timeout": 30,
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if DATABASE_URL:
+    import dj_database_url
+
+    DATABASES = {
+        "default": dj_database_url.config(default=DATABASE_URL, conn_max_age=600),
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+            "OPTIONS": {
+                "timeout": 30,
+            }
         }
     }
-}
 
 CONN_MAX_AGE = 0
-
-# import dj_database_url
-# import os
-
-# DATABASES = {
-#     "default": dj_database_url.config(
-#         default=os.getenv("DATABASE_URL"),
-#         conn_max_age=600,
-#         ssl_require=True,
-#     )
-# }
 
 
 
@@ -247,12 +238,16 @@ EMPLOYEE_ONBOARDING_TOKEN_TTL_DAYS = 30
 
 
 
+# Flip HTTPS_ENABLED once Certbot/TLS is live (see deployment doc) - keeping
+# it False lets HTTP-only testing work before the certificate exists.
+_https_enabled = os.environ.get("HTTPS_ENABLED", "False") == "True"
+
 SESSION_COOKIE_AGE = 60 * 60 * 24   # 1 day
-SESSION_COOKIE_SECURE = False       # True in production (HTTPS)
+SESSION_COOKIE_SECURE = _https_enabled
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 
-CSRF_COOKIE_SECURE = False          # True in production
+CSRF_COOKIE_SECURE = _https_enabled
 CSRF_COOKIE_SAMESITE = "Lax"
 
 
@@ -372,8 +367,8 @@ DEFAULT_FROM_EMAIL = "teerdavenigedela@gmail.com"
 
 
 
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/3")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/3")
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
