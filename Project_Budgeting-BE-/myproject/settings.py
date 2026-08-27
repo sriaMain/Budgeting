@@ -256,10 +256,6 @@ CSRF_COOKIE_SAMESITE = "Lax"
 # DEFAULT_FROM_EMAIL = "Your App <no-reply@yourdomain.com>"
 
 
-# Email settings for development (prints emails to console)
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-
-
 PASSWORD_RESET_OTP_EXPIRY_MINUTES = 2
 AUTH_USER_MODEL = 'accounts.Account'
 
@@ -355,7 +351,12 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 # STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# In DEBUG (local dev) emails print to the console instead of sending for
+# real, so OTP/welcome emails work without needing valid Gmail credentials.
+EMAIL_BACKEND = (
+    'django.core.mail.backends.console.EmailBackend' if DEBUG
+    else 'django.core.mail.backends.smtp.EmailBackend'
+)
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
