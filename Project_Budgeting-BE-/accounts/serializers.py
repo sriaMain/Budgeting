@@ -16,8 +16,10 @@ from rest_framework.validators import UniqueValidator
 from roles.models import Role
 from product_group.models import Product_Services
 import uuid
+import logging
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 class LoginSerializer(serializers.Serializer):
     identifier = serializers.CharField(required=True)
@@ -112,10 +114,18 @@ class OTPRequestSerializer(serializers.Serializer):
         minutes = getattr(settings, "PASSWORD_RESET_OTP_EXPIRY_MINUTES", 2)
         msg = f"Your OTP is {raw_code}. Expires in {minutes} minutes."
         from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None)
-        send_mail(subject, msg, from_email, [self.validated_data["email"]], fail_silently=False)
+        try:
+            send_mail(subject, msg, from_email, [self.validated_data["email"]], fail_silently=False)
+        except Exception as mail_err:
+            # Sending failed server-side (e.g. bad SMTP credentials) - don't
+            # hold the caller to the 60s rate limit for an OTP they never
+            # received, and surface a clean error instead of a raw 500.
+            cache.delete(rate_key)
+            logger.warning(f"Failed to send OTP email to {self.validated_data['email']}: {mail_err}")
+            raise serializers.ValidationError({"error": "Failed to send OTP email. Please try again shortly or contact support."})
         ist = pytz.timezone('Asia/Kolkata')
         otp_sent_at_ist = otp_obj.created_at.astimezone(ist)
-        
+
         return {
             "sent": True,
             "otp_sent_at": otp_sent_at_ist.isoformat()
@@ -251,11 +261,15 @@ class ResendOTPSerializer(serializers.Serializer):
         minutes = getattr(settings, "PASSWORD_RESET_OTP_EXPIRY_MINUTES", 2)
         msg = f"Your OTP is {raw_code}. Expires in {minutes} minutes."
         from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None)
-        send_mail(subject, msg, from_email, [self.validated_data["gmail"]], fail_silently=False)
-        
+        try:
+            send_mail(subject, msg, from_email, [self.validated_data["gmail"]], fail_silently=False)
+        except Exception as mail_err:
+            logger.warning(f"Failed to send OTP resend email to {self.validated_data['gmail']}: {mail_err}")
+            raise serializers.ValidationError({"error": "Failed to send OTP email. Please try again shortly or contact support."})
+
         ist = pytz.timezone('Asia/Kolkata')
         otp_sent_at_ist = otp_obj.created_at.astimezone(ist)
-        
+
         return {
             "resent": True,
             "otp_sent_at": otp_sent_at_ist.isoformat()
@@ -476,7 +490,14 @@ class UserCreateSerializer(serializers.ModelSerializer):
             to=[user.email],
         )
         email.attach_alternative(html_message, "text/html")
-        email.send(fail_silently=False)
+        try:
+            email.send(fail_silently=False)
+        except Exception as mail_err:
+            # The account is already created at this point; a mail-server
+            # failure (e.g. bad SMTP credentials) shouldn't turn a
+            # successful creation into a 500 with an orphaned, credential-less
+            # account. Surface it as a warning instead of raising.
+            logger.warning(f"Failed to send welcome email to {user.email}: {mail_err}")
 
         return user
 
