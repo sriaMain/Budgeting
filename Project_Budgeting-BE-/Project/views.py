@@ -2072,12 +2072,20 @@ class TimesheetWeeklySummaryAPIView(APIView):
         # Get all timesheet entries within the week range (more flexible)
         # Use raw query to avoid decimal conversion errors
         from django.db import connection
-        
+
+        # Table names are mixed-case ("Project_timesheetentry" etc., since the
+        # app label "Project" is capitalized), so on Postgres they must be
+        # double-quoted - an unquoted reference gets case-folded to lowercase
+        # by Postgres and fails with "relation ... does not exist" even
+        # though the (quoted, mixed-case) table is right there.
+        entry_table = connection.ops.quote_name(TimesheetEntry._meta.db_table)
+        timesheet_table = connection.ops.quote_name(Timesheet._meta.db_table)
+
         with connection.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT te.id, te.hours, t.user_id, t.status, t.submitted_at
-                FROM Project_timesheetentry te
-                INNER JOIN Project_timesheet t ON te.timesheet_id = t.id
+                FROM {entry_table} te
+                INNER JOIN {timesheet_table} t ON te.timesheet_id = t.id
                 WHERE te.date >= %s AND te.date <= %s
                 AND te.task_id IS NOT NULL
                 AND te.hours IS NOT NULL
