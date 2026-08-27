@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus, Search, ArrowLeft, Loader2, User as UserIcon,
-  ChevronDown, Building2
+  ChevronDown
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ReusableTable } from '../components/ReusableTable';
@@ -11,7 +11,6 @@ import axiosInstance from '../utils/axiosInstance';
 import type { Role, Module, User, UserDisplay } from '../types';
 import { Toast } from './Toast';
 import { parseApiErrors } from '../utils/parseApiErrors';
-import companyLogo from '../assets/company-logo.png';
 
 const ManageUsersTab: React.FC = () => {
   const [view, setView] = useState<'list' | 'form'>('list');
@@ -455,34 +454,11 @@ const ManageUsersTab: React.FC = () => {
             </div>
           )}
 
-          <div className="flex flex-col lg:flex-row min-h-[600px]">
-            {/* Sidebar (Left Panel) */}
-            <div className="w-full lg:w-64 bg-white border-r border-gray-100 p-4 flex flex-col gap-2">
-              <button className="flex items-center gap-3 px-4 py-3 bg-gray-50 text-gray-900 font-semibold rounded-lg border-l-4 border-blue-600 shadow-sm">
-                <UserIcon size={18} />
-                Profile
-              </button>
-              <div className="ml-11 text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                SRIA INFOTECH PVT LTD
-              </div>
-
-              <div className="mt-4 flex flex-col items-center text-center p-4 bg-gray-50/50 rounded-xl border border-gray-100">
-                <img
-                  src={companyLogo}
-                  alt="Sria Infotech"
-                  className="w-20 h-auto object-contain mb-3 drop-shadow-sm mix-blend-multiply"
-                />
-                <button className="flex items-center gap-2 text-gray-600 hover:text-blue-600 font-medium text-sm transition-colors">
-                  <Building2 size={16} />
-                  <span>Company data and logo</span>
-                </button>
-              </div>
-            </div>
-
+          <div className="min-h-[600px]">
             {/* Main Content Area */}
-            <div className="flex-1 p-8 bg-white">
+            <div className="p-8 bg-white max-w-5xl mx-auto">
               <form onSubmit={handleSave}>
-                <h3 className="text-blue-600 font-bold text-lg mb-6">User details</h3>
+                <h3 className="text-blue-600 font-bold text-lg mb-6 pb-4 border-b border-gray-100">User details</h3>
 
                 <div className="flex flex-col lg:flex-row gap-8 items-start">
 
