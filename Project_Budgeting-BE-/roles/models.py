@@ -143,12 +143,20 @@ class RBACUserMixin(models.Model):
     def __get_cache_key(self):
         return f"user_permissions:{self.id}"
 
-    def get_all_permissions(self):
+    def get_rbac_permission_codes(self):
         """
         Returns cached set of permission codes.
         - Fast: O(1) lookup
         - Safe: invalidated on role/perm changes
         - Handles superuser
+
+        Named distinctly from get_all_permissions: Account subclasses
+        AbstractUser (django.contrib.auth.models.PermissionsMixin) before
+        this mixin, so a method named get_all_permissions here would be
+        shadowed by Django's built-in one (which checks Django's own
+        Group/Permission tables, not this app's Role/Permission models) -
+        every has_role_permission() check would silently see an empty set
+        for any non-superuser.
         """
         cache_key = self.__get_cache_key()
 
@@ -197,7 +205,7 @@ class RBACUserMixin(models.Model):
 
         perm_code = perm_code.strip().lower()
 
-        return perm_code in self.get_all_permissions()
+        return perm_code in self.get_rbac_permission_codes()
 
     def clear_permission_cache(self):
         """
