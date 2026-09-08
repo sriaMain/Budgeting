@@ -144,6 +144,12 @@ class QuoteSerializer(serializers.ModelSerializer):
         choices=CURRENCY_CHOICES,
         required=False
     )
+    project = serializers.PrimaryKeyRelatedField(
+        source='linked_project',
+        queryset=Project.objects.all(),
+        allow_null=True,
+        required=False
+    )
 
     created_by = serializers.StringRelatedField(read_only=True)
     modified_by = serializers.StringRelatedField(read_only=True)
@@ -179,6 +185,7 @@ class QuoteSerializer(serializers.ModelSerializer):
             "items",
             "has_project",
             "currency",
+            "project",
         ]
         read_only_fields = (
             "quote_no",
@@ -274,7 +281,9 @@ class QuoteSerializer(serializers.ModelSerializer):
 
     def get_has_project(self, obj):
         from Project.models import Project
-        return Project.objects.filter(created_from_quotation=obj.quote_no).exists()
+        return Project.objects.filter(
+            created_from_quotation=obj.quote_no
+        ).exists() or obj.linked_project_id is not None
 
 	
     def _create_items(self, quote, items_data):
@@ -376,7 +385,7 @@ class QuoteSummarySerializer(serializers.ModelSerializer):
         from Project.models import Project
         return Project.objects.filter(
             created_from_quotation=obj.quote_no
-        ).exists()
+        ).exists() or obj.linked_project_id is not None
 
 
 
@@ -468,7 +477,7 @@ class QuoteDetailSerializer(serializers.ModelSerializer):
 
         project = Project.objects.filter(
             created_from_quotation=obj
-        ).first()
+        ).first() or obj.linked_project
 
         if not project:
             return None
@@ -480,4 +489,6 @@ class QuoteDetailSerializer(serializers.ModelSerializer):
 
     def get_has_project(self, obj):
         from Project.models import Project
-        return Project.objects.filter(created_from_quotation=obj).exists()
+        return Project.objects.filter(
+            created_from_quotation=obj
+        ).exists() or obj.linked_project_id is not None

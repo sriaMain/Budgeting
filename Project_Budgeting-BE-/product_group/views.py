@@ -647,6 +647,9 @@ class QuoteListCreateView(APIView):
 
     def get(self, request):
         quotes = Quote.objects.all().order_by('-date_of_issue')
+        project_id = request.query_params.get('project')
+        if project_id:
+            quotes = quotes.filter(linked_project_id=project_id)
         serializer = QuoteSerializer(quotes, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 

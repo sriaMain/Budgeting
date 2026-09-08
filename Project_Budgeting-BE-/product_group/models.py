@@ -1,5 +1,5 @@
 from django.db import models
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.conf import settings
 from django.db.models import Sum
 from decimal import Decimal
@@ -74,6 +74,15 @@ class Quote(models.Model):
     # Link to the Client and POC models
     client = models.ForeignKey('client.Company', on_delete=models.SET_NULL, related_name='quotes', null=True)
     poc = models.ForeignKey('client.POC', on_delete=models.SET_NULL, related_name='quotes', null=True)
+
+    # Optional link to an existing Project this quote was added to
+    # (e.g. a follow-up/phase-2 quote raised against an already-created project).
+    # Distinct from Project.created_from_quotation, which tracks the single
+    # quote a project was originally created from (and whose related_name
+    # 'project' is already used elsewhere as the reverse accessor).
+    linked_project = models.ForeignKey(
+        'Project.Project', on_delete=models.SET_NULL, related_name='linked_quotes', null=True, blank=True
+    )
     
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='authored_quotes', null=True)
@@ -109,7 +118,7 @@ class Quote(models.Model):
 
     def __str__(self):
         return f"Quote {self.quote_no} - {self.quote_name}"
-    
+
     def calculate_totals(self):
 
         self.sub_total = (
@@ -124,6 +133,43 @@ class Quote(models.Model):
         invoiced = self.invoiced_sum or Decimal("0.00")
 
         self.to_be_invoiced_sum = self.total_amount - Decimal(invoiced)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self._sync_linked_project_budget()
+
+    def _sync_linked_project_budget(self):
+        """
+        Keep the project's budget (hours/amount totals) up to date with this
+        quote — whether it's the quote a project was originally created from,
+        or a follow-up/phase quote added later via the project's Finances tab.
+        Only projects using quoted amounts (not manual budgets) are affected.
+        """
+        project = self.linked_project
+        if project is None:
+            try:
+                project = self.project  # reverse of Project.created_from_quotation
+            except ObjectDoesNotExist:
+                project = None
+
+        if not project:
+            return
+
+        try:
+            budget = project.budget
+        except ObjectDoesNotExist:
+            return
+
+        if not budget.use_quoted_amounts:
+            return
+
+        try:
+            budget.apply_quoted_amounts()
+        except ValidationError:
+            return
+
+        budget.save(update_fields=['total_hours', 'total_budget', 'bills_and_expenses', 'currency'])
+
 class QuoteItem(models.Model):
     """
     This new model stores each individual line item for a quote.

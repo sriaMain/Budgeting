@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, User } from 'lucide-react';
+import { X } from 'lucide-react';
 import { InputField } from './InputField';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
@@ -41,13 +41,41 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     // Form state
     // Do NOT auto-fill project name from quoteName by default
     const [projectName, setProjectName] = useState('');
-    const [membersOnly, setMembersOnly] = useState(false);
     const [client, setClient] = useState(clientName);
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
     const [dueDate, setDueDate] = useState('');
     const [totalHours, setTotalHours] = useState('');
     const [totalBudget, setTotalBudget] = useState('');
     const [billsExpenses, setBillsExpenses] = useState('0');
+    const [priceList, setPriceList] = useState('INR');
+    const [isLoadingQuoteBudget, setIsLoadingQuoteBudget] = useState(false);
+
+    // Fetch quote details so budget fields can be pre-filled with quoted values
+    const fetchQuoteBudgetData = async (id: number | string) => {
+        setIsLoadingQuoteBudget(true);
+        try {
+            const response = await axiosInstance.get(`/quotes/${id}/`);
+            const quote = response.data;
+
+            // Sum hours across quote line items (question-wise hours)
+            const hoursFromItems = Array.isArray(quote.items)
+                ? quote.items
+                    .filter((item: any) => item.unit === 'hours')
+                    .reduce((sum: number, item: any) => sum + (parseFloat(item.quantity) || 0), 0)
+                : 0;
+
+            setTotalHours(hoursFromItems ? String(hoursFromItems) : '');
+            setTotalBudget(quote.total_amount != null ? String(quote.total_amount) : '');
+            setBillsExpenses(quote.outsourced_cost != null ? String(quote.outsourced_cost) : '0');
+            if (quote.currency) {
+                setPriceList(quote.currency);
+            }
+        } catch (error) {
+            console.error('Failed to fetch quote budget data:', error);
+        } finally {
+            setIsLoadingQuoteBudget(false);
+        }
+    };
 
     // Update state when props change (e.g. when modal opens with new quote data)
     React.useEffect(() => {
@@ -57,6 +85,13 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             // Default to external if coming from a quote
             if (quoteId) {
                 setProjectType('external');
+                fetchQuoteBudgetData(quoteId);
+            } else {
+                // No quote to source budget data from; keep fields blank/default
+                setTotalHours('');
+                setTotalBudget('');
+                setBillsExpenses('0');
+                setPriceList('INR');
             }
         }
     }, [isOpen, clientName, quoteId]);
@@ -124,6 +159,8 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                     }
                 }
             }
+
+            payload.budget.currency = priceList;
 
             console.log('Creating project with payload:', payload);
             const response = await axiosInstance.post('/projects/', payload);
@@ -256,49 +293,6 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                     />
                                 </div>
 
-                                {/* Project Manager */}
-                                <div>
-                                    <label className="block text-base font-medium text-gray-900 mb-2">
-                                        Project Manager
-                                    </label>
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
-                                                <User size={16} className="text-gray-600" />
-                                            </div>
-                                            <span className="text-gray-900 font-medium">{authorName || 'SRIDEVI GEDALA'}</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={membersOnly}
-                                                    onChange={(e) => setMembersOnly(e.target.checked)}
-                                                    className="sr-only peer"
-                                                />
-                                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                            </label>
-                                            <span className="text-sm text-gray-700">Members only</span>
-                                            <button className="p-1 hover:bg-gray-100 rounded" title="Info">
-                                                <svg
-                                                    className="w-4 h-4 text-gray-400"
-                                                    fill="currentColor"
-                                                    viewBox="0 0 20 20"
-                                                >
-                                                    <path
-                                                        fillRule="evenodd"
-                                                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                                                        clipRule="evenodd"
-                                                    />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <p className="text-sm text-gray-500 mt-2">
-                                        You can add members to the project later from the project view
-                                    </p>
-                                </div>
-
                                 {/* Project Type */}
                                 <div>
                                     <label className="block text-base font-medium text-gray-900 mb-3">
@@ -413,6 +407,14 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                     You can add members to the project later from the project view
                                 </p>
 
+                                {quoteId && (
+                                    <p className="text-sm text-blue-600">
+                                        {isLoadingQuoteBudget
+                                            ? 'Fetching hours, budget, bills & expenses and price list from the quote...'
+                                            : 'Values below were fetched from the quote. You can edit them if needed.'}
+                                    </p>
+                                )}
+
                                 {/* Budget Fields - Show different fields based on budget method */}
                                 {/* Budget Fields */}
                                 <div className={`grid gap-4 ${budgetMethod === "manual" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 md:grid-cols-3"}`}>
@@ -422,13 +424,15 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                         value={totalHours}
                                         onChange={(e) => setTotalHours(e.target.value)}
                                         placeholder="0"
+                                        disabled={isLoadingQuoteBudget}
                                     />
 
                                     <InputField
-                                        label="Total budget INR"
+                                        label={`Total budget ${priceList}`}
                                         value={totalBudget}
                                         onChange={(e) => setTotalBudget(e.target.value)}
                                         placeholder="0"
+                                        disabled={isLoadingQuoteBudget}
                                     />
 
                                     {/* Hide Bills & Expenses only in manual mode */}
@@ -438,6 +442,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                             value={billsExpenses}
                                             onChange={(e) => setBillsExpenses(e.target.value)}
                                             placeholder="0"
+                                            disabled={isLoadingQuoteBudget}
                                         />
                                     )}
                                 </div>
@@ -449,11 +454,19 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                     <label className="block text-sm text-gray-600 mb-1">Price list</label>
                                     <div className="relative">
                                         <select
-                                            className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 appearance-none"
+                                            value={priceList}
+                                            onChange={(e) => setPriceList(e.target.value)}
+                                            disabled={isLoadingQuoteBudget}
+                                            className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 appearance-none disabled:opacity-50"
                                         >
-                                            <option value="INR">INR</option>
-                                            <option value="USD">USD</option>
-                                            <option value="EUR">EUR</option>
+                                            <option value="INR">INR - Indian Rupee (₹)</option>
+                                            <option value="USD">USD - US Dollar ($)</option>
+                                            <option value="EUR">EUR - Euro (€)</option>
+                                            <option value="GBP">GBP - British Pound (£)</option>
+                                            <option value="AUD">AUD - Australian Dollar (A$)</option>
+                                            <option value="CAD">CAD - Canadian Dollar (C$)</option>
+                                            <option value="SGD">SGD - Singapore Dollar (S$)</option>
+                                            <option value="JPY">JPY - Japanese Yen (¥)</option>
                                         </select>
                                         <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                                             <svg

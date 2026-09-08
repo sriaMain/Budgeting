@@ -81,7 +81,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const [firstQuoteId, setFirstQuoteId] = useState<number | null>(null);
     const [invoices, setInvoices] = useState<any[]>([]);
     const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
-    const [projectQuotation, setProjectQuotation] = useState<any>(null);
+    const [projectQuotes, setProjectQuotes] = useState<any[]>([]);
     const [isLoadingQuotation, setIsLoadingQuotation] = useState(false);
     const [payments, setPayments] = useState<any[]>([]);
     const [isLoadingPayments, setIsLoadingPayments] = useState(false);
@@ -274,16 +274,32 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         }
     };
 
-    // Fetch quotation for this project
-    const fetchProjectQuotation = async (quotationId: number) => {
+    // Fetch every quote linked to this project (the original quote it was
+    // created from, plus any follow-up/phase quotes added afterwards)
+    const fetchProjectQuotes = async () => {
+        if (!projectId) return;
         try {
             setIsLoadingQuotation(true);
-            const response = await axiosInstance.get(`/quotes/${quotationId}/`);
-            console.log('Project quotation:', response.data);
-            setProjectQuotation(response.data);
+            const response = await axiosInstance.get(`/quotes/?project=${projectId}`);
+            const quotesForProject: any[] = response.data || [];
+
+            // The quote a project was originally created from is linked via
+            // Project.created_from_quotation, not Quote.project, so fetch it
+            // separately and merge it in if it isn't already in the list.
+            if (project?.created_from_quotation &&
+                !quotesForProject.some((q) => q.quote_no === project.created_from_quotation)) {
+                try {
+                    const originalQuote = await axiosInstance.get(`/quotes/${project.created_from_quotation}/`);
+                    quotesForProject.push(originalQuote.data);
+                } catch (err) {
+                    console.error('Error fetching originating quote:', err);
+                }
+            }
+
+            setProjectQuotes(quotesForProject);
         } catch (error) {
-            console.error('Error fetching project quotation:', error);
-            setProjectQuotation(null);
+            console.error('Error fetching project quotes:', error);
+            setProjectQuotes([]);
         } finally {
             setIsLoadingQuotation(false);
         }
@@ -442,13 +458,11 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
 
 
-    // Fetch quotation when Finances tab is active
+    // Fetch quotes when Finances tab is active
     useEffect(() => {
         if (activeTab === 'Finances') {
-            // Fetch quotation if project was created from one
-            if (project?.created_from_quotation) {
-                fetchProjectQuotation(project.created_from_quotation);
-            }
+            // Fetch every quote linked to this project (original + phase quotes)
+            fetchProjectQuotes();
             // Fetch purchase orders
             fetchPurchaseOrders();
             // Fetch bills (outgoing payments)
@@ -1150,7 +1164,10 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                     <div className="px-6 py-4 bg-gray-50 hover:bg-gray-100 flex items-center justify-between transition-colors">
                                         <h3 className="font-semibold text-blue-600 text-sm">Quotes</h3>
                                         <button
-                                            onClick={() => navigate('/pipeline/add-quote')}
+                                            onClick={() => navigate(
+                                                `/pipeline/add-quote?forProject=${projectId}`,
+                                                { state: { clientName: project?.company_name } }
+                                            )}
                                             className="text-black-800 text-sm font-medium hover:text-blue-600"
                                         >
                                             New Quote
@@ -1158,37 +1175,42 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                     </div>
                                     <div className="px-6 py-4 bg-white">
                                         {isLoadingQuotation ? (
-                                            <p className="text-gray-500 text-sm">Loading quotation...</p>
-                                        ) : projectQuotation ? (
-                                            <div
-                                                onClick={() => navigate(`/pipeline/quote/${projectQuotation.quote_no}`)}
-                                                className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors border border-gray-100"
-                                            >
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="font-medium text-gray-900">
-                                                            Quote #{projectQuotation.quote_no}
-                                                        </span>
-                                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${projectQuotation.status === 'Confirmed'
-                                                            ? 'bg-green-50 text-green-700'
-                                                            : projectQuotation.status === 'Sent'
-                                                                ? 'bg-blue-50 text-blue-700'
-                                                                : 'bg-gray-50 text-gray-700'
-                                                            }`}>
-                                                            {projectQuotation.status || 'Draft'}
-                                                        </span>
+                                            <p className="text-gray-500 text-sm">Loading quotes...</p>
+                                        ) : projectQuotes.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {projectQuotes.map((quote) => (
+                                                    <div
+                                                        key={quote.quote_no}
+                                                        onClick={() => navigate(`/pipeline/quote/${quote.quote_no}`)}
+                                                        className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors border border-gray-100"
+                                                    >
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="font-medium text-gray-900">
+                                                                    Quote #{quote.quote_no}
+                                                                </span>
+                                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${quote.status === 'Confirmed'
+                                                                    ? 'bg-green-50 text-green-700'
+                                                                    : quote.status === 'Sent'
+                                                                        ? 'bg-blue-50 text-blue-700'
+                                                                        : 'bg-gray-50 text-gray-700'
+                                                                    }`}>
+                                                                    {quote.status || 'Draft'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                                                                <span>{quote.quote_name || 'Untitled Quote'}</span>
+                                                                <span>Amount: ₹{quote.total_amount || '0'}</span>
+                                                                {quote.date_of_issue && (
+                                                                    <span>Date: {new Date(quote.date_of_issue).toLocaleDateString()}</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                        </svg>
                                                     </div>
-                                                    <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
-                                                        <span>{projectQuotation.quote_name || 'Untitled Quote'}</span>
-                                                        <span>Amount: ₹{projectQuotation.total_amount || '0'}</span>
-                                                        {projectQuotation.date_of_issue && (
-                                                            <span>Date: {new Date(projectQuotation.date_of_issue).toLocaleDateString()}</span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                                </svg>
+                                                ))}
                                             </div>
                                         ) : (
                                             <p className="text-gray-500 text-sm">No quotes to display</p>

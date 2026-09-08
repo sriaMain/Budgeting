@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Trash2, GripVertical, ChevronDown } from 'lucide-react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Layout } from '../components/Layout';
 import { AddClientModal } from '../components/AddClientModal';
@@ -91,6 +91,11 @@ export default function AddQuotePage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { quoteId, projectId } = useParams<{ quoteId?: string; projectId?: string }>();
+  const [searchParams] = useSearchParams();
+  // Present when creating a follow-up/phase quote for an existing project
+  // from that project's Finances tab (distinct from the `projectId` route
+  // param above, which puts this page into "edit project" mode).
+  const forProjectId = searchParams.get('forProject');
   const username = useSelector((state: any) => state.auth.username);
   const isEditMode = !!quoteId || !!projectId;
 
@@ -113,6 +118,9 @@ export default function AddQuotePage() {
   const [isAddServiceModalOpen, setIsAddServiceModalOpen] = useState(false);
   const [originalStatus, setOriginalStatus] = useState<string>(''); // Track original status for edit mode
   const [isConfirmedQuote, setIsConfirmedQuote] = useState(false); // Track if editing a confirmed quote
+  // Existing budget/hours summary of the project this phase quote is being added to
+  const [projectSummary, setProjectSummary] = useState<any>(null);
+  const [isLoadingProjectSummary, setIsLoadingProjectSummary] = useState(false);
 
   const [quoteDetails, setQuoteDetails] = useState({
     author: username || '',
@@ -150,6 +158,28 @@ export default function AddQuotePage() {
       fetchExistingData();
     }
   }, [isEditMode, quoteId, projectId]);
+
+  // When adding a phase/follow-up quote to an existing project, fetch that
+  // project's current budget so the user can see amounts already used/remaining
+  useEffect(() => {
+    if (!forProjectId) {
+      setProjectSummary(null);
+      return;
+    }
+    const fetchProjectSummary = async () => {
+      setIsLoadingProjectSummary(true);
+      try {
+        const response = await axiosInstance.get(`/projects/${forProjectId}/`);
+        setProjectSummary(response.data);
+      } catch (error) {
+        console.error('Failed to fetch project summary:', error);
+        setProjectSummary(null);
+      } finally {
+        setIsLoadingProjectSummary(false);
+      }
+    };
+    fetchProjectSummary();
+  }, [forProjectId]);
 
   // Handle pre-filled client from navigation state
   useEffect(() => {
@@ -460,7 +490,10 @@ export default function AddQuotePage() {
         client: selectedClient?.id || null,
         ...(pocId && { poc: pocId }),
         tax_percentage: taxPercentage,
-        items: quoteItems
+        items: quoteItems,
+        // Link this quote back to the project it's being raised for
+        // (e.g. a Phase 2 quote), if created from that project's page
+        ...(forProjectId && { project: parseInt(forProjectId, 10) })
       };
 
       // Only add status if it's a new quote OR if status has changed in edit mode
@@ -479,7 +512,13 @@ export default function AddQuotePage() {
 
       if (response.status >= 200 && response.status < 300) {
         toast.success(`${projectId ? 'Project' : 'Quote'} ${isEditMode ? 'updated' : 'created'} successfully`);
-        navigate(projectId ? `/projects/${projectId}` : '/pipeline');
+        if (projectId) {
+          navigate(`/projects/${projectId}`);
+        } else if (forProjectId) {
+          navigate(`/projects/${forProjectId}?tab=Finances`);
+        } else {
+          navigate('/pipeline');
+        }
       }
     } catch (error: any) {
       console.error('Failed to save:', error);
@@ -519,6 +558,25 @@ export default function AddQuotePage() {
     fetchProductGroupsWithModules();
   };
 
+  // Duration strings from the budget API look like "HH:MM:SS"
+  const parseHmsToHours = (hms?: string | null): number => {
+    if (!hms) return 0;
+    const parts = hms.split(':').map(Number);
+    if (parts.length !== 3 || parts.some(Number.isNaN)) return 0;
+    const [h, m, s] = parts;
+    return h + m / 60 + s / 3600;
+  };
+
+  const projectBudget = projectSummary?.budget;
+  const projectCurrency = projectBudget?.currency || 'INR';
+  const projectTotalBudget = Number(projectBudget?.total_budget) || 0;
+  const projectUsedBudget = Number(projectBudget?.used_budget) || 0;
+  const projectRemainingBudget = projectBudget?.remaining_budget != null
+    ? Number(projectBudget.remaining_budget)
+    : Math.max(0, projectTotalBudget - projectUsedBudget);
+  const projectTotalHours = Number(projectBudget?.billable_hours) || 0;
+  const projectRemainingHours = parseHmsToHours(projectBudget?.remaining_billable_hours);
+
   const handlePOCAdded = (newPOC: POC) => {
     // Refresh clients to get the new POC in the list
     fetchClients().then(() => {
@@ -533,12 +591,16 @@ export default function AddQuotePage() {
         <div className="max-w-[1600px] mx-auto py-4 sm:py-6 md:py-8">
           <div className="flex items-center gap-2 text-xs sm:text-sm mb-4 sm:mb-6">
             <button
-              onClick={() => navigate('/pipeline')}
+              onClick={() => navigate(
+                projectId ? `/projects/${projectId}` :
+                  forProjectId ? `/projects/${forProjectId}?tab=Finances` :
+                    '/pipeline'
+              )}
               className="text-blue-600 hover:text-blue-800 font-semibold transition-colors flex items-center gap-1"
             >
               <ArrowLeft size={16} className="hidden sm:block" />
               <ArrowLeft size={14} className="sm:hidden" />
-              {projectId ? 'Project Details' : 'Pipeline'}
+              {projectId || forProjectId ? 'Project Details' : 'Pipeline'}
             </button>
             <span className="text-gray-400">/</span>
             <span className="text-gray-700 font-medium">{isEditMode ? 'Edit' : 'Add'} {projectId ? 'Project' : 'Quote'} Details</span>
@@ -556,6 +618,48 @@ export default function AddQuotePage() {
 
             <div className="p-4 sm:p-6 md:p-8 border-b border-gray-100">
               <h1 className="text-lg sm:text-xl font-bold text-gray-800 mb-6 sm:mb-8">{isEditMode ? 'Edit' : 'Add'} {projectId ? 'Project' : 'Quote'} Details</h1>
+
+              {forProjectId && (
+                <div className="mb-6 sm:mb-8 border border-gray-200 rounded-lg bg-gray-50 p-4 sm:p-5">
+                  <p className="text-sm font-semibold text-gray-700 mb-3">
+                    Current budget for {projectSummary?.project_name || 'this project'}
+                  </p>
+                  {isLoadingProjectSummary ? (
+                    <p className="text-sm text-gray-500">Loading project budget...</p>
+                  ) : projectSummary ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                      <div>
+                        <p className="text-xs text-gray-500">Total budget</p>
+                        <p className="text-sm sm:text-base font-semibold text-gray-900">
+                          {projectTotalBudget.toLocaleString()} {projectCurrency}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Used budget</p>
+                        <p className="text-sm sm:text-base font-semibold text-gray-900">
+                          {projectUsedBudget.toLocaleString()} {projectCurrency}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Remaining budget</p>
+                        <p className="text-sm sm:text-base font-semibold text-gray-900">
+                          {projectRemainingBudget.toLocaleString()} {projectCurrency}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Total hours</p>
+                        <p className="text-sm sm:text-base font-semibold text-gray-900">{projectTotalHours}h</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Remaining hours</p>
+                        <p className="text-sm sm:text-base font-semibold text-gray-900">{projectRemainingHours.toFixed(2)}h</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No budget set for this project yet.</p>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 lg:gap-x-24 gap-y-4 sm:gap-y-6">
                 <div className="space-y-4 sm:space-y-5">

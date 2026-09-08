@@ -62,13 +62,9 @@ def get_all_tab_data(filters):
                 "invoices": []
             }
         grouped[key]["invoices"].append(invoice)
-    
+
     all_rows = []
-    total_revenue = Decimal("0.00")
-    total_expenses = Decimal("0.00")
-    total_profit = Decimal("0.00")
-    total_outstanding = Decimal("0.00")
-    
+
     for (client_id, project_id), group_data in grouped.items():
         invoices = group_data["invoices"]
         client = group_data["client"]
@@ -102,13 +98,7 @@ def get_all_tab_data(filters):
         outstanding = total_invoiced - (received or Decimal("0.00"))
         profit = (received or Decimal("0.00")) - (expenses or Decimal("0.00"))
         profit_margin = (profit / total_invoiced * 100) if total_invoiced > 0 else Decimal("0.00")
-        
-        # Aggregate for summary cards
-        total_revenue += total_invoiced
-        total_expenses += (expenses or Decimal("0.00"))
-        total_profit += profit
-        total_outstanding += outstanding
-        
+
         last_payment_date = InvoicePayment.objects.filter(
             invoice__client=client,
             invoice__project=project
@@ -140,13 +130,48 @@ def get_all_tab_data(filters):
         reverse=True
     )[:5]
 
-    # Summary cards
+    # Summary cards — organization-wide totals, computed independently of the
+    # per-invoice grouping above. Expenses/outgoing payments are counted even
+    # for projects that have no invoices yet, so a project with only logged
+    # expenses (no invoicing) still shows up in "Total Expenses"/"Total Profit"
+    # instead of being silently dropped.
+    total_revenue = qs.aggregate(
+        total=Coalesce(Sum("total_amount"), Decimal("0.00"))
+    )["total"]
+
+    total_received = InvoicePayment.objects.filter(invoice__in=qs).aggregate(
+        total=Coalesce(Sum("amount"), Decimal("0.00"))
+    )["total"]
+
+    outgoing_qs = OutgoingPayment.objects.all()
+    expense_qs = Expense.objects.all()
+    if filters.get("project"):
+        outgoing_qs = outgoing_qs.filter(vendor_bill__purchase_order__project_id=filters["project"])
+        expense_qs = expense_qs.filter(project_id=filters["project"])
+    if filters.get("client"):
+        outgoing_qs = outgoing_qs.filter(vendor_bill__purchase_order__project__client_id=filters["client"])
+        expense_qs = expense_qs.filter(project__client_id=filters["client"])
+    if filters.get("from_date"):
+        outgoing_qs = outgoing_qs.filter(payment_date__gte=filters["from_date"])
+        expense_qs = expense_qs.filter(expense_date__gte=filters["from_date"])
+    if filters.get("to_date"):
+        outgoing_qs = outgoing_qs.filter(payment_date__lte=filters["to_date"])
+        expense_qs = expense_qs.filter(expense_date__lte=filters["to_date"])
+
+    total_expenses = (
+        outgoing_qs.aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
+        + expense_qs.aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
+    )
+
+    total_outstanding = total_revenue - total_received
+    total_profit = total_received - total_expenses
+
     summary_cards = {
         "total_revenue": float(total_revenue),
         "total_expenses": float(total_expenses),
         "total_profit": float(total_profit),
         "total_outstanding": float(total_outstanding),
-        "overall_collection_rate": float((total_revenue - total_outstanding) / total_revenue * 100) if total_revenue > 0 else 0,
+        "overall_collection_rate": float(total_received / total_revenue * 100) if total_revenue > 0 else 0,
     }
 
     return {

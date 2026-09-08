@@ -292,21 +292,33 @@ export default function QuoteDetailsPage({
 
                         if (!shouldShow) return null;
 
+                        if (quoteData.has_project) {
+                            return (
+                                <div className="mt-4">
+                                    <button
+                                        onClick={() => {
+                                            if (quoteData.project?.project_id) {
+                                                navigate(`/projects/${quoteData.project.project_id}?tab=Finances`);
+                                            }
+                                        }}
+                                        disabled={!quoteData.project?.project_id}
+                                        className="px-4 py-2 font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-gray-100"
+                                    >
+                                        {quoteData.project?.project_name
+                                            ? `View Project: ${quoteData.project.project_name}`
+                                            : 'Project Already Created'}
+                                    </button>
+                                </div>
+                            );
+                        }
+
                         return (
                             <div className="mt-4">
                                 <button
-                                    onClick={() => {
-                                        if (!quoteData.has_project) {
-                                            setIsCreateProjectModalOpen(true);
-                                        }
-                                    }}
-                                    disabled={quoteData.has_project}
-                                    className={`px-4 py-2 font-medium rounded-lg transition-colors duration-200 ${quoteData.has_project
-                                        ? 'bg-gray-300 text-gray-600 cursor-not-allowed opacity-60'
-                                        : 'bg-purple-200 text-black hover:bg-purple-300'
-                                        }`}
+                                    onClick={() => setIsCreateProjectModalOpen(true)}
+                                    className="px-4 py-2 font-medium rounded-lg bg-purple-200 text-black hover:bg-purple-300 transition-colors duration-200"
                                 >
-                                    {quoteData.has_project ? 'Project Already Created' : 'Create Project'}
+                                    Create Project
                                 </button>
                             </div>
                         );

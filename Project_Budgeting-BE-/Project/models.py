@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from django.utils import timezone
+from decimal import Decimal
 
 
 class Project(models.Model):
@@ -77,18 +78,46 @@ class ProjectBudget(models.Model):
     currency = models.CharField(max_length=10, default='INR')
 
     def apply_quoted_amounts(self):
-        quote = self.project.created_from_quotation
-        if not quote:
-            raise ValidationError("Quotation is required")
-
-        self.total_hours = sum(
-            item.quantity for item in quote.items.all()
-            if item.unit == 'hours'
+        """
+        Sums quoted hours/amounts across every quote that counts toward this
+        project's budget: the quote the project was created from (if any and
+        Confirmed), plus any follow-up/phase quotes added later via the
+        Finances tab (product_group.Quote.linked_project) that are Confirmed.
+        Draft/unconfirmed quotes are excluded so the budget only reflects
+        committed amounts.
+        """
+        original_quote = self.project.created_from_quotation
+        confirmed_quotes = list(
+            self.project.linked_quotes.filter(status='Confirmed')
         )
-        self.total_budget = quote.total_amount
-        self.bills_and_expenses = quote.in_house_cost + quote.outsourced_cost
-        self.currency = getattr(quote, 'currency', None) or self.project.currency
-        # self.currency = getattr(quote, 'currency', None) or self.project.currency
+        if original_quote and original_quote.status == 'Confirmed':
+            confirmed_quotes.append(original_quote)
+
+        if not confirmed_quotes:
+            if not original_quote:
+                raise ValidationError("Quotation is required")
+            # Original quote exists but isn't Confirmed yet (e.g. applied
+            # before confirmation) — fall back to it alone, as before.
+            confirmed_quotes = [original_quote]
+
+        total_hours = 0
+        total_budget = Decimal("0.00")
+        bills_and_expenses = Decimal("0.00")
+        currency = None
+
+        for quote in confirmed_quotes:
+            total_hours += sum(
+                item.quantity for item in quote.items.all()
+                if item.unit == 'hours'
+            )
+            total_budget += quote.total_amount or Decimal("0.00")
+            bills_and_expenses += (quote.in_house_cost or Decimal("0.00")) + (quote.outsourced_cost or Decimal("0.00"))
+            currency = getattr(quote, 'currency', None) or currency
+
+        self.total_hours = total_hours
+        self.total_budget = total_budget
+        self.bills_and_expenses = bills_and_expenses
+        self.currency = currency or self.project.currency
 
     @property
     def actual_expenses(self):

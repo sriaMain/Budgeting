@@ -401,6 +401,29 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
 
     const tabs: TabType[] = ['All', 'Financial Reports', 'Project Reports', 'Payment Reports', 'PO & Invoice Reports'];
 
+    // Real row count for the currently active tab (mirrors the filtering renderTable() applies),
+    // used to drive the results footer instead of a hardcoded placeholder count.
+    const getRowCount = (): number => {
+        switch (activeTab) {
+            case 'Financial Reports':
+                return filterByStatus(financialReports?.rows || [], 'status').length;
+            case 'Project Reports':
+                return filterByStatus(projectReports?.rows || [], 'project_status').length;
+            case 'Payment Reports':
+                return filterByStatus(paymentReports?.rows || [], 'invoice__status').length;
+            case 'PO & Invoice Reports':
+                return poInvoiceReports?.rows?.length || 0;
+            case 'All':
+            default:
+                return (
+                    (financialReports?.rows?.length || 0) +
+                    (projectReports?.rows?.length || 0) +
+                    (paymentReports?.rows?.length || 0) +
+                    (poInvoiceReports?.rows?.length || 0)
+                );
+        }
+    };
+
     const renderTable = () => {
         switch (activeTab) {
             case 'Financial Reports':
@@ -467,6 +490,15 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                 let data = financialReports?.rows || [];
                                 data = filterByStatus(data, 'status');
                                 data = sortColumn ? sortData(data, sortColumn) : data;
+                                if (data.length === 0) {
+                                    return (
+                                        <tr>
+                                            <td colSpan={8} className="px-6 py-10 text-center text-sm text-gray-500">
+                                                No financial records found for the selected filters.
+                                            </td>
+                                        </tr>
+                                    );
+                                }
                                 return data.map((row, idx) => (
                                     <tr key={idx} className="hover:bg-gray-50 transition-colors group">
                                         <td className="px-6 py-4 text-sm text-gray-700 font-medium">{row.invoice_no}</td>
@@ -581,6 +613,15 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                 let data = projectReports?.rows || [];
                                 data = filterByStatus(data, 'project_status');
                                 data = sortColumn ? sortData(data, sortColumn) : data;
+                                if (data.length === 0) {
+                                    return (
+                                        <tr>
+                                            <td colSpan={7} className="px-6 py-10 text-center text-sm text-gray-500">
+                                                No project records found for the selected filters.
+                                            </td>
+                                        </tr>
+                                    );
+                                }
                                 return data.map((row) => (
                                     <tr key={row.project_no} className="hover:bg-gray-50 transition-colors">
                                         <td className="px-6 py-4 text-sm text-gray-700 font-medium">#{row.project_no}</td>
@@ -671,6 +712,15 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                 let data = paymentReports?.rows || [];
                                 data = filterByStatus(data, 'invoice__status');
                                 data = sortColumn ? sortData(data, sortColumn) : data;
+                                if (data.length === 0) {
+                                    return (
+                                        <tr>
+                                            <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
+                                                No payment records found for the selected filters.
+                                            </td>
+                                        </tr>
+                                    );
+                                }
                                 return data.map((row, idx) => (
                                     <tr key={idx} className="hover:bg-gray-50 transition-colors">
                                         <td className="px-6 py-4 text-sm text-gray-700">{new Date(row.payment_date).toLocaleDateString()}</td>
@@ -714,6 +764,13 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
+                            {!poInvoiceReports?.rows?.length && (
+                                <tr>
+                                    <td colSpan={5} className="px-6 py-10 text-center text-sm text-gray-500">
+                                        No PO/invoice records found for the selected filters.
+                                    </td>
+                                </tr>
+                            )}
                             {poInvoiceReports?.rows?.map((row, idx) => (
                                 <tr key={idx} className="hover:bg-gray-50 transition-colors">
                                     <td className="px-6 py-4 text-sm text-gray-700 font-medium">{row.po_no}</td>
@@ -771,6 +828,13 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
+                            {allReports.length === 0 && (
+                                <tr>
+                                    <td colSpan={4} className="px-6 py-10 text-center text-sm text-gray-500">
+                                        No records found for the selected filters.
+                                    </td>
+                                </tr>
+                            )}
                             {allReports.map((row, idx) => (
                                 <tr key={idx} className="hover:bg-gray-50 transition-colors">
                                     <td className="px-6 py-4 text-sm">
@@ -942,14 +1006,21 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                             {renderTable()}
                         </div>
 
-                        {/* Table Footer / Pagination Placeholder */}
+                        {/* Table Footer */}
                         <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
                             <p className="text-sm text-gray-500">
-                                Showing <span className="font-medium text-gray-900">1</span> to <span className="font-medium text-gray-900">10</span> of <span className="font-medium text-gray-900">45</span> results
+                                {(() => {
+                                    const rowCount = getRowCount();
+                                    return rowCount > 0 ? (
+                                        <>Showing <span className="font-medium text-gray-900">1</span> to <span className="font-medium text-gray-900">{rowCount}</span> of <span className="font-medium text-gray-900">{rowCount}</span> results</>
+                                    ) : (
+                                        <>No results found</>
+                                    );
+                                })()}
                             </p>
                             <div className="flex gap-2">
                                 <button className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50" disabled>Previous</button>
-                                <button className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white">Next</button>
+                                <button className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50" disabled>Next</button>
                             </div>
                         </div>
                     </div>

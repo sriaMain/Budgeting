@@ -117,6 +117,13 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
     def get_billable_hours(self, obj):
         project = obj.project
 
+        # obj.total_hours is kept in sync (see Quote.save()/apply_quoted_amounts)
+        # with every Confirmed quote linked to this project — the quote it was
+        # created from AND any follow-up/phase quotes added later — so it's
+        # the authoritative figure whenever it's set.
+        if obj.total_hours:
+            return obj.total_hours
+
         if obj.use_quoted_amounts and project.created_from_quotation:
             quoted_hours = sum(
                 item.quantity
@@ -126,10 +133,7 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
             if quoted_hours:
                 return quoted_hours
 
-        if obj.total_hours:
-            return obj.total_hours
-
-        # Neither the quote nor the manual budget has hours set — fall back
+        # Neither the quote(s) nor the manual budget has hours set — fall back
         # to the sum of each task's own allocated hours so this figure isn't
         # falsely zero when the project's tasks clearly have hours allocated.
         if project:
@@ -409,6 +413,7 @@ class ProjectListSerializer(serializers.ModelSerializer):
             'end_date',
             'budget',
             'invoices',
+            'client',
             'company_name',
             'contacts',
             'created_from_quotation',
