@@ -20,7 +20,9 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(
       <div className="w-full mb-5">
         {label && (
           <label htmlFor={selectId} className="block text-base font-medium text-gray-900 mb-2">
-            {label}
+            {label.endsWith('*') ? (
+              <>{label.slice(0, -1).trimEnd()} <span className="text-red-500">*</span></>
+            ) : label}
           </label>
         )}
         <select

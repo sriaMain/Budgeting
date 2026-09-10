@@ -1,6 +1,7 @@
 import publicAxiosInstance from "../utils/publicAxiosInstance";
 import type {
   Freelancer, FreelancerDocument, FreelancerPublicChoices, FreelancerManualPayload,
+  FreelancerBankDetail, FreelancerBankDetailPayload,
 } from "../types/freelancerOnboarding.types";
 
 const BASE = "/freelancer-onboarding/public";
@@ -44,5 +45,15 @@ export const downloadDocumentByToken = async (token: string, docId: number): Pro
 
 export const submitByToken = async (token: string): Promise<Freelancer> => {
   const res = await publicAxiosInstance.post(`${BASE}/${token}/submit/`);
+  return res.data;
+};
+
+export const getBankDetailByToken = async (token: string): Promise<FreelancerBankDetail | null> => {
+  const res = await publicAxiosInstance.get(`${BASE}/${token}/bank-detail/`);
+  return res.data;
+};
+
+export const updateBankDetailByToken = async (token: string, payload: Partial<FreelancerBankDetailPayload>): Promise<FreelancerBankDetail> => {
+  const res = await publicAxiosInstance.patch(`${BASE}/${token}/bank-detail/`, payload);
   return res.data;
 };

@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
+from rest_framework.exceptions import ValidationError
 
 from .models import Freelancer, FreelancerAccessToken, FreelancerAccessLog
 
@@ -80,3 +81,87 @@ def ensure_onboarding_status(freelancer):
     if freelancer.status == "invited":
         freelancer.status = "onboarding"
         freelancer.save(update_fields=["status"])
+
+
+def check_freelancer_capacity(freelancer, start_date, end_date, allocated_hours, exclude_assignment_id=None):
+    """Non-blocking capacity check (Rules 9/10). An assignment's hours are a
+    total over its whole date range, not a weekly figure, so this normalizes
+    every overlapping assignment (and the candidate one) to an hours/week
+    rate before comparing against Freelancer.hours_per_week - matching the
+    spec's own "capacity = 40/week, allocated = 35, new = 15 -> over by 10"
+    example. Returns a dict describing the result; it never raises, since
+    over-allocation is something to flag to the admin, not block outright."""
+    from .models import FreelancerProjectAssignment
+
+    def weeks_in(start, end):
+        if not start:
+            return 1.0
+        span_end = end or start
+        days = max((span_end - start).days, 0) + 1
+        return max(days / 7, 1.0)
+
+    new_weeks = weeks_in(start_date, end_date)
+    new_hours_per_week = float(allocated_hours) / new_weeks
+
+    qs = FreelancerProjectAssignment.objects.filter(
+        freelancer=freelancer, status__in=["planned", "active"],
+    )
+    if exclude_assignment_id:
+        qs = qs.exclude(pk=exclude_assignment_id)
+
+    existing_hours_per_week = 0.0
+    for assignment in qs:
+        other_end = assignment.end_date or assignment.start_date
+        candidate_end = end_date or other_end
+        overlaps = assignment.start_date <= candidate_end and start_date <= other_end
+        if overlaps:
+            existing_hours_per_week += float(assignment.allocated_hours) / weeks_in(
+                assignment.start_date, assignment.end_date
+            )
+
+    total_hours_per_week = existing_hours_per_week + new_hours_per_week
+    capacity = float(freelancer.hours_per_week) if freelancer.hours_per_week is not None else None
+    is_over_allocated = capacity is not None and total_hours_per_week > capacity
+
+    return {
+        "capacity_hours_per_week": capacity,
+        "existing_allocated_hours_per_week": round(existing_hours_per_week, 2),
+        "requested_hours_per_week": round(new_hours_per_week, 2),
+        "total_allocated_hours_per_week": round(total_hours_per_week, 2),
+        "is_over_allocated": is_over_allocated,
+        "over_allocated_by": round(total_hours_per_week - capacity, 2) if is_over_allocated else 0,
+    }
+
+
+def submit_time_entry(entry):
+    """draft -> submitted (Rule 6/7 context: only the *next* step, approval,
+    actually makes an entry count toward cost - this just moves it into the
+    approver's queue)."""
+    if entry.status != "draft":
+        raise ValidationError("Only draft entries can be submitted.")
+    entry.status = "submitted"
+    entry.submitted_at = timezone.now()
+    entry.save(update_fields=["status", "submitted_at"])
+    return entry
+
+
+def approve_time_entry(entry, reviewer):
+    if entry.status != "submitted":
+        raise ValidationError("Only submitted entries can be approved.")
+    entry.status = "approved"
+    entry.reviewed_by = reviewer
+    entry.reviewed_at = timezone.now()
+    entry.rejection_reason = ""
+    entry.save(update_fields=["status", "reviewed_by", "reviewed_at", "rejection_reason"])
+    return entry
+
+
+def reject_time_entry(entry, reviewer, reason=""):
+    if entry.status != "submitted":
+        raise ValidationError("Only submitted entries can be rejected.")
+    entry.status = "rejected"
+    entry.reviewed_by = reviewer
+    entry.reviewed_at = timezone.now()
+    entry.rejection_reason = reason
+    entry.save(update_fields=["status", "reviewed_by", "reviewed_at", "rejection_reason"])
+    return entry

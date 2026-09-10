@@ -17,6 +17,10 @@ def _base_context(freelancer):
     return {
         "company_name": settings.COMPANY_NAME,
         "company_logo": settings.COMPANY_LOGO_URL,
+        # Blank unless COMPANY_EMAIL is set in .env - the template falls back
+        # to "contact the person or team who invited you" when empty, same
+        # convention as COMPANY_LOGO_URL's text-only fallback.
+        "company_email": settings.COMPANY_EMAIL,
         "freelancer_name": freelancer.full_name,
         "freelancer_email": freelancer.email,
     }
@@ -51,13 +55,18 @@ def _send(template, subject, recipients, context):
 
 @shared_task
 def send_freelancer_invited_notification(freelancer_id, raw_token):
-    from .models import Freelancer
+    from .models import Freelancer, FreelancerAccessToken
     freelancer = Freelancer.objects.filter(pk=freelancer_id).first()
     if not freelancer:
         return
+    # Looked up from the token row itself (not recomputed from the TTL
+    # setting) so the displayed date can never drift from the real
+    # expiry Freelancer.is_valid() actually checks.
+    token_row = FreelancerAccessToken.objects.filter(token=raw_token).first()
     context = {
         **_base_context(freelancer),
         "secure_freelancer_url": build_onboarding_url(raw_token),
+        "token_expires_at": token_row.expires_at if token_row else None,
     }
     _send(
         "freelancer_invited.html",

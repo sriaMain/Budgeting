@@ -26,7 +26,9 @@ export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(
           htmlFor={inputId}
           className="block text-base font-medium text-gray-900 mb-2"
         >
-          {label}
+          {label.endsWith('*') ? (
+            <>{label.slice(0, -1).trimEnd()} <span className="text-red-500">*</span></>
+          ) : label}
         </label>)}
 
         <div className="relative">

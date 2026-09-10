@@ -6,21 +6,36 @@ import { Button } from '../../../components/Button';
 import { InputField } from '../../../components/InputField';
 import { SelectField } from '../../../components/SelectField';
 import { DocumentList } from '../../../components/DocumentList';
+import { SkillsInput } from '../../../components/SkillsInput';
 import { VendorStepper, type StepConfig } from '../../vendor-onboarding/components/VendorStepper';
 import * as api from '../../../services/freelancerOnboardingPublic';
 import { parseApiErrors } from '../../../utils/parseApiErrors';
-import type { Freelancer, FreelancerDocument, FreelancerManualPayload, FreelancerPublicChoices } from '../../../types/freelancerOnboarding.types';
+import type { Freelancer, FreelancerDocument, FreelancerManualPayload, FreelancerPublicChoices, FreelancerBankDetailPayload } from '../../../types/freelancerOnboarding.types';
 
 const STEPS: StepConfig[] = [
     { index: 1, label: 'Basic Details' },
     { index: 2, label: 'Professional Details' },
     { index: 3, label: 'Availability' },
-    { index: 4, label: 'Payment Details' },
+    { index: 4, label: 'Bank & KYC' },
     { index: 5, label: 'Documents' },
 ];
 
+const BANK_PAYMENT_METHODS = [
+    { value: 'bank_transfer', label: 'Bank Transfer' },
+    { value: 'upi', label: 'UPI' },
+    { value: 'paypal', label: 'PayPal' },
+    { value: 'wise', label: 'Wise' },
+    { value: 'other', label: 'Other' },
+];
+
+const EMPTY_BANK_VALUES: FreelancerBankDetailPayload = {
+    payment_method: '', payment_terms: '', tax_number: '',
+    account_holder_name: '', bank_name: '', account_number: '', ifsc_code: '',
+};
+
 const DOCUMENT_SLOTS = [
     { key: 'resume', label: 'Resume', required: false },
+    { key: 'pan', label: 'PAN Card', required: true },
     { key: 'other', label: 'Other Document', required: false },
 ];
 
@@ -30,6 +45,9 @@ function freelancerToValues(f: Freelancer): FreelancerManualPayload {
         professional_title: f.professional_title, skills: f.skills,
         years_of_experience: f.years_of_experience, portfolio_url: f.portfolio_url, linkedin_url: f.linkedin_url,
         availability: f.availability, preferred_start_date: f.preferred_start_date || '',
+        available_until: f.available_until || '',
+        hours_per_day: f.hours_per_day ?? '', hours_per_week: f.hours_per_week ?? '',
+        notice_period_days: f.notice_period_days ?? '', timezone: f.timezone || '',
         payment_method: f.payment_method, currency: f.currency, rate: f.rate ?? '',
     };
 }
@@ -41,6 +59,8 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
     const [freelancer, setFreelancer] = useState<Freelancer | null>(null);
     const [documents, setDocuments] = useState<FreelancerDocument[]>([]);
     const [values, setValues] = useState<FreelancerManualPayload | null>(null);
+    const [bankValues, setBankValues] = useState<FreelancerBankDetailPayload>(EMPTY_BANK_VALUES);
+    const [accountNumberMasked, setAccountNumberMasked] = useState<string | null>(null);
     const [currentStep, setCurrentStep] = useState(1);
     const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
     const [loading, setLoading] = useState(true);
@@ -66,6 +86,21 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
             const step = Math.min(Math.max(freelancerData.last_saved_step || 1, 1), 5);
             setCurrentStep(step);
             setCompletedSteps(new Set(Array.from({ length: step - 1 }, (_, i) => i + 1)));
+
+            try {
+                const bankDetail = await api.getBankDetailByToken(token);
+                if (bankDetail) {
+                    setBankValues({
+                        payment_method: bankDetail.payment_method, payment_terms: bankDetail.payment_terms,
+                        tax_number: bankDetail.tax_number,
+                        account_holder_name: bankDetail.account_holder_name, bank_name: bankDetail.bank_name,
+                        account_number: '', ifsc_code: bankDetail.ifsc_code,
+                    });
+                    setAccountNumberMasked(bankDetail.account_number_masked || null);
+                }
+            } catch {
+                // Bank detail is optional to preload - don't block the rest of the onboarding page.
+            }
         } catch (err) {
             const errors = parseApiErrors(err);
             setLoadError(errors.general || 'Invalid or unavailable freelancer onboarding link.');
@@ -89,6 +124,12 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
         setValues((v) => (v ? { ...v, [field]: e.target.value } : v));
     };
 
+    const setBankField = <K extends keyof FreelancerBankDetailPayload>(field: K) => (
+        e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    ) => {
+        setBankValues((v) => ({ ...v, [field]: e.target.value as never }));
+    };
+
     const persist = async (advanceTo?: number) => {
         if (!token || !values) return false;
         setFieldErrors({});
@@ -102,7 +143,39 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
         }
         setIsSaving(true);
         try {
+            if (currentStep === 4) {
+                const bankErrors: Record<string, string> = {};
+                if (!bankValues.tax_number) bankErrors.tax_number = 'PAN is required';
+                if (!bankValues.account_holder_name) bankErrors.account_holder_name = 'Account holder name is required';
+                if (!bankValues.bank_name) bankErrors.bank_name = 'Bank name is required';
+                if (!bankValues.ifsc_code) bankErrors.ifsc_code = 'IFSC code is required';
+                // Account number is only re-required when there's nothing on
+                // file yet - once saved it's write-only, so it always reloads
+                // blank and a blank resubmission means "keep the existing one".
+                if (!bankValues.account_number && !accountNumberMasked) bankErrors.account_number = 'Account number is required';
+
+                if (Object.keys(bankErrors).length > 0) {
+                    setFieldErrors(bankErrors);
+                    toast.error('Please fill in all mandatory bank/KYC fields');
+                    return false;
+                }
+
+                const bankPayload: FreelancerBankDetailPayload = { ...bankValues };
+                if (!bankPayload.account_number) delete bankPayload.account_number;
+                await api.updateBankDetailByToken(token, bankPayload);
+                if (advanceTo) {
+                    const updated = await api.updateByToken(token, { last_saved_step: advanceTo });
+                    setFreelancer(updated);
+                }
+                return true;
+            }
+            // DRF's IntegerField/DateField (unlike DecimalField/CharField)
+            // reject "" outright instead of treating it as "not provided" -
+            // strip these before sending or clearing them errors out the save.
             const payload: Partial<FreelancerManualPayload> & { last_saved_step?: number } = { ...values };
+            (['years_of_experience', 'notice_period_days', 'preferred_start_date', 'available_until'] as const).forEach((key) => {
+                if (payload[key] === '') delete payload[key];
+            });
             if (advanceTo) payload.last_saved_step = advanceTo;
             const updated = await api.updateByToken(token, payload);
             setFreelancer(updated);
@@ -205,16 +278,11 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
                             <InputField label="Portfolio / Website" value={values.portfolio_url} onChange={set('portfolio_url')} />
                             <InputField label="LinkedIn Profile" value={values.linkedin_url} onChange={set('linkedin_url')} />
                         </div>
-                        <div className="mt-1">
-                            <label className="block text-base font-medium text-gray-900 mb-2">Skills</label>
-                            <textarea
-                                value={values.skills}
-                                onChange={(e) => setValues((v) => (v ? { ...v, skills: e.target.value } : v))}
-                                rows={2}
-                                placeholder="e.g. React, Django, UI Design"
-                                className="w-full px-4 py-3 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white transition-all"
-                            />
-                        </div>
+                        <SkillsInput
+                            label="Skills"
+                            value={values.skills ?? ''}
+                            onChange={(skills) => setValues((v) => (v ? { ...v, skills } : v))}
+                        />
                     </>
                 )}
                 {currentStep === 3 && (
@@ -227,13 +295,35 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
                             onChange={set('availability')}
                         />
                         <InputField label="Preferred Start Date" type="date" value={values.preferred_start_date || ''} onChange={set('preferred_start_date')} />
+                        <InputField label="Available Until" type="date" value={values.available_until || ''} onChange={set('available_until')} />
+                        <InputField label="Time Zone" placeholder="e.g. Asia/Kolkata" value={values.timezone || ''} onChange={set('timezone')} />
+                        <InputField label="Hours Per Day" type="number" min={0} value={values.hours_per_day ?? ''} onChange={set('hours_per_day')} />
+                        <InputField label="Hours Per Week" type="number" min={0} value={values.hours_per_week ?? ''} onChange={set('hours_per_week')} />
                     </div>
                 )}
                 {currentStep === 4 && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4">
-                        <InputField label="Payment Method" placeholder="e.g. Bank Transfer" value={values.payment_method} onChange={set('payment_method')} />
-                        <SelectField label="Currency" options={choices?.currencies || []} value={values.currency} onChange={set('currency')} />
-                        <InputField label="Rate" type="number" min={0} value={values.rate ?? ''} onChange={set('rate')} />
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4">
+                            <SelectField
+                                label="Payment Method"
+                                placeholder="Select method"
+                                options={BANK_PAYMENT_METHODS}
+                                value={bankValues.payment_method ?? ''}
+                                onChange={setBankField('payment_method')}
+                            />
+                            <InputField label="Payment Terms" placeholder="e.g. Net 15" value={bankValues.payment_terms} onChange={setBankField('payment_terms')} />
+                            <InputField label="PAN *" placeholder="e.g. ABCDE1234F" value={bankValues.tax_number} onChange={setBankField('tax_number')} error={fieldErrors.tax_number} />
+                            <InputField label="Account Holder Name *" value={bankValues.account_holder_name} onChange={setBankField('account_holder_name')} error={fieldErrors.account_holder_name} />
+                            <InputField label="Bank Name *" value={bankValues.bank_name} onChange={setBankField('bank_name')} error={fieldErrors.bank_name} />
+                            <InputField
+                                label={accountNumberMasked ? `Account Number * (on file: ${accountNumberMasked})` : 'Account Number *'}
+                                placeholder="Leave blank to keep the number on file"
+                                value={bankValues.account_number}
+                                onChange={setBankField('account_number')}
+                                error={fieldErrors.account_number}
+                            />
+                            <InputField label="IFSC Code *" value={bankValues.ifsc_code} onChange={setBankField('ifsc_code')} error={fieldErrors.ifsc_code} />
+                        </div>
                     </div>
                 )}
                 {currentStep === 5 && (

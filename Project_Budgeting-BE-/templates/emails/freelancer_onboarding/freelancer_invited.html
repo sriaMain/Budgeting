@@ -1,19 +1,64 @@
 {% extends "emails/freelancer_onboarding/_layout.html" %}
 
 {% block title %}Complete Your Freelancer Onboarding{% endblock %}
-{% block preheader %}You're invited to join {{ company_name }} as a freelancer.{% endblock %}
-{% block heading %}Complete Your Freelancer Onboarding{% endblock %}
+{% block preheader %}You're invited to join {{ company_name }} as a freelancer - complete your onboarding profile to get started.{% endblock %}
+{% block eyebrow %}Freelancer Invitation{% endblock %}
+{% block heading %}You&rsquo;re Invited to Join Our Freelancer Network{% endblock %}
 
 {% block body %}
 <p style="margin:0 0 16px;">Hi {{ freelancer_name }},</p>
 <p style="margin:0 0 16px;">You have been invited to join <strong>{{ company_name }}</strong> as a freelancer.</p>
-<p style="margin:0 0 16px;">Please complete your freelancer profile using the button below.</p>
+<p style="margin:0 0 16px;">To get started, please complete your freelancer onboarding profile. This helps us set up your professional details, availability, payment information, tax details, KYC information, and project preferences.</p>
+<p style="margin:0 0 4px;">The process is designed to be simple and can be completed in just a few minutes.</p>
 
-<p style="text-align:center;margin:22px 0;">
-  <a href="{{ secure_freelancer_url }}" style="display:inline-block;background-color:#2563eb;color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:6px;font-weight:700;font-size:14px;font-family:Arial,Helvetica,sans-serif;">Complete Onboarding</a>
-</p>
+{% include "emails/freelancer_onboarding/_freelancer_checklist_card.html" %}
 
-<p style="margin:0 0 16px;">You can save your progress and return later using the same secure link. No account creation or login is required.</p>
-<p style="margin:0 0 16px;">Thank you,<br>{{ company_name }}</p>
-<p style="margin:0;font-size:12px;color:#9ca3af;">If the button above doesn't work, copy and paste this link into your browser:<br><span style="word-break:break-all;">{{ secure_freelancer_url }}</span></p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">
+  <tr>
+    <td align="center">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td align="center" bgcolor="#2563eb" style="border-radius:6px;">
+            <a href="{{ secure_freelancer_url }}" class="email-btn" style="display:inline-block;background-color:#2563eb;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:6px;font-weight:700;font-size:14px;font-family:Arial,Helvetica,sans-serif;">Complete Freelancer Onboarding</a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+<p style="margin:0 0 6px;">You can save your progress at any time and return later using the same secure invitation link. No account creation or login is required.</p>
+{% if token_expires_at %}
+<p style="margin:0 0 16px;color:#6b7280;font-size:13px;">This invitation link expires on <strong>{{ token_expires_at|date:"F j, Y" }}</strong>.</p>
+{% endif %}
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:20px 0;">
+  <tr>
+    <td style="padding:14px 18px;font-family:Arial,Helvetica,sans-serif;font-size:12.5px;line-height:1.6;color:#92400e;">
+      <strong style="color:#78350f;">Security Notice</strong><br>
+      This invitation link is unique to you. Please do not share it with others. If you did not expect this invitation, please contact the person or team who sent it.
+    </td>
+  </tr>
+</table>
+
+<p style="margin:0 0 4px;color:#6b7280;font-size:12px;">Having trouble with the button? Copy and paste the following link into your browser:</p>
+<p style="margin:0 0 20px;font-size:12px;word-break:break-all;"><a href="{{ secure_freelancer_url }}" style="color:#2563eb;">{{ secure_freelancer_url }}</a></p>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eef0f3;margin:4px 0 0;">
+  <tr>
+    <td style="padding:18px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#374151;">
+      <strong style="color:#111827;">Need help?</strong><br>
+      {% if company_email %}
+      If you have questions about the onboarding process, email us at <a href="mailto:{{ company_email }}" style="color:#2563eb;">{{ company_email }}</a>, or contact the person or team who invited you.
+      {% else %}
+      If you have questions about the onboarding process, please contact the person or team who invited you.
+      {% endif %}
+    </td>
+  </tr>
+</table>
+{% endblock %}
+
+{% block footer %}
+<p style="margin:0 0 8px;">Thank you,<br>{{ company_name }}</p>
+<p style="margin:0;">&copy; {% now "Y" %} {{ company_name }}. All rights reserved.</p>
 {% endblock %}

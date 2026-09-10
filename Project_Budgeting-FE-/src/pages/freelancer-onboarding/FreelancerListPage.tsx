@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, UserPlus, Users, Mail } from 'lucide-react';
+import { Search, Plus, UserPlus, Users, Mail, Archive, ArchiveRestore } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Layout } from '../../components/Layout';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -21,13 +21,17 @@ export function FreelancerListContent() {
     const [freelancers, setFreelancers] = useState<Freelancer[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [showArchived, setShowArchived] = useState(false);
     const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
     const [resendingId, setResendingId] = useState<number | null>(null);
 
     const fetchFreelancers = async () => {
         setLoading(true);
         try {
-            const data = await api.listFreelancers({ search: searchTerm || undefined });
+            const data = await api.listFreelancers({
+                search: searchTerm || undefined,
+                archived: showArchived ? 'true' : undefined,
+            });
             setFreelancers(data);
         } catch (err) {
             console.error(err);
@@ -41,7 +45,7 @@ export function FreelancerListContent() {
         const timer = setTimeout(() => fetchFreelancers(), 300);
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchTerm]);
+    }, [searchTerm, showArchived]);
 
     const handleResendInvite = async (freelancer: Freelancer) => {
         setResendingId(freelancer.id);
@@ -52,6 +56,26 @@ export function FreelancerListContent() {
             toast.error('Failed to resend invitation');
         } finally {
             setResendingId(null);
+        }
+    };
+
+    const handleArchive = async (freelancer: Freelancer) => {
+        try {
+            await api.archiveFreelancer(freelancer.id);
+            toast.success('Freelancer archived');
+            fetchFreelancers();
+        } catch {
+            toast.error('Failed to archive freelancer');
+        }
+    };
+
+    const handleUnarchive = async (freelancer: Freelancer) => {
+        try {
+            await api.unarchiveFreelancer(freelancer.id);
+            toast.success('Freelancer restored');
+            fetchFreelancers();
+        } catch {
+            toast.error('Failed to restore freelancer');
         }
     };
 
@@ -72,6 +96,14 @@ export function FreelancerListContent() {
                         />
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                     </div>
+
+                    <button
+                        onClick={() => setShowArchived((s) => !s)}
+                        className="flex items-center gap-2 border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 sm:px-5 py-2 rounded-md font-semibold transition-colors whitespace-nowrap text-sm sm:text-base"
+                    >
+                        {showArchived ? <ArchiveRestore size={18} className="sm:w-5 sm:h-5" /> : <Archive size={18} className="sm:w-5 sm:h-5" />}
+                        <span className="hidden sm:inline">{showArchived ? 'Show Active' : 'Show Archived'}</span>
+                    </button>
 
                     <button
                         onClick={() => navigate('/freelancers/add')}
@@ -140,6 +172,23 @@ export function FreelancerListContent() {
                                                 >
                                                     <Mail className="w-3.5 h-3.5" />
                                                     {resendingId === freelancer.id ? 'Sending...' : 'Resend Invitation'}
+                                                </button>
+                                            )}
+                                            {freelancer.is_archived ? (
+                                                <button
+                                                    onClick={() => handleUnarchive(freelancer)}
+                                                    className="flex items-center gap-1 text-gray-600 hover:text-gray-900 font-medium text-xs"
+                                                >
+                                                    <ArchiveRestore className="w-3.5 h-3.5" />
+                                                    Restore
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleArchive(freelancer)}
+                                                    className="flex items-center gap-1 text-gray-600 hover:text-gray-900 font-medium text-xs"
+                                                >
+                                                    <Archive className="w-3.5 h-3.5" />
+                                                    Archive
                                                 </button>
                                             )}
                                         </div>
