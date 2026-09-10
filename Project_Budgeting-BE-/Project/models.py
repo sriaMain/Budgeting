@@ -22,6 +22,11 @@ class Project(models.Model):
         ('internal', 'Internal'),
         ('external', 'External'),
     ]
+    POC_TYPE_CHOICES = [
+        ('employee', 'Employee'),
+        ('vendor', 'Vendor'),
+        ('freelancer', 'Freelancer'),
+    ]
     CURRENCY_CHOICES = [
         ('INR', 'INR'),
         ('USD', 'USD'),
@@ -41,6 +46,11 @@ class Project(models.Model):
     start_date = models.DateField()
     end_date = models.DateField()
     project_manager = models.ForeignKey('accounts.Account', on_delete=models.SET_NULL, null=True, blank=True)
+    poc_type = models.CharField(max_length=20, choices=POC_TYPE_CHOICES, null=True, blank=True)
+    poc_id = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="ID of the POC in accounts.Account (employee) or accounts.Vendor (vendor/freelancer), per poc_type.",
+    )
     created_from_quotation = models.OneToOneField(
         'product_group.Quote',
         on_delete=models.PROTECT,

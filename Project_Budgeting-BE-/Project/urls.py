@@ -6,7 +6,7 @@ from .views import (ProjectAPIView, ProjectBudgetAPIView, StopTaskTimerAPIView, 
  TimesheetAPIView, TimesheetEntryAPIView, SubmitTimesheetAPIView, StartTaskTimerAPIView,
   PauseTaskTimerAPIView, PendingExtraHoursAPIView, ReviewExtraHoursAPIView, RequestExtraHoursAPIView, ExtraHoursHistoryAPIView,
   TaskStatusChoicesView, ServiceUsersAPIView, TaskGroupedByStatusAPIView, TimesheetWeeklySummaryAPIView, TimesheetEmployeeAPIView, ProjectStatusChoicesView, ProjectNamesAPIView,
-  MyTaskExtrasAPIView, MyActiveTimerAPIView)
+  MyTaskExtrasAPIView, MyActiveTimerAPIView, ProjectManagerOptionsAPIView, ProjectPOCOptionsAPIView)
 
 
 urlpatterns = [
@@ -32,6 +32,8 @@ urlpatterns = [
     path('task-status-choices/', TaskStatusChoicesView.as_view(), name='task-status-choices'), #get task status choices
     path('project-status-choices/', ProjectStatusChoicesView.as_view(), name='project-status-choices'),
     path('project-names/', ProjectNamesAPIView.as_view(), name='project-names'),
+    path('projects/project-managers/', ProjectManagerOptionsAPIView.as_view(), name='project-manager-options'),
+    path('projects/poc-options/', ProjectPOCOptionsAPIView.as_view(), name='project-poc-options'),
     path('tasks/grouped-by-status/', TaskGroupedByStatusAPIView.as_view(), name='tasks-grouped-by-status'),
     path("tasks/<int:task_id>/timer/state/",TaskTimerStateAPIView.as_view(),name="task-timer-state"),
 

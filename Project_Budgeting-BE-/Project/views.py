@@ -297,6 +297,84 @@ class ProjectBudgetCRUDAPIView(APIView):
         )
 
 
+class ProjectManagerOptionsAPIView(APIView):
+    """Employees eligible to be assigned as a project's Project Manager -
+    matched on their job title/designation (Account.position), which is
+    what's actually populated for people today; also matches the
+    'Project Manager' RBAC role for anyone set up that way instead."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        accounts = (
+            Account.objects.filter(
+                Q(position__iexact="Project Manager") | Q(roles__role_name="Project Manager"),
+                is_active=True,
+            )
+            .distinct()
+            .order_by("first_name", "last_name")
+        )
+        data = [
+            {
+                "id": account.id,
+                "name": account.display_name,
+                "designation": account.position,
+            }
+            for account in accounts
+        ]
+        return Response(data)
+
+
+class ProjectPOCOptionsAPIView(APIView):
+    """Combined list of possible Points of Contact for a project - active
+    employees, approved vendors, and freelancers who have finished (or been
+    manually marked ready in) the Freelancer Onboarding module. Freelancers
+    are their own model now (freelancer_onboarding.Freelancer) - no longer a
+    Vendor row with vendor_type='freelancer'."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from accounts.models import Vendor
+        from freelancer_onboarding.models import Freelancer
+
+        options = []
+
+        employees = (
+            Account.objects.filter(is_active=True)
+            .prefetch_related("modules")
+            .order_by("first_name", "last_name")
+        )
+        for account in employees:
+            modules = ", ".join(m.product_service_name for m in account.modules.all())
+            options.append({
+                "id": account.id,
+                "type": "employee",
+                "name": account.display_name,
+                "subtitle": modules,
+            })
+
+        vendors = Vendor.objects.filter(status="approved").order_by("name")
+        for vendor in vendors:
+            options.append({
+                "id": vendor.id,
+                "type": "vendor",
+                "name": vendor.name,
+                "subtitle": vendor.get_vendor_type_display(),
+            })
+
+        freelancers = Freelancer.objects.filter(status__in=["completed", "active"]).order_by("full_name")
+        for freelancer in freelancers:
+            options.append({
+                "id": freelancer.id,
+                "type": "freelancer",
+                "name": freelancer.full_name,
+                "subtitle": freelancer.professional_title or "Freelancer",
+            })
+
+        return Response(options)
+
+
 class ProjectBudgetAPIView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]

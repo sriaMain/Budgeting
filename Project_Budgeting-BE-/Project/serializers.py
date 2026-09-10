@@ -262,12 +262,18 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
             'project_no',
             'project_name',
             'project_type',
+            'client',
             'start_date',
             'end_date',
             'project_manager',
+            'poc_type',
+            'poc_id',
             'created_from_quotation',
             'budget',
         )
+        extra_kwargs = {
+            'client': {'required': False},
+        }
     def get_fields(self):
         fields = super().get_fields()
 

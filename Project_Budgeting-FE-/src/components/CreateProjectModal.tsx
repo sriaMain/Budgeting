@@ -3,10 +3,12 @@
  * Modal with tabbed interface for creating projects from quotes
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { InputField } from './InputField';
+import { SearchableSelect } from './SearchableSelect';
+import type { SearchableSelectOption } from './SearchableSelect';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
 
@@ -22,6 +24,27 @@ interface CreateProjectModalProps {
 
 type TabType = 'project' | 'budget';
 
+interface ProjectManagerOption {
+    id: number;
+    name: string;
+    designation?: string;
+}
+
+type PocCategory = 'employee' | 'vendor' | 'freelancer';
+
+interface PocOption {
+    id: number;
+    type: PocCategory;
+    name: string;
+    subtitle: string;
+}
+
+const POC_CATEGORIES: { value: PocCategory; label: string }[] = [
+    { value: 'employee', label: 'Employee' },
+    { value: 'vendor', label: 'Vendor' },
+    { value: 'freelancer', label: 'Freelancer' },
+];
+
 export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     isOpen,
     onClose,
@@ -33,15 +56,16 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 }) => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<TabType>('project');
-    // Default to 'internal' when hideBudgetTab is true (admin project creation), otherwise 'external'
-    const [projectType, setProjectType] = useState<'internal' | 'external'>(hideBudgetTab ? 'internal' : 'external');
     const [budgetMethod, setBudgetMethod] = useState<'quoted' | 'manual'>('quoted');
     const [isSaving, setIsSaving] = useState(false);
 
     // Form state
     // Do NOT auto-fill project name from quoteName by default
     const [projectName, setProjectName] = useState('');
-    const [client, setClient] = useState(clientName);
+    const [clientOptions, setClientOptions] = useState<SearchableSelectOption[]>([]);
+    const [client, setClient] = useState<SearchableSelectOption | null>(null);
+    const [clientLocked, setClientLocked] = useState(false);
+    const [clientContact, setClientContact] = useState<{ name: string; email: string } | null>(null);
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
     const [dueDate, setDueDate] = useState('');
     const [totalHours, setTotalHours] = useState('');
@@ -49,6 +73,92 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     const [billsExpenses, setBillsExpenses] = useState('0');
     const [priceList, setPriceList] = useState('INR');
     const [isLoadingQuoteBudget, setIsLoadingQuoteBudget] = useState(false);
+
+    // Project Manager + POC
+    const [projectManagerOptions, setProjectManagerOptions] = useState<SearchableSelectOption[]>([]);
+    const [projectManager, setProjectManager] = useState<SearchableSelectOption | null>(null);
+    // Raw combined list from the API, kept as-is (with type) so the POC
+    // dropdown can be filtered per category without a second round-trip.
+    const [pocOptionsRaw, setPocOptionsRaw] = useState<PocOption[]>([]);
+    const [pocCategory, setPocCategory] = useState<PocCategory>('employee');
+    const [poc, setPoc] = useState<SearchableSelectOption | null>(null);
+
+    // Only the selected category's records, never labeled with their type
+    // (the segmented control above already conveys that) - instead show a
+    // category-relevant detail: an employee's modules, or a vendor's role
+    // (e.g. Company/LLP). Freelancer's only distinguishing field is its
+    // vendor_type, which would just re-state "Freelancer", so it's omitted.
+    const pocOptions: SearchableSelectOption[] = pocOptionsRaw
+        .filter((p) => p.type === pocCategory)
+        .map((p) => ({
+            id: p.id,
+            label: p.name,
+            sublabel: pocCategory !== 'freelancer' && p.subtitle ? p.subtitle : undefined,
+        }));
+
+    const handlePocCategoryChange = (category: PocCategory) => {
+        setPocCategory(category);
+        setPoc(null);
+    };
+
+    useEffect(() => {
+        if (!isOpen) return;
+        axiosInstance.get<ProjectManagerOption[]>('/projects/project-managers/')
+            .then((res) => {
+                setProjectManagerOptions(
+                    (res.data || []).map((pm) => ({
+                        id: pm.id,
+                        label: pm.name,
+                        sublabel: pm.designation || undefined,
+                    }))
+                );
+            })
+            .catch((err) => console.error('Failed to fetch project managers:', err));
+
+        axiosInstance.get<PocOption[]>('/projects/poc-options/')
+            .then((res) => setPocOptionsRaw(res.data || []))
+            .catch((err) => console.error('Failed to fetch POC options:', err));
+
+        axiosInstance.get<{ id: number; company_name: string }[]>('/client/dropdown/')
+            .then((res) => {
+                const options = (res.data || []).map((c) => ({ id: c.id, label: c.company_name }));
+                setClientOptions(options);
+                // If opened with a known client name (e.g. from a quote), try to
+                // pre-select the matching master record and lock it - otherwise
+                // leave it editable so the admin can pick the right one.
+                if (clientName) {
+                    const match = options.find((o) => o.label.toLowerCase() === clientName.toLowerCase());
+                    if (match) {
+                        setClient(match);
+                        setClientLocked(true);
+                        return;
+                    }
+                }
+                setClient(null);
+                setClientLocked(false);
+            })
+            .catch((err) => console.error('Failed to fetch clients:', err));
+
+        setProjectManager(null);
+        setPocCategory('employee');
+        setPoc(null);
+    }, [isOpen, clientName]);
+
+    // Show the client's own saved contact person for reference - separate
+    // from (and not to be confused with) the project's own POC selected
+    // below, which is who's assigned to this project, not the client's contact.
+    useEffect(() => {
+        if (!client) {
+            setClientContact(null);
+            return;
+        }
+        axiosInstance.get<{ poc_name: string; poc_email: string }[]>(`/client/${client.id}/pocs/`)
+            .then((res) => {
+                const first = (res.data || [])[0];
+                setClientContact(first ? { name: first.poc_name, email: first.poc_email } : null);
+            })
+            .catch(() => setClientContact(null));
+    }, [client]);
 
     // Fetch quote details so budget fields can be pre-filled with quoted values
     const fetchQuoteBudgetData = async (id: number | string) => {
@@ -81,10 +191,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     React.useEffect(() => {
         if (isOpen) {
             // Do not auto-set projectName from quoteName to avoid accidental overwrites
-            setClient(clientName);
-            // Default to external if coming from a quote
             if (quoteId) {
-                setProjectType('external');
                 fetchQuoteBudgetData(quoteId);
             } else {
                 // No quote to source budget data from; keep fields blank/default
@@ -108,8 +215,12 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 
         setIsSaving(true);
         try {
+            // Project type is derived, not chosen: a project created from a
+            // quote is always external and linked to it; otherwise internal.
+            const projectType: 'internal' | 'external' = quoteId ? 'external' : 'internal';
+
             // Auto-confirm the quote if we are creating an external project from a quote
-            if (quoteId && projectType === 'external') {
+            if (quoteId) {
                 try {
                     console.log(`Auto-confirming quote ${quoteId} before project creation...`);
                     await axiosInstance.put(`/quotes/${quoteId}/`, {
@@ -129,6 +240,17 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                 end_date: dueDate || null,
                 budget: {}
             };
+
+            if (client) {
+                payload.client = client.id;
+            }
+            if (projectManager) {
+                payload.project_manager = projectManager.id;
+            }
+            if (poc) {
+                payload.poc_type = pocCategory;
+                payload.poc_id = poc.id;
+            }
 
             // Configure budget based on project type
             if (projectType === 'internal') {
@@ -293,68 +415,79 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                     />
                                 </div>
 
-                                {/* Project Type */}
-                                <div>
-                                    <label className="block text-base font-medium text-gray-900 mb-3">
-                                        Project type
-                                    </label>
-                                    {hideBudgetTab ? (
-                                        // Show both buttons but disable External when creating from admin page
-                                        <div className="flex gap-3">
-                                            <div className="flex-1 py-2.5 px-4 rounded-lg font-medium bg-gray-200 text-gray-900">
-                                                Internal
-                                            </div>
-                                            <div className="flex-1 py-2.5 px-4 rounded-lg font-medium bg-gray-100 text-gray-400 cursor-not-allowed">
-                                                External
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        // Allow selection when creating from quote
-                                        <div className="flex gap-3">
-                                            <button
-                                                onClick={() => setProjectType('internal')}
-                                                className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${projectType === 'internal'
-                                                    ? 'bg-gray-200 text-gray-900'
-                                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                                                    }`}
-                                            >
-                                                Internal
-                                            </button>
-                                            <button
-                                                onClick={() => setProjectType('external')}
-                                                className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${projectType === 'external'
-                                                    ? 'bg-gray-200 text-gray-900'
-                                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                                                    }`}
-                                            >
-                                                External
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-
                                 {/* Project Setup */}
                                 <div>
                                     <label className="block text-base font-medium text-gray-900 mb-3">
                                         Project Setup
                                     </label>
                                     <div className="space-y-4">
-                                        {/* Client Dropdown - Hide when creating from admin page */}
-                                        {!hideBudgetTab && (
-                                            <div>
-                                                <label className="block text-sm text-gray-600 mb-1">Client</label>
-                                                <div className="relative">
-                                                    <input
-                                                        type="text"
-                                                        value={client}
-                                                        onChange={(e) => setClient(e.target.value)}
-                                                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                                                        placeholder="Client Name"
-                                                        readOnly={projectType === 'external' && !!clientName}
+                                        {/* Client */}
+                                        <div>
+                                            <label className="block text-sm text-gray-600 mb-1">Client</label>
+                                            <SearchableSelect
+                                                options={clientOptions}
+                                                value={client}
+                                                onChange={setClient}
+                                                placeholder="Select Client"
+                                                disabled={clientLocked}
+                                                emptyMessage="No clients found"
+                                            />
+                                            {clientContact && (
+                                                <p className="mt-1 text-xs text-gray-500">
+                                                    Client contact: {clientContact.name}
+                                                    {clientContact.email ? ` • ${clientContact.email}` : ''}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        {/* Project Manager */}
+                                        <div>
+                                            <label className="block text-sm text-gray-600 mb-1">Project Manager</label>
+                                            <SearchableSelect
+                                                options={projectManagerOptions}
+                                                value={projectManager}
+                                                onChange={setProjectManager}
+                                                placeholder="Select Project Manager"
+                                                emptyMessage="No employees with the Project Manager role"
+                                            />
+                                        </div>
+
+                                        {/* POC */}
+                                        <div>
+                                            <label className="block text-sm text-gray-600 mb-1">POC</label>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">POC Category</label>
+                                                    <div className="flex gap-2">
+                                                        {POC_CATEGORIES.map((category) => (
+                                                            <button
+                                                                key={category.value}
+                                                                type="button"
+                                                                onClick={() => handlePocCategoryChange(category.value)}
+                                                                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${pocCategory === category.value
+                                                                    ? 'bg-gray-200 text-gray-900'
+                                                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                                                                    }`}
+                                                            >
+                                                                {category.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">
+                                                        Select {POC_CATEGORIES.find((c) => c.value === pocCategory)?.label}
+                                                    </label>
+                                                    <SearchableSelect
+                                                        options={pocOptions}
+                                                        value={poc}
+                                                        onChange={setPoc}
+                                                        placeholder={`Search ${pocCategory}...`}
+                                                        emptyMessage={`No ${pocCategory}s found`}
                                                     />
                                                 </div>
                                             </div>
-                                        )}
+                                        </div>
 
                                         {/* Dates */}
                                         <div className="grid grid-cols-2 gap-4">

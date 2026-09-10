@@ -367,7 +367,12 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # In DEBUG (local dev) emails print to the console instead of sending for
 # real, so OTP/welcome emails work without needing valid Gmail credentials.
-EMAIL_BACKEND = (
+# Override via EMAIL_BACKEND in .env (e.g. to the smtp backend below) to send
+# real email during local development without flipping DEBUG itself - DEBUG
+# also gates unrelated things (security settings, Celery's eager-task mode,
+# error pages), so it shouldn't be toggled just to test email delivery.
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND",
     'django.core.mail.backends.console.EmailBackend' if DEBUG
     else 'django.core.mail.backends.smtp.EmailBackend'
 )
@@ -378,7 +383,10 @@ EMAIL_USE_TLS = True
 # file is committed to a public repo.
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = "teerdavenigedela@gmail.com"
+# Gmail SMTP requires the From address to be the authenticated mailbox (or a
+# verified alias of it), so default to EMAIL_HOST_USER rather than a
+# different hard-coded address - which would also silently fail to send.
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 
 
 
