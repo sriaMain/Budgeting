@@ -347,7 +347,7 @@ export function FreelancerFormContent() {
     const readOnly = !isEditing;
 
     return (
-        <div className="space-y-6 animate-fade-in-down max-w-3xl">
+        <div className="space-y-6 animate-fade-in-down">
             <div className="flex items-center justify-between">
                 <button
                     onClick={() => navigate('/freelancers')}
