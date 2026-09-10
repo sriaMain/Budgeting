@@ -6,9 +6,10 @@ import { ClientDetailsPage } from "../pages/ClientDetailsPage";
 import { Layout } from "../components/Layout";
 import axiosInstance from "../utils/axiosInstance";
 import { VendorListContent } from "./vendor-onboarding/VendorListPage";
+import { FreelancerListContent } from "./freelancer-onboarding/FreelancerListPage";
 
 export default function ContactsScreen() {
-  const [activeTab, setActiveTab] = useState<'clients' | 'vendors'>('clients');
+  const [activeTab, setActiveTab] = useState<'clients' | 'vendors' | 'freelancers'>('clients');
   const [currentView, setCurrentView] = useState<'list' | 'add' | 'details' | 'edit'>('list');
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
 
@@ -116,6 +117,16 @@ export default function ContactsScreen() {
                 >
                   Vendors
                 </button>
+                <button
+                  onClick={() => setActiveTab('freelancers')}
+                  className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'freelancers'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                  }`}
+                >
+                  Freelancers
+                </button>
               </div>
             </div>
           </div>
@@ -160,6 +171,9 @@ export default function ContactsScreen() {
 
           {/* Vendors Tab Content */}
           {activeTab === 'vendors' && <VendorListContent />}
+
+          {/* Freelancers Tab Content */}
+          {activeTab === 'freelancers' && <FreelancerListContent />}
         </div>
       </div>
     </Layout>

@@ -29,12 +29,25 @@ import VendorOnboardingWizardPage from "./pages/vendor-onboarding/VendorOnboardi
 import VendorDetailsPage from "./pages/vendor-onboarding/VendorDetailsPage";
 import VendorApprovalQueuePage from "./pages/vendor-onboarding/VendorApprovalQueuePage";
 import VendorPortalPage from "./pages/vendor-onboarding/public/VendorPortalPage";
+import FreelancerListPage from "./pages/freelancer-onboarding/FreelancerListPage";
+import FreelancerFormPage from "./pages/freelancer-onboarding/FreelancerFormPage";
+import FreelancerOnboardingPortalPage from "./pages/freelancer-onboarding/public/FreelancerOnboardingPortalPage";
 import EmployeeOnboardingPortalPage from "./pages/employee-onboarding/public/EmployeeOnboardingPortalPage";
 import EmployeeOnboardingReviewPage from "./pages/employee-onboarding/EmployeeOnboardingReviewPage";
 import AdminFillOnboardingPage from "./pages/employee-onboarding/AdminFillOnboardingPage";
 import { initializeAuth } from "./auth/authThunk";
 import { useAppSelector } from "./hooks/useAppSelector";
 import { useAppDispatch } from "./hooks/useAppDispatch";
+
+// Login/forgot-password/verification render a single fixed-width card that
+// relies on a centering parent - unlike the app's full-screen pages
+// (dashboard, onboarding portals, etc.), which must fill the viewport
+// themselves and so are rendered directly under <main> instead.
+const CenteredAuthPage: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 lg:p-8">
+    {children}
+  </div>
+);
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<string>("dashboard");
@@ -55,14 +68,14 @@ const App: React.FC = () => {
 
 
   return (
-    <main className="min-h-screen w-full flex items-center justify-center bg-white p-4 sm:p-6 lg:p-8">
+    <main className="min-h-screen w-full bg-white">
       <Toaster position="top-right" />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<LoginForm />} />
+          <Route path="/" element={<CenteredAuthPage><LoginForm /></CenteredAuthPage>} />
 
-          <Route path="/forgot-password" element={<ForgotPasswordForm />} />
-          <Route path="/verification" element={<VerificationScreen />} />
+          <Route path="/forgot-password" element={<CenteredAuthPage><ForgotPasswordForm /></CenteredAuthPage>} />
+          <Route path="/verification" element={<CenteredAuthPage><VerificationScreen /></CenteredAuthPage>} />
 
           {/* Vendor self-service onboarding portal - secure token in the URL is the only
               access control; must NOT be wrapped in ProtectedRoute since the vendor has
@@ -73,6 +86,11 @@ const App: React.FC = () => {
               access control; must NOT be wrapped in ProtectedRoute since the employee has
               no need to log in to complete onboarding. */}
           <Route path="/employee-onboarding/:token" element={<EmployeeOnboardingPortalPage />} />
+
+          {/* Freelancer self-service onboarding portal - secure token in the URL is the only
+              access control; must NOT be wrapped in ProtectedRoute since the freelancer has
+              no account/login at all. */}
+          <Route path="/freelancer-onboarding/:token" element={<FreelancerOnboardingPortalPage />} />
 
 
           {/* Protect Dashboard */}
@@ -346,6 +364,32 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
+          {/* Freelancer Onboarding */}
+          <Route
+            path="/freelancers"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                <FreelancerListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/freelancers/add"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                <FreelancerFormPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/freelancers/:freelancerId"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                <FreelancerFormPage />
+              </ProtectedRoute>
+            }
+          />
+
           <Route
             path="/vendors/:vendorId/edit"
             element={

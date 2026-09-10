@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     'phonenumber_field',
     'vendor_onboarding',
     'employee_onboarding',
+    'freelancer_onboarding',
 
 
 ]
@@ -226,6 +227,9 @@ REST_FRAMEWORK = {
         # per-minute instead of per-hour so a legitimate burst has headroom
         # and an accidental trip recovers in seconds, not up to an hour.
         "employee_onboarding_public": "300/min",
+        # Freelancer onboarding is a short, 5-section form - lighter than
+        # employee's but still needs headroom above the tight vendor rate.
+        "freelancer_onboarding_public": "120/min",
     },
 }
 
@@ -234,6 +238,9 @@ VENDOR_ONBOARDING_TOKEN_TTL_DAYS = 90
 
 # Employee Self-Service Onboarding
 EMPLOYEE_ONBOARDING_TOKEN_TTL_DAYS = 30
+
+# Freelancer Self-Service Onboarding
+FREELANCER_ONBOARDING_TOKEN_TTL_DAYS = 30
 
 
 
@@ -311,6 +318,13 @@ EMPLOYEE_PORTAL_URL = os.environ.get("EMPLOYEE_PORTAL_URL", FRONTEND_BASE_URL).r
 
 if EMPLOYEE_PORTAL_URL not in CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS.append(EMPLOYEE_PORTAL_URL)
+
+# Public URL the Freelancer Onboarding portal is reachable at - same idea as
+# VENDOR_PORTAL_URL/EMPLOYEE_PORTAL_URL above.
+FREELANCER_PORTAL_URL = os.environ.get("FREELANCER_PORTAL_URL", FRONTEND_BASE_URL).rstrip("/")
+
+if FREELANCER_PORTAL_URL not in CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS.append(FREELANCER_PORTAL_URL)
 
 # Branding used in Vendor Onboarding emails. COMPANY_LOGO_URL must be a full
 # https:// URL to a hosted image (email clients can't load relative/local

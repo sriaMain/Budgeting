@@ -9,6 +9,9 @@ const STATUS_STYLES: Record<string, string> = {
   requested: 'bg-blue-100 text-blue-700',
   approval_in_progress: 'bg-orange-100 text-orange-700',
   approved: 'bg-green-100 text-green-700',
+  onboarding: 'bg-indigo-100 text-indigo-700',
+  completed: 'bg-teal-100 text-teal-700',
+  active: 'bg-green-100 text-green-700',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -20,6 +23,9 @@ const STATUS_LABELS: Record<string, string> = {
   requested: 'Requested',
   approval_in_progress: 'Approval In Progress',
   approved: 'Approved',
+  onboarding: 'Onboarding',
+  completed: 'Completed',
+  active: 'Active',
 };
 
 interface StatusBadgeProps {
