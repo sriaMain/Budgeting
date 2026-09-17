@@ -365,12 +365,13 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 # STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-# In DEBUG (local dev) emails print to the console instead of sending for
-# real, so OTP/welcome emails work without needing valid Gmail credentials.
-# Override via EMAIL_BACKEND in .env (e.g. to the smtp backend below) to send
-# real email during local development without flipping DEBUG itself - DEBUG
-# also gates unrelated things (security settings, Celery's eager-task mode,
-# error pages), so it shouldn't be toggled just to test email delivery.
+# --- Email (SMTP) ---
+# Resend was tried and removed - back to plain SMTP. In DEBUG (local dev)
+# emails print to the console instead of sending for real, so OTP/welcome
+# emails work without needing valid Gmail credentials. Override via
+# EMAIL_BACKEND in .env to force real SMTP sending even in local dev -
+# DEBUG also gates unrelated things (security settings, Celery's eager-task
+# mode, error pages), so it shouldn't be toggled just to test email delivery.
 EMAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND",
     'django.core.mail.backends.console.EmailBackend' if DEBUG

@@ -151,6 +151,10 @@ class QuoteSerializer(serializers.ModelSerializer):
         required=False
     )
 
+    call_center_name = serializers.CharField(source="call_center.name", read_only=True, default=None)
+    profit_center_name = serializers.CharField(source="profit_center.name", read_only=True, default=None)
+    gl_account_name = serializers.CharField(source="gl_account.name", read_only=True, default=None)
+
     created_by = serializers.StringRelatedField(read_only=True)
     modified_by = serializers.StringRelatedField(read_only=True)
     author = serializers.StringRelatedField(read_only=True)
@@ -186,6 +190,12 @@ class QuoteSerializer(serializers.ModelSerializer):
             "has_project",
             "currency",
             "project",
+            "call_center",
+            "call_center_name",
+            "profit_center",
+            "profit_center_name",
+            "gl_account",
+            "gl_account_name",
         ]
         read_only_fields = (
             "quote_no",
@@ -364,8 +374,12 @@ class QuoteSummarySerializer(serializers.ModelSerializer):
 
     currency = serializers.ChoiceField(
         choices=CURRENCY_CHOICES,
-        read_only=True   
+        read_only=True
     )
+
+    call_center_name = serializers.CharField(source='call_center.name', read_only=True, default=None)
+    profit_center_name = serializers.CharField(source='profit_center.name', read_only=True, default=None)
+    gl_account_name = serializers.CharField(source='gl_account.name', read_only=True, default=None)
 
     class Meta:
         model = Quote
@@ -379,6 +393,9 @@ class QuoteSummarySerializer(serializers.ModelSerializer):
             'status',
             'has_project',
             'currency',
+            'call_center_name',
+            'profit_center_name',
+            'gl_account_name',
         ]
 
     def get_has_project(self, obj):

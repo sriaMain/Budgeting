@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { Client, POC } from "../pages/ClientListPage";
 import { ClientListPage } from "../pages/ClientListPage";
 import { AddClientPage } from "../pages/AddClientPage";
@@ -9,9 +10,18 @@ import { VendorListContent } from "./vendor-onboarding/VendorListPage";
 import { FreelancerListContent } from "./freelancer-onboarding/FreelancerListPage";
 
 export default function ContactsScreen() {
+  // ?clientId=<id> (from the header's global search) deep-links straight to
+  // that client's details view instead of always landing on the list.
+  const [searchParams] = useSearchParams();
+  const deepLinkedClientId = searchParams.get("clientId");
+
   const [activeTab, setActiveTab] = useState<'clients' | 'vendors' | 'freelancers'>('clients');
-  const [currentView, setCurrentView] = useState<'list' | 'add' | 'details' | 'edit'>('list');
-  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  const [currentView, setCurrentView] = useState<'list' | 'add' | 'details' | 'edit'>(
+    deepLinkedClientId ? 'details' : 'list'
+  );
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(
+    deepLinkedClientId ? Number(deepLinkedClientId) : null
+  );
 
   // Application State - Clients
   const [clients, setClients] = useState<Client[]>([]);
@@ -56,8 +66,15 @@ export default function ContactsScreen() {
     fetchClients();
   }, []);
 
-  // Reset view when switching tabs
+  // Reset view when switching tabs — skipped on the very first render so a
+  // ?clientId= deep link (which seeds currentView/selectedClientId above)
+  // isn't immediately wiped out before the user sees it.
+  const isFirstRender = useRef(true);
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     setCurrentView('list');
     setSelectedClientId(null);
   }, [activeTab]);
@@ -158,13 +175,17 @@ export default function ContactsScreen() {
               )}
 
               {currentView === 'details' && selectedClientId && (
-                <ClientDetailsPage
-                  client={getClientById(selectedClientId)!}
-                  pocs={getPocsByClientId(selectedClientId)}
-                  onAddPOC={handlePOCCreated}
-                  onEdit={() => handleEditClient(selectedClientId)}
-                  onBack={() => setCurrentView('list')}
-                />
+                getClientById(selectedClientId) ? (
+                  <ClientDetailsPage
+                    client={getClientById(selectedClientId)!}
+                    pocs={getPocsByClientId(selectedClientId)}
+                    onAddPOC={handlePOCCreated}
+                    onEdit={() => handleEditClient(selectedClientId)}
+                    onBack={() => setCurrentView('list')}
+                  />
+                ) : (
+                  <p className="p-6 text-sm text-gray-500">Loading client…</p>
+                )
               )}
             </>
           )}

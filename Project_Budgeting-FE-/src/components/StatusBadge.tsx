@@ -28,18 +28,32 @@ const STATUS_LABELS: Record<string, string> = {
   active: 'Active',
 };
 
+// Semantic variants for the approved enterprise UI design (teal/amber/risk tokens).
+// Status is always conveyed as text + color together, never color alone.
+const VARIANT_STYLES: Record<'success' | 'warning' | 'danger' | 'neutral' | 'info', string> = {
+  success: 'bg-teal-100 text-teal-700',
+  warning: 'bg-amber-50 text-amber-700',
+  danger: 'bg-risk-50 text-risk-700',
+  neutral: 'bg-gray-100 text-gray-700',
+  info: 'bg-blue-100 text-blue-700',
+};
+
 interface StatusBadgeProps {
   status: string;
+  /** Semantic tone. When omitted, falls back to the legacy onboarding-status lookup. */
+  variant?: 'success' | 'warning' | 'danger' | 'neutral' | 'info';
+  /** Explicit display text. When omitted, falls back to the legacy status-label lookup (or `status` itself). */
+  label?: string;
   className?: string;
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = '' }) => {
-  const style = STATUS_STYLES[status] || 'bg-gray-100 text-gray-700';
-  const label = STATUS_LABELS[status] || status;
+export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, variant, label, className = '' }) => {
+  const style = variant ? VARIANT_STYLES[variant] : (STATUS_STYLES[status] || 'bg-gray-100 text-gray-700');
+  const displayLabel = label ?? (variant ? status : (STATUS_LABELS[status] || status));
 
   return (
     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${style} ${className}`}>
-      {label}
+      {displayLabel}
     </span>
   );
 };

@@ -1,6 +1,7 @@
 from rest_framework import serializers
-from .models import (Project, ProjectBudget, Task, Timesheet, TimesheetEntry, TaskTimerLog,
-                      TaskExtraHoursRequest)
+from .models import (Project, ProjectBudget, BudgetLine, Milestone, ResourceAssignment, Task, Timesheet,
+                      TimesheetEntry, TaskTimerLog, TaskExtraHoursRequest)
+from core.models import GLAccount
 from django.core.exceptions import ObjectDoesNotExist
 from accounts.models import Account
 from client.serializers import PointOfContactSerializer
@@ -48,6 +49,87 @@ from django.db.models import Sum
 from rest_framework import serializers
 from decimal import Decimal
 
+class BudgetLineSerializer(serializers.ModelSerializer):
+    """
+    One GL-Account-tagged row of a project's budget. `gl_account` is a
+    PrimaryKeyRelatedField into core.GLAccount (the same Chart-of-Accounts
+    table used across the app) so the frontend renders it as a searchable
+    dropdown rather than free text, while still keeping the account's own
+    code/id available for later mapping to another accounting platform.
+    """
+
+    # Description / GL Account / Planned Amount are the three required
+    # fields on a budget line -- explicit declarations here (instead of
+    # relying on the plain model-derived fields) so every missing/invalid
+    # value comes back as a clear, specific message the form can show
+    # inline rather than a generic DRF default.
+    description = serializers.CharField(
+        max_length=255,
+        error_messages={
+            "required": "Description is required.",
+            "blank": "Description is required.",
+        },
+    )
+    gl_account = serializers.PrimaryKeyRelatedField(
+        queryset=GLAccount.objects.all(),
+        error_messages={
+            "required": "GL Account is required.",
+            "null": "GL Account is required.",
+            "does_not_exist": "Selected GL Account does not exist.",
+        },
+    )
+    planned_amount = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        error_messages={
+            "required": "Planned amount is required.",
+            "min_value": "Planned amount must be greater than 0.",
+            "invalid": "Enter a valid planned amount.",
+        },
+    )
+
+    gl_account_code = serializers.CharField(source='gl_account.code', read_only=True)
+    gl_account_name = serializers.CharField(source='gl_account.name', read_only=True)
+    gl_account_type = serializers.CharField(source='gl_account.account_type', read_only=True)
+    gl_account_is_active = serializers.BooleanField(source='gl_account.is_active', read_only=True)
+
+    # Budget vs Actual (not surfaced in the simplified Budget Line UI yet,
+    # but kept available for reporting/API consumers).
+    actual_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    remaining_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    variance = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    is_over_budget = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = BudgetLine
+        fields = (
+            'id',
+            'budget',
+            'description',
+            'gl_account',
+            'gl_account_code',
+            'gl_account_name',
+            'gl_account_type',
+            'gl_account_is_active',
+            'planned_amount',
+            'actual_amount',
+            'remaining_amount',
+            'variance',
+            'is_over_budget',
+            'created_at',
+            'updated_at',
+        )
+        read_only_fields = ('id', 'budget', 'created_at', 'updated_at')
+
+    def validate_gl_account(self, value):
+        if not value.is_active:
+            raise serializers.ValidationError(
+                "Selected GL Account is inactive. Choose an active GL Account."
+            )
+        return value
+
+
 class ProjectBudgetSerializer(serializers.ModelSerializer):
 
     quoted_amount = serializers.SerializerMethodField()
@@ -67,6 +149,15 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
 
     profit_or_loss = serializers.SerializerMethodField()
 
+    # 🔹 GL Account budget lines (Description / GL Account / Planned / Actual
+    # / Variance) plus roll-up totals so Finance can answer "how much was
+    # budgeted / spent / remaining per GL Account" without opening each line.
+    lines = BudgetLineSerializer(many=True, read_only=True)
+    total_planned_by_gl = serializers.SerializerMethodField()
+    total_actual_by_gl = serializers.SerializerMethodField()
+    total_variance_by_gl = serializers.SerializerMethodField()
+    gl_accounts_over_budget = serializers.SerializerMethodField()
+
     class Meta:
         model = ProjectBudget
         fields = (
@@ -84,7 +175,43 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
             "total_hours",
             "bills_and_expenses",
             "currency",
+            "lines",
+            "total_planned_by_gl",
+            "total_actual_by_gl",
+            "total_variance_by_gl",
+            "gl_accounts_over_budget",
         )
+
+    # ---------------------------
+    # 🔹 GL Account budget lines — roll-ups
+    # ---------------------------
+    def get_total_planned_by_gl(self, obj):
+        return obj.lines.aggregate(
+            total=Sum('planned_amount')
+        )['total'] or Decimal("0.00")
+
+    def get_total_actual_by_gl(self, obj):
+        total = Decimal("0.00")
+        for line in obj.lines.select_related('gl_account').all():
+            total += line.actual_amount
+        return total
+
+    def get_total_variance_by_gl(self, obj):
+        return self.get_total_planned_by_gl(obj) - self.get_total_actual_by_gl(obj)
+
+    def get_gl_accounts_over_budget(self, obj):
+        return [
+            {
+                "gl_account": line.gl_account_id,
+                "gl_account_code": line.gl_account.code,
+                "gl_account_name": line.gl_account.name,
+                "planned_amount": line.planned_amount,
+                "actual_amount": line.actual_amount,
+                "variance": line.variance,
+            }
+            for line in obj.lines.select_related('gl_account').all()
+            if line.is_over_budget
+        ]
 
     # ---------------------------
     # 🔹 Quoted Revenue
@@ -252,6 +379,150 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
 from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
 
 
+class MilestoneSerializer(serializers.ModelSerializer):
+    """
+    A Fixed Budget project's phase. Actual cost / billing / payment status
+    are read-only, derived properties on the model (from finances.Expense
+    and finances.Invoice linked to this milestone) - never stored, per the
+    "derive, do not store calculated values" requirement.
+    """
+
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    actual_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    margin = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    billed_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    received_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    outstanding_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    billing_status = serializers.CharField(read_only=True)
+    payment_status = serializers.CharField(read_only=True)
+
+    created_by_name = serializers.SerializerMethodField()
+    updated_by_name = serializers.SerializerMethodField()
+
+    # Write-only escape hatch for Section 11's "unless explicitly allowed" -
+    # never persisted, just relaxes the contract-value cap for this save.
+    override_budget_check = serializers.BooleanField(write_only=True, required=False, default=False)
+
+    class Meta:
+        model = Milestone
+        fields = (
+            'id',
+            'project',
+            'name',
+            'description',
+            'sequence',
+            'planned_start_date',
+            'planned_end_date',
+            'completion_percent',
+            'budget_amount',
+            'billing_amount',
+            'status',
+            'status_display',
+            'is_active',
+            'actual_cost',
+            'margin',
+            'billed_amount',
+            'received_amount',
+            'outstanding_amount',
+            'billing_status',
+            'payment_status',
+            'created_at',
+            'updated_at',
+            'created_by_name',
+            'updated_by_name',
+            'override_budget_check',
+        )
+        read_only_fields = ('id', 'project', 'created_at', 'updated_at')
+
+    def get_created_by_name(self, obj):
+        return obj.created_by.get_full_name() if obj.created_by else None
+
+    def get_updated_by_name(self, obj):
+        return obj.updated_by.get_full_name() if obj.updated_by else None
+
+    def create(self, validated_data):
+        override = validated_data.pop('override_budget_check', False)
+        instance = Milestone(**validated_data)
+        instance._allow_budget_override = override
+        instance.save()
+        return instance
+
+    def update(self, instance, validated_data):
+        override = validated_data.pop('override_budget_check', False)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance._allow_budget_override = override
+        instance.save()
+        return instance
+
+
+class ResourceAssignmentSerializer(serializers.ModelSerializer):
+    """
+    A resource (employee or freelancer) staffed on a T&M project.
+    Monthly Cost / Monthly Billing are derived (cost_rate/billing_rate x
+    working_hours), not stored, so they always match the underlying rates.
+    """
+
+    resource_type_display = serializers.CharField(source='get_resource_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    resource_name = serializers.CharField(read_only=True)
+    monthly_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    monthly_billing = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+
+    created_by_name = serializers.SerializerMethodField()
+    updated_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ResourceAssignment
+        fields = (
+            'id',
+            'project',
+            'resource_type',
+            'resource_type_display',
+            'resource_id',
+            'resource_name',
+            'role',
+            'start_date',
+            'end_date',
+            'cost_rate',
+            'billing_rate',
+            'allocation_percent',
+            'working_hours',
+            'status',
+            'status_display',
+            'is_active',
+            'monthly_cost',
+            'monthly_billing',
+            'created_at',
+            'updated_at',
+            'created_by_name',
+            'updated_by_name',
+        )
+        read_only_fields = ('id', 'project', 'created_at', 'updated_at')
+
+    def get_created_by_name(self, obj):
+        return obj.created_by.get_full_name() if obj.created_by else None
+
+    def get_updated_by_name(self, obj):
+        return obj.updated_by.get_full_name() if obj.updated_by else None
+
+    def validate(self, data):
+        resource_type = data.get('resource_type', getattr(self.instance, 'resource_type', None))
+        resource_id = data.get('resource_id', getattr(self.instance, 'resource_id', None))
+
+        if resource_type and resource_id:
+            if resource_type == 'employee':
+                if not Account.objects.filter(pk=resource_id).exists():
+                    raise serializers.ValidationError({"resource_id": "No employee found with this ID."})
+            else:
+                from accounts.models import Vendor
+                if not Vendor.objects.filter(pk=resource_id).exists():
+                    raise serializers.ValidationError({"resource_id": "No freelancer/vendor found with this ID."})
+
+        return data
+
+
 class ProjectCreateSerializer(serializers.ModelSerializer):
     budget = ProjectBudgetSerializer(required=False)
 
@@ -266,10 +537,21 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
             'start_date',
             'end_date',
             'project_manager',
+            'call_center',
+            'profit_center',
+            'gl_account',
             'poc_type',
             'poc_id',
             'created_from_quotation',
             'budget',
+            # Project Financial Management: engagement/billing model.
+            # engagement_type is a DIFFERENT axis from project_type
+            # (internal/external) above.
+            'engagement_type',
+            'contract_value',
+            'payment_terms',
+            'billing_frequency',
+            'monthly_billing_amount',
         )
         extra_kwargs = {
             'client': {'required': False},
@@ -304,6 +586,26 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "End date cannot be before start date."
             )
+
+        # =============================
+        # 🔹 PROJECT FINANCIAL MANAGEMENT: engagement type
+        # =============================
+        engagement_type = data.get('engagement_type') or getattr(self.instance, 'engagement_type', 'fixed')
+
+        if engagement_type == 'fixed':
+            contract_value = data.get('contract_value', getattr(self.instance, 'contract_value', None))
+            if contract_value is None:
+                raise serializers.ValidationError({
+                    "contract_value": "Contract value is required for Fixed Budget / Milestone-Based projects."
+                })
+        elif engagement_type == 'time_and_material':
+            monthly_billing_amount = data.get(
+                'monthly_billing_amount', getattr(self.instance, 'monthly_billing_amount', None)
+            )
+            if monthly_billing_amount is None:
+                raise serializers.ValidationError({
+                    "monthly_billing_amount": "Monthly billing amount is required for Time & Material projects."
+                })
 
         # =============================
         # 🔹 INTERNAL PROJECT
@@ -382,6 +684,20 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
 
         # 🔹 Create budget only if provided
         if budget_data:
+            # Section (Project Types / Financial Management): when the
+            # Budget Settings tab isn't used to set an explicit total_budget
+            # (e.g. the admin Projects page hides that tab entirely), fall
+            # back to the engagement-type figure the user DID enter on the
+            # Project Settings tab - contract_value for Fixed, monthly
+            # billing amount for T&M - so ProjectBudget.total_budget (which
+            # the Projects list card and Budget health tab both read from)
+            # isn't silently left at 0.
+            if not budget_data.get('total_budget'):
+                if project.engagement_type == 'fixed' and project.contract_value:
+                    budget_data['total_budget'] = project.contract_value
+                elif project.engagement_type == 'time_and_material' and project.monthly_billing_amount:
+                    budget_data['total_budget'] = project.monthly_billing_amount
+
             budget = ProjectBudget.objects.create(
                 project=project,
                 **budget_data
@@ -408,12 +724,17 @@ class ProjectListSerializer(serializers.ModelSerializer):
         read_only=True
     )
     contacts=serializers.SerializerMethodField()
+    call_center_name = serializers.CharField(source='call_center.name', read_only=True, default=None)
+    profit_center_name = serializers.CharField(source='profit_center.name', read_only=True, default=None)
+    gl_account_name = serializers.CharField(source='gl_account.name', read_only=True, default=None)
+    gl_account_code = serializers.CharField(source='gl_account.code', read_only=True, default=None)
 
     class Meta:
         model = Project
         fields = (
             'project_no',
             'project_name',
+            'project_type',
             'status',
             'start_date',
             'end_date',
@@ -422,7 +743,19 @@ class ProjectListSerializer(serializers.ModelSerializer):
             'client',
             'company_name',
             'contacts',
+            'call_center',
+            'call_center_name',
+            'profit_center',
+            'profit_center_name',
+            'gl_account',
+            'gl_account_name',
+            'gl_account_code',
             'created_from_quotation',
+            'engagement_type',
+            'contract_value',
+            'payment_terms',
+            'billing_frequency',
+            'monthly_billing_amount',
         )
 
     def get_budget(self, obj):

@@ -6,7 +6,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Trash2, GripVertical, ChevronDown } from 'lucide-react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
-import { useSelector } from 'react-redux';
 import { Layout } from '../components/Layout';
 import { AddClientModal } from '../components/AddClientModal';
 import { AddPOCModal } from '../components/AddPOCModal';
@@ -87,6 +86,12 @@ interface UnitChoice {
   label: string;
 }
 
+interface MasterDataOption {
+  id: number;
+  code: string;
+  name: string;
+}
+
 export default function AddQuotePage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -96,7 +101,6 @@ export default function AddQuotePage() {
   // from that project's Finances tab (distinct from the `projectId` route
   // param above, which puts this page into "edit project" mode).
   const forProjectId = searchParams.get('forProject');
-  const username = useSelector((state: any) => state.auth.username);
   const isEditMode = !!quoteId || !!projectId;
 
   // Get today's date in YYYY-MM-DD format
@@ -110,6 +114,9 @@ export default function AddQuotePage() {
   const [services, setServices] = useState<Service[]>([]);
   const [statusChoices, setStatusChoices] = useState<StatusChoice[]>([]);
   const [unitChoices, setUnitChoices] = useState<UnitChoice[]>([]);
+  const [callCenters, setCallCenters] = useState<MasterDataOption[]>([]);
+  const [profitCenters, setProfitCenters] = useState<MasterDataOption[]>([]);
+  const [glAccounts, setGlAccounts] = useState<MasterDataOption[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errors, setErrors] = useState<{ general?: string }>({});
@@ -123,13 +130,15 @@ export default function AddQuotePage() {
   const [isLoadingProjectSummary, setIsLoadingProjectSummary] = useState(false);
 
   const [quoteDetails, setQuoteDetails] = useState({
-    author: username || '',
     dateOfIssue: getTodayDate(),
     dueDate: getTodayDate(),
     client: '',
     poc: '',
     status: '',
-    quoteName: ''
+    quoteName: '',
+    callCenter: '',
+    profitCenter: '',
+    glAccount: ''
   });
 
   const [items, setItems] = useState<ProductRow[]>([
@@ -203,13 +212,15 @@ export default function AddQuotePage() {
         if (projectId) {
           // Map project data
           setQuoteDetails({
-            author: data.created_by?.username || username || '',
             dateOfIssue: data.start_date || getTodayDate(),
             dueDate: data.end_date || getTodayDate(),
             client: data.client_details?.company_name || data.client?.company_name || data.client_details?.name || data.client_name || '',
             poc: '', // Projects might not have POC in the same way
             status: data.status || '',
-            quoteName: data.project_name || ''
+            quoteName: data.project_name || '',
+            callCenter: data.call_center != null ? String(data.call_center) : '',
+            profitCenter: data.profit_center != null ? String(data.profit_center) : '',
+            glAccount: data.gl_account != null ? String(data.gl_account) : ''
           });
         } else {
           // Check if quote is confirmed - set flag but allow editing
@@ -219,13 +230,15 @@ export default function AddQuotePage() {
 
           // Map quote data
           setQuoteDetails({
-            author: data.created_by?.username || username || '',
             dateOfIssue: data.date_of_issue || getTodayDate(),
             dueDate: data.due_date || getTodayDate(),
             client: data.client_details?.company_name || data.client?.company_name || data.client_name || '',
             poc: data.poc_details?.poc_name || '',
             status: data.status || '',
-            quoteName: data.quote_name || ''
+            quoteName: data.quote_name || '',
+            callCenter: data.call_center != null ? String(data.call_center) : '',
+            profitCenter: data.profit_center != null ? String(data.profit_center) : '',
+            glAccount: data.gl_account != null ? String(data.gl_account) : ''
           });
 
           // Store original status to compare later
@@ -261,16 +274,6 @@ export default function AddQuotePage() {
     }
   };
 
-  // Update author when username loads from Redux
-  useEffect(() => {
-    if (username) {
-      setQuoteDetails(prev => ({
-        ...prev,
-        author: username
-      }));
-    }
-  }, [username]);
-
   const initializeData = async () => {
     setIsLoadingData(true);
     try {
@@ -278,7 +281,10 @@ export default function AddQuotePage() {
         fetchClients(),
         fetchProductGroupsWithModules(),
         fetchStatusChoices(),
-        fetchUnitChoices()
+        fetchUnitChoices(),
+        fetchCallCenters(),
+        fetchProfitCenters(),
+        fetchGlAccounts()
       ]);
     } catch (error) {
       console.error('Error initializing data:', error);
@@ -341,6 +347,42 @@ export default function AddQuotePage() {
       }
     } catch (err) {
       console.error('Failed to fetch status choices:', err);
+      throw err;
+    }
+  };
+
+  const fetchCallCenters = async () => {
+    try {
+      const response = await axiosInstance.get('/call-centers/?active_only=true');
+      if (response.status === 200) {
+        setCallCenters(response.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch call centers:', err);
+      throw err;
+    }
+  };
+
+  const fetchProfitCenters = async () => {
+    try {
+      const response = await axiosInstance.get('/profit-centers/?active_only=true');
+      if (response.status === 200) {
+        setProfitCenters(response.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch profit centers:', err);
+      throw err;
+    }
+  };
+
+  const fetchGlAccounts = async () => {
+    try {
+      const response = await axiosInstance.get('/gl-accounts/?active_only=true');
+      if (response.status === 200) {
+        setGlAccounts(response.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch GL accounts:', err);
       throw err;
     }
   };
@@ -477,12 +519,19 @@ export default function AddQuotePage() {
 
       console.log('Submitting payload items:', quoteItems);
 
+      const accountingAttribution = {
+        call_center: quoteDetails.callCenter ? parseInt(quoteDetails.callCenter, 10) : null,
+        profit_center: quoteDetails.profitCenter ? parseInt(quoteDetails.profitCenter, 10) : null,
+        gl_account: quoteDetails.glAccount ? parseInt(quoteDetails.glAccount, 10) : null,
+      };
+
       // Build payload - only include status if it changed (for edit mode)
       const basePayload = projectId ? {
         project_name: quoteDetails.quoteName?.trim() || '',
         start_date: quoteDetails.dateOfIssue,
         end_date: quoteDetails.dueDate,
         client: selectedClient?.id || null,
+        ...accountingAttribution,
       } : {
         quote_name: quoteDetails.quoteName?.trim() || '',
         date_of_issue: quoteDetails.dateOfIssue,
@@ -491,6 +540,7 @@ export default function AddQuotePage() {
         ...(pocId && { poc: pocId }),
         tax_percentage: taxPercentage,
         items: quoteItems,
+        ...accountingAttribution,
         // Link this quote back to the project it's being raised for
         // (e.g. a Phase 2 quote), if created from that project's page
         ...(forProjectId && { project: parseInt(forProjectId, 10) })
@@ -760,15 +810,6 @@ export default function AddQuotePage() {
 
                 <div className="space-y-4 sm:space-y-5">
                   <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                    <label className="text-sm sm:text-base font-medium text-gray-700">Author</label>
-                    <input
-                      type="text"
-                      value={quoteDetails.author}
-                      className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base bg-gray-50 focus:outline-none"
-                      readOnly
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
                     <label className="text-sm sm:text-base font-medium text-gray-700">Due Date</label>
                     <input
                       type="date"
@@ -791,6 +832,63 @@ export default function AddQuotePage() {
                         {statusChoices.map(choice => (
                           <option key={choice.value} value={choice.value}>
                             {choice.label}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
+                    <label className="text-sm sm:text-base font-medium text-gray-700">Call Center</label>
+                    <div className="relative">
+                      <select
+                        value={quoteDetails.callCenter}
+                        onChange={(e) => handleDetailChange('callCenter', e.target.value)}
+                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        disabled={isLoadingData}
+                      >
+                        <option value="">Select Call Center</option>
+                        {callCenters.map(option => (
+                          <option key={option.id} value={option.id}>
+                            {option.code} - {option.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
+                    <label className="text-sm sm:text-base font-medium text-gray-700">Profit Center</label>
+                    <div className="relative">
+                      <select
+                        value={quoteDetails.profitCenter}
+                        onChange={(e) => handleDetailChange('profitCenter', e.target.value)}
+                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        disabled={isLoadingData}
+                      >
+                        <option value="">Select Profit Center</option>
+                        {profitCenters.map(option => (
+                          <option key={option.id} value={option.id}>
+                            {option.code} - {option.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
+                    <label className="text-sm sm:text-base font-medium text-gray-700">GL Account</label>
+                    <div className="relative">
+                      <select
+                        value={quoteDetails.glAccount}
+                        onChange={(e) => handleDetailChange('glAccount', e.target.value)}
+                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        disabled={isLoadingData}
+                      >
+                        <option value="">Select GL Account</option>
+                        {glAccounts.map(option => (
+                          <option key={option.id} value={option.id}>
+                            {option.code} - {option.name}
                           </option>
                         ))}
                       </select>

@@ -40,10 +40,16 @@ class Invoice(models.Model):
         db_index=True
     )
 
+    # Nullable so milestone (Fixed Budget) and T&M period invoices can be
+    # created without a Quote - every existing quote-based invoice creation
+    # path still always supplies one, this only loosens the constraint to
+    # allow the new paths below.
     quote = models.ForeignKey(
         Quote,
         on_delete=models.PROTECT,
-        related_name='invoices'
+        related_name='invoices',
+        null=True,
+        blank=True
     )
 
     client = models.ForeignKey(
@@ -57,6 +63,21 @@ class Invoice(models.Model):
         null=True,
         blank=True
     )
+
+    # Fixed Budget / Milestone-Based billing: which milestone this invoice
+    # bills (Project.Milestone derives its billing_status/payment_status
+    # from the invoices linked here). Null for T&M/period invoices.
+    milestone = models.ForeignKey(
+        'Project.Milestone',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='invoices'
+    )
+    # Time & Material billing: the period this invoice covers. Null for
+    # milestone invoices.
+    billing_period_start = models.DateField(null=True, blank=True)
+    billing_period_end = models.DateField(null=True, blank=True)
 
     status = models.CharField(
         max_length=20,
@@ -180,9 +201,14 @@ class InvoiceItem(models.Model):
         on_delete=models.CASCADE
     )
 
+    # Nullable so a milestone/T&M billing line (which has no product/service
+    # - just a description and amount) can be created; every existing
+    # quote-item-based invoice line still always supplies one.
     product_service = models.ForeignKey(
         Product_Services,
-        on_delete=models.PROTECT
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True
     )
 
     description = models.TextField(blank=True)
@@ -547,6 +573,30 @@ class Expense(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True
+    )
+
+    # GL Account this expense should count as "actual" spend against, so
+    # Project Budget lines (Project.BudgetLine) can total real spend per GL
+    # Account instead of relying on the free-text `category` above. Optional
+    # and nullable to stay backward compatible with existing expenses.
+    gl_account = models.ForeignKey(
+        'core.GLAccount',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='expenses'
+    )
+
+    # Which Fixed Budget milestone this expense counts against, so
+    # Milestone.actual_cost (Project app) can total real spend per
+    # milestone. Optional/nullable - T&M projects and general project
+    # expenses leave this unset.
+    milestone = models.ForeignKey(
+        'Project.Milestone',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='expenses'
     )
 
     expense_date = models.DateField(default=timezone.localdate)

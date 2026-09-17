@@ -11,8 +11,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from Project.models import Project, ProjectBudget
+from Project.models import Project, ProjectBudget, Task, BudgetLine
 from finances.models import Invoice, InvoicePayment, OutgoingPayment, Expense
+from accounts.models import Account, Vendor
+from freelancer_onboarding.models import Freelancer
 
 from .serializers import DashboardMetricsSerializer
 from rest_framework.views import APIView
@@ -227,6 +229,392 @@ class DashboardOrgOverviewAPIView(APIView):
 
         return Response(data)
 
+
+# Business rules driving the Project Health table below. Named constants
+# (rather than inline literals) so they read as adjustable configuration -
+# a real "configurable per tenant" version would move these into a settings
+# row/admin screen; this keeps that door open without building the admin UI
+# for it here.
+PROJECT_HEALTH_RULES = {
+    "critical_budget_ratio": 1.0,      # actual_cost / budget over this => Critical
+    "at_risk_budget_ratio": 0.85,      # actual_cost / budget over this => At Risk
+    "at_risk_days_to_deadline": 14,    # end_date within this many days...
+    "at_risk_min_progress": 50,        # ...and completion % below this => At Risk
+}
+
+ACTIVE_PROJECT_STATUSES = [
+    "planning", "development", "testing", "uat", "ready_for_deployment", "on_hold",
+]
+
+
+def _project_progress_pct(project):
+    """% of this project's tasks marked completed. None when it has no tasks yet."""
+    tasks = list(project.tasks.all())
+    if not tasks:
+        return None
+    completed = sum(1 for t in tasks if t.status == "completed")
+    return round(100 * completed / len(tasks))
+
+
+def _project_health(budget_amount, actual_cost, progress_pct, end_date):
+    """Returns (health, reason) per PROJECT_HEALTH_RULES above."""
+    today = timezone.now().date()
+
+    if budget_amount and budget_amount > 0:
+        ratio = float(actual_cost) / float(budget_amount)
+        if ratio > PROJECT_HEALTH_RULES["critical_budget_ratio"]:
+            return "critical", "Budget exceeded"
+        if ratio > PROJECT_HEALTH_RULES["at_risk_budget_ratio"]:
+            return "at_risk", "Approaching budget limit"
+
+    if end_date:
+        days_left = (end_date - today).days
+        if days_left < 0 and (progress_pct is None or progress_pct < 100):
+            return "critical", "Past deadline"
+        if (
+            0 <= days_left <= PROJECT_HEALTH_RULES["at_risk_days_to_deadline"]
+            and progress_pct is not None
+            and progress_pct < PROJECT_HEALTH_RULES["at_risk_min_progress"]
+        ):
+            return "at_risk", "Deadline approaching with low progress"
+
+    return "healthy", "On track"
+
+
+class AdminDashboardOverviewAPIView(APIView):
+    """
+    Single consolidated payload for the redesigned Admin Dashboard's ERP-style
+    sections (KPIs, budget control, project health, portfolio, receivables,
+    resource utilisation, action center, recent activity) - one call instead
+    of one per widget, per the "don't make one API call for every individual
+    KPI" performance rule. Cached 90s, same pattern as
+    DashboardOrgOverviewAPIView above. Admin/Manager/PM only.
+    """
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.roles.filter(
+            role_name__in=["Admin", "Manager", "Project Manager"]
+        ).exists():
+            return Response({"error": "Permission denied"}, status=403)
+
+        cache_key = "admin_dashboard_overview"
+        try:
+            cached = cache.get(cache_key)
+            if cached:
+                return Response(cached)
+        except Exception:
+            pass
+
+        project_health_rows = self._project_health_table()
+
+        data = {
+            "kpis": self._kpis(),
+            "portfolio": self._portfolio(),
+            "project_health": project_health_rows,
+            "budget_control": self._budget_control(),
+            "receivables": self._receivables(),
+            "resource_utilization": self._resource_utilization(),
+            "action_center": self._action_center(project_health_rows),
+            "recent_activity": self._recent_activity(),
+        }
+
+        try:
+            cache.set(cache_key, data, timeout=90)
+        except Exception:
+            pass
+
+        return Response(data)
+
+    # ---------------------------------------------------------------
+    # KPI strip: Total Revenue / Total Cost / Gross Profit / Margin % /
+    # Outstanding / Active Projects / Budget Utilization
+    # ---------------------------------------------------------------
+    def _kpis(self):
+        active_project_count = Project.objects.filter(status__in=ACTIVE_PROJECT_STATUSES).count()
+
+        total_budget = _money_sum(
+            ProjectBudget.objects.filter(project__status__in=ACTIVE_PROJECT_STATUSES), "total_budget"
+        )
+
+        invoiced_qs = Invoice.objects.exclude(status="Cancelled")
+        total_revenue = _money_sum(invoiced_qs, "total_amount")
+
+        total_cost = _money_sum(OutgoingPayment.objects.all(), "amount") + _money_sum(
+            Expense.objects.all(), "amount"
+        )
+
+        gross_profit = total_revenue - total_cost
+        margin_percent = round(float(gross_profit / total_revenue * 100), 1) if total_revenue else None
+
+        outstanding = _money_sum(invoiced_qs.exclude(status="Paid"), "balance_amount")
+
+        # Utilisation scoped to active projects only, on the same "real
+        # logged Expense spend" basis as the Budget Control section below.
+        active_expense_spend = _money_sum(
+            Expense.objects.filter(project__status__in=ACTIVE_PROJECT_STATUSES), "amount"
+        )
+        budget_utilization = (
+            round(float(active_expense_spend / total_budget * 100), 1) if total_budget else None
+        )
+
+        return {
+            "total_revenue": total_revenue,
+            "total_cost": total_cost,
+            "gross_profit": gross_profit,
+            "margin_percent": margin_percent,
+            "outstanding": outstanding,
+            "active_projects": active_project_count,
+            "budget_utilization": budget_utilization,
+            "budget": total_budget,
+            "actual_spend": active_expense_spend,
+        }
+
+    # ---------------------------------------------------------------
+    # Project portfolio summary
+    # ---------------------------------------------------------------
+    def _portfolio(self):
+        qs = Project.objects.all()
+        return {
+            "active": qs.filter(status__in=ACTIVE_PROJECT_STATUSES).count(),
+            "fixed": qs.filter(engagement_type="fixed").count(),
+            "time_and_material": qs.filter(engagement_type="time_and_material").count(),
+            "internal": qs.filter(project_type="internal").count(),
+            "delayed": qs.filter(
+                status__in=ACTIVE_PROJECT_STATUSES, end_date__lt=timezone.now().date()
+            ).count(),
+            "completed": qs.filter(status="deployed").count(),
+        }
+
+    # ---------------------------------------------------------------
+    # Project health table (Section 8) - actual cost is real logged Expense
+    # spend only (ProjectBudget.actual_expenses), not live labor cost, to
+    # keep this a cheap per-project computation across a whole table.
+    # ---------------------------------------------------------------
+    def _project_health_table(self):
+        projects = (
+            Project.objects.select_related("client", "project_manager", "budget")
+            .prefetch_related("tasks")
+            .filter(status__in=ACTIVE_PROJECT_STATUSES)
+            .order_by("-created_at")[:25]
+        )
+
+        rows = []
+        for project in projects:
+            budget_obj = getattr(project, "budget", None)
+            budget_amount = (
+                budget_obj.total_budget if budget_obj and budget_obj.total_budget else Decimal("0.00")
+            )
+            actual_cost = budget_obj.actual_expenses if budget_obj else Decimal("0.00")
+            revenue = _money_sum(project.invoice_set.exclude(status="Cancelled"), "total_amount")
+            margin = revenue - actual_cost
+            progress = _project_progress_pct(project)
+            health, reason = _project_health(budget_amount, actual_cost, progress, project.end_date)
+
+            rows.append({
+                "project_no": project.project_no,
+                "project_name": project.project_name,
+                "client_name": getattr(project.client, "company_name", None),
+                "engagement_type": project.engagement_type,
+                "manager_name": project.project_manager.get_full_name() if project.project_manager else None,
+                "budget": budget_amount,
+                "actual_cost": actual_cost,
+                "revenue": revenue,
+                "margin": margin,
+                "progress": progress,
+                "health": health,
+                "health_reason": reason,
+                "status": project.status,
+            })
+        return rows
+
+    # ---------------------------------------------------------------
+    # Budget Control Center - same GL-account rollup as
+    # Project.BudgetLineSummaryAPIView, reused here for the dashboard.
+    # ---------------------------------------------------------------
+    def _budget_control(self):
+        lines = BudgetLine.objects.select_related("gl_account").all()
+        by_account = {}
+        for line in lines:
+            acc = line.gl_account
+            entry = by_account.setdefault(acc.id, {
+                "gl_account": acc.id,
+                "gl_account_code": acc.code,
+                "gl_account_name": acc.name,
+                "planned_amount": Decimal("0.00"),
+                "actual_amount": Decimal("0.00"),
+            })
+            entry["planned_amount"] += line.planned_amount or Decimal("0.00")
+            entry["actual_amount"] += line.actual_amount
+
+        results = []
+        for entry in by_account.values():
+            entry["variance"] = entry["planned_amount"] - entry["actual_amount"]
+            results.append(entry)
+        results.sort(key=lambda r: r["gl_account_code"])
+        return results
+
+    # ---------------------------------------------------------------
+    # Accounts Receivable
+    # ---------------------------------------------------------------
+    def _receivables(self):
+        today = timezone.now().date()
+        week_end = today + timezone.timedelta(days=7)
+        month_start = today.replace(day=1)
+
+        open_invoices = Invoice.objects.exclude(status__in=["Paid", "Cancelled"]).select_related("client")
+
+        total_outstanding = _money_sum(open_invoices, "balance_amount")
+        due_this_week = _money_sum(
+            open_invoices.filter(due_date__gte=today, due_date__lte=week_end), "balance_amount"
+        )
+        overdue = _money_sum(open_invoices.filter(due_date__lt=today), "balance_amount")
+        paid_this_month = _money_sum(
+            InvoicePayment.objects.filter(payment_date__gte=month_start), "amount"
+        )
+
+        invoice_rows = [
+            {
+                "id": inv.id,
+                "invoice_no": inv.invoice_no,
+                "client_name": getattr(inv.client, "company_name", None),
+                "issue_date": inv.issue_date,
+                "due_date": inv.due_date,
+                "amount": inv.total_amount,
+                "outstanding": inv.balance_amount,
+                "status": inv.status,
+            }
+            for inv in open_invoices.order_by("due_date")[:15]
+        ]
+
+        return {
+            "summary": {
+                "total_outstanding": total_outstanding,
+                "due_this_week": due_this_week,
+                "overdue": overdue,
+                "paid_this_month": paid_this_month,
+            },
+            "invoices": invoice_rows,
+        }
+
+    # ---------------------------------------------------------------
+    # Resource utilisation - employees only for now (consumed/allocated
+    # Task hours); T&M ResourceAssignment coverage can be added the same
+    # way once needed.
+    # ---------------------------------------------------------------
+    def _resource_utilization(self):
+        results = []
+        employees = Account.objects.filter(assigned_tasks__isnull=False).distinct()[:15]
+        for emp in employees:
+            tasks = emp.assigned_tasks.all()
+            allocated = sum((t.allocated_hours or Decimal("0")) for t in tasks)
+            if allocated <= 0:
+                continue
+            consumed = sum((t.consumed_hours or Decimal("0")) for t in tasks)
+            pct = min(100, round(float(consumed / allocated * 100)))
+            results.append({
+                "name": emp.get_full_name() or emp.username,
+                "allocation_percent": pct,
+            })
+        results.sort(key=lambda r: -r["allocation_percent"])
+        return results[:8]
+
+    # ---------------------------------------------------------------
+    # Action Center - "needs attention" counts, each with somewhere to go.
+    # ---------------------------------------------------------------
+    def _action_center(self, project_health_rows):
+        items = []
+
+        overdue_count = Invoice.objects.filter(status="Overdue").count()
+        if overdue_count:
+            items.append({
+                "type": "invoices_overdue",
+                "label": f"{overdue_count} invoice{'s' if overdue_count != 1 else ''} overdue",
+                "count": overdue_count,
+                "link": "/reports",
+            })
+
+        over_budget_count = sum(
+            1 for line in BudgetLine.objects.select_related("gl_account").all()
+            if line.is_over_budget
+        )
+        if over_budget_count:
+            items.append({
+                "type": "budgets_exceeded",
+                "label": f"{over_budget_count} budget line{'s' if over_budget_count != 1 else ''} over budget",
+                "count": over_budget_count,
+                "link": "/projects",
+            })
+
+        # Freelancers have no formal approval gate like vendors do - "onboarding"
+        # status is the closest proxy for "needs someone's attention".
+        pending_freelancers = Freelancer.objects.filter(status="onboarding").count()
+        if pending_freelancers:
+            items.append({
+                "type": "freelancer_approvals",
+                "label": f"{pending_freelancers} freelancer{'s' if pending_freelancers != 1 else ''} in onboarding",
+                "count": pending_freelancers,
+                "link": "/contacts",
+            })
+
+        pending_vendors = Vendor.objects.filter(
+            status__in=["submitted", "resubmitted", "approval_in_progress"]
+        ).count()
+        if pending_vendors:
+            items.append({
+                "type": "vendor_approvals",
+                "label": f"{pending_vendors} vendor approval{'s' if pending_vendors != 1 else ''} pending",
+                "count": pending_vendors,
+                "link": "/vendors/approvals",
+            })
+
+        at_risk_count = sum(1 for row in project_health_rows if row["health"] in ("at_risk", "critical"))
+        if at_risk_count:
+            items.append({
+                "type": "projects_at_risk",
+                "label": f"{at_risk_count} project{'s' if at_risk_count != 1 else ''} at risk or critical",
+                "count": at_risk_count,
+                "link": "/projects",
+            })
+
+        return items
+
+    # ---------------------------------------------------------------
+    # Recent Activity - a lightweight feed built from existing timestamped
+    # records (Invoice/Expense/Task), not a full audit-log system.
+    # ---------------------------------------------------------------
+    def _recent_activity(self):
+        events = []
+
+        for inv in Invoice.objects.select_related("created_by").order_by("-created_at")[:5]:
+            events.append({
+                "user": inv.created_by.get_full_name() if inv.created_by else "System",
+                "action": "created invoice",
+                "object": inv.invoice_no,
+                "time": inv.created_at,
+                "link": f"/reports",
+            })
+        for exp in Expense.objects.select_related("created_by").order_by("-created_at")[:5]:
+            events.append({
+                "user": exp.created_by.get_full_name() if exp.created_by else "System",
+                "action": "logged expense",
+                "object": exp.expense_no,
+                "time": exp.created_at,
+                "link": None,
+            })
+        for task in Task.objects.select_related("created_by").order_by("-created_at")[:5]:
+            events.append({
+                "user": task.created_by.get_full_name() if task.created_by else "System",
+                "action": "created task",
+                "object": task.title,
+                "time": task.created_at,
+                "link": "/task-management",
+            })
+
+        events.sort(key=lambda e: e["time"], reverse=True)
+        return events[:12]
 
 
 class FinanceOverviewAPIView(APIView):

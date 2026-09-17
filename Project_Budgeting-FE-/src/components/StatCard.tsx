@@ -11,6 +11,10 @@ interface StatCardProps {
   higherIsBetter?: boolean;
   loading?: boolean;
   onClick?: () => void;
+  /** Optional semantic health tag (approved enterprise UI design tokens). Independent of `change`. */
+  status?: 'good' | 'watch' | 'risk';
+  /** Caption shown when `status` is set, e.g. "Within control limit" or "₹23.8L overdue". */
+  statusLabel?: string;
 }
 
 export const StatCard: React.FC<StatCardProps> = ({
@@ -21,12 +25,14 @@ export const StatCard: React.FC<StatCardProps> = ({
   higherIsBetter = true,
   loading = false,
   onClick,
+  status,
+  statusLabel,
 }) => {
   if (loading) {
     return (
-      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm animate-pulse">
-        <div className="h-4 w-24 bg-gray-100 rounded mb-3" />
-        <div className="h-7 w-32 bg-gray-100 rounded" />
+      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm animate-pulse dark:bg-gray-900 dark:border-gray-800">
+        <div className="h-4 w-24 bg-gray-100 rounded mb-3 dark:bg-gray-800" />
+        <div className="h-7 w-32 bg-gray-100 rounded dark:bg-gray-800" />
       </div>
     );
   }
@@ -39,18 +45,18 @@ export const StatCard: React.FC<StatCardProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow ${onClick ? 'cursor-pointer' : ''}`}
+      className={`bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow dark:bg-gray-900 dark:border-gray-800 ${onClick ? 'cursor-pointer' : ''}`}
     >
       <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-medium text-gray-500">{label}</span>
+        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</span>
         {icon && (
-          <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+          <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center dark:bg-blue-500/10 dark:text-blue-400">
             {icon}
           </div>
         )}
       </div>
       <div className="flex items-end justify-between gap-2">
-        <span className="text-2xl font-bold text-gray-900">{value}</span>
+        <span className="text-2xl font-bold text-gray-900 dark:text-white">{value}</span>
         {hasChange && change !== 0 && (
           <span
             className={`flex items-center gap-0.5 text-sm font-medium ${
@@ -62,6 +68,18 @@ export const StatCard: React.FC<StatCardProps> = ({
           </span>
         )}
       </div>
+      {statusLabel && (
+        <p
+          className={`mt-1.5 text-xs font-medium ${
+            status === 'risk' ? 'text-risk-600' : status === 'watch' ? 'text-amber-600' : 'text-teal-700'
+          }`}
+        >
+          {statusLabel}
+        </p>
+      )}
     </div>
   );
 };
+
+// Design-system alias: same component, name matches enterprise-artifacts/UI_BUILD_HANDOFF.md's "MetricCard".
+export { StatCard as MetricCard };

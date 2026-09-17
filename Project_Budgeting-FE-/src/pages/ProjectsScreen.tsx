@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Layout } from '../components/Layout';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
-import { Search, Filter, Plus, ChevronDown, MoreHorizontal, Wallet, PieChart, TrendingUp, X, Briefcase, Clock, CheckCircle2 } from 'lucide-react';
+import { Search, Filter, Plus, ChevronDown, X, Briefcase, Clock, CheckCircle2, Wallet, PieChart, TrendingUp } from 'lucide-react';
 import { CreateProjectModal } from '../components/CreateProjectModal';
+import { ProjectHealthCard, type ProjectHealth } from '../components/ProjectHealthCard';
+import { MetricCard } from '../components/StatCard';
+import { EmptyState } from '../components/EmptyState';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
 
@@ -36,33 +39,6 @@ interface CompanyGroup {
 	projects: Project[];
 }
 
-const KPICard = ({ label, value, subValue, icon: Icon }: { label: string; value: string; subValue?: string; icon: any }) => (
-	<div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-start justify-between">
-		<div>
-			<p className="text-sm text-gray-500 mb-1">{label}</p>
-			<div className="flex items-baseline gap-2">
-				<h3 className="text-xl font-bold text-gray-900">{value}</h3>
-				{subValue && <span className="text-sm text-gray-500">{subValue}</span>}
-			</div>
-		</div>
-		<div className="p-2 bg-gray-50 rounded-lg">
-			<Icon className="w-5 h-5 text-gray-400" />
-		</div>
-	</div>
-);
-
-const ProgressBar = ({ value }: { value: number }) => (
-	<div className="w-full max-w-[140px]">
-		<div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-			<div
-				className="h-full bg-blue-600 rounded-full transition-all duration-300"
-				style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
-			/>
-		</div>
-		<p className="text-xs text-gray-500 mt-1">{value}%</p>
-	</div>
-);
-
 const STATUS_STYLES: Record<string, string> = {
 	planning: 'bg-purple-50 text-purple-700 border-purple-200',
 	development: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -94,7 +70,7 @@ const StatusSelect = ({
 			value={project.status}
 			onClick={(e) => e.stopPropagation()}
 			onChange={(e) => onChange(project, e.target.value)}
-			className={`px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer capitalize focus:outline-none focus:ring-2 focus:ring-blue-500 ${activeStyle}`}
+			className={`w-full px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer capitalize focus:outline-none focus:ring-2 focus:ring-teal-600 ${activeStyle}`}
 		>
 			{options.map(choice => (
 				<option key={choice.value} value={choice.value}>{choice.label}</option>
@@ -103,28 +79,38 @@ const StatusSelect = ({
 	);
 };
 
-export default function ProjectsScreen({ userRole, currentPage, onNavigate }: any) {
+// Budget-usage heuristic for the health badge — the API has no computed "health" field
+// today (see enterprise-artifacts/UI_BUILD_HANDOFF.md's Phase 3 backend gaps).
+function projectHealth(project: Project): { health: ProjectHealth; pct: number } {
+	const total = parseFloat(project.budget?.total_budget) || 0;
+	const used = parseFloat(project.budget?.bills_and_expenses) || 0;
+	const pct = total > 0 ? (used / total) * 100 : 0;
+	const health: ProjectHealth = pct >= 90 ? 'at_risk' : pct >= 75 ? 'watch' : 'healthy';
+	return { health, pct };
+}
+
+export default function ProjectsScreen(_props: any) {
 	const navigate = useNavigate();
+	const [searchParams, setSearchParams] = useSearchParams();
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 	const [companyGroups, setCompanyGroups] = useState<CompanyGroup[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [searchQuery, setSearchQuery] = useState('');
+	const [searchQuery, setSearchQuery] = useState(searchParams.get('q') ?? '');
 	const [kpiData, setKpiData] = useState({
 		forecastedProfit: 0,
 		totalBudget: 0,
 		totalHours: 0
 	});
 
-	const [filterStatus, setFilterStatus] = useState('All');
+	const [filterStatus, setFilterStatus] = useState(searchParams.get('status') ?? 'All');
 	const [statusChoices, setStatusChoices] = useState<{value: string, label: string}[]>([]);
-	const [showMyProjects, setShowMyProjects] = useState(false);
-	
+
 	const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 	const [advancedFilters, setAdvancedFilters] = useState({
-		project_name: ''
+		project_name: searchParams.get('project_name') ?? ''
 	});
 	const [appliedFilters, setAppliedFilters] = useState({
-		project_name: ''
+		project_name: searchParams.get('project_name') ?? ''
 	});
 
 	useEffect(() => {
@@ -139,8 +125,16 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 	useEffect(() => {
 		const timeoutId = setTimeout(() => {
 			fetchProjects();
+
+			// Persist the active filters to the URL so a refresh/back-nav doesn't lose them.
+			const next = new URLSearchParams();
+			if (searchQuery) next.set('q', searchQuery);
+			if (filterStatus && filterStatus !== 'All') next.set('status', filterStatus);
+			if (appliedFilters.project_name) next.set('project_name', appliedFilters.project_name);
+			setSearchParams(next, { replace: true });
 		}, 500);
 		return () => clearTimeout(timeoutId);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [searchQuery, filterStatus, appliedFilters]);
 
 	const fetchStatusChoices = async () => {
@@ -238,12 +232,8 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 			// The backend handles search and status filtering;
 			// this is a client-side safety net, restricted to project name only.
 			const matchesSearch = project.project_name.toLowerCase().includes(searchQuery.toLowerCase());
-
 			const matchesStatus = filterStatus === 'All' || project.status === filterStatus;
-
-			const matchesMyProjects = !showMyProjects || true;
-
-			return matchesSearch && matchesStatus && matchesMyProjects;
+			return matchesSearch && matchesStatus;
 		});
 
 		return {
@@ -252,16 +242,12 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 		};
 	}).filter(company => company.projects.length > 0);
 
-	// Calculate currency (use first project's currency or default to INR)
-	const currency = companyGroups.length > 0 && companyGroups[0].projects.length > 0
-		? companyGroups[0].projects[0].budget.currency
-		: 'INR';
-
 	// Project counts for the overview tiles (derived from the currently loaded/filtered projects)
 	const allProjects = companyGroups.flatMap(company => company.projects);
 	const totalProjectsCount = allProjects.length;
 	const completedProjectsCount = allProjects.filter(project => project.status === 'deployed').length;
 	const inProcessProjectsCount = totalProjectsCount - completedProjectsCount;
+	const currency = allProjects[0]?.budget?.currency || 'INR';
 
 	const handleStatusChange = async (project: Project, newStatus: string) => {
 		if (newStatus === project.status) return;
@@ -283,176 +269,106 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 	};
 
 	return (
-		<Layout userRole={userRole} currentPage="projects" onNavigate={onNavigate}>
-			<div className="p-6 max-w-[1600px] mx-auto">
-				{/* Header */}
-				<div className="flex flex-col gap-6 mb-8">
-					<div className="flex items-center justify-between">
-						<div className="flex items-center gap-2 text-sm text-gray-500">
-							<span>Projects</span>
-							<span>/</span>
-							<span className="font-medium text-gray-900">My Projects</span>
+		<AppShell breadcrumb="Projects" title="Projects">
+			<div className="max-w-[1600px] mx-auto">
+				<div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+					<div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+						<button
+							onClick={() => setIsCreateModalOpen(true)}
+							className="bg-navy-900 hover:bg-navy-800 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors whitespace-nowrap"
+						>
+							<Plus size={16} />
+							New
+						</button>
+						<div className="h-8 w-[1px] bg-gray-200 mx-2"></div>
+						<div className="relative">
+							<select
+								value={filterStatus}
+								onChange={(e) => setFilterStatus(e.target.value)}
+								className="px-4 py-2 pr-8 appearance-none bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-600 cursor-pointer transition-colors"
+							>
+								<option value="All">All Statuses</option>
+								{statusChoices.map(choice => (
+									<option key={choice.value} value={choice.value}>{choice.label}</option>
+								))}
+							</select>
+							<ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none w-4 h-4" />
 						</div>
+						<button
+							onClick={() => setIsFilterModalOpen(true)}
+							className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium flex items-center gap-2 border border-gray-200 whitespace-nowrap"
+						>
+							<Filter size={16} />
+							Filters
+						</button>
 					</div>
 
-					<div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-						<div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-							<button
-								onClick={() => setIsCreateModalOpen(true)}
-								className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors whitespace-nowrap"
-							>
-								<Plus size={16} />
-								New
-							</button>
-							<div className="h-8 w-[1px] bg-gray-200 mx-2"></div>
-							<div className="relative">
-								<select
-									value={filterStatus}
-									onChange={(e) => setFilterStatus(e.target.value)}
-									className="px-4 py-2 pr-8 appearance-none bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors"
-								>
-									<option value="All">All Statuses</option>
-									{statusChoices.map(choice => (
-										<option key={choice.value} value={choice.value}>{choice.label}</option>
-									))}
-								</select>
-								<ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none w-4 h-4" />
-							</div>
-							<button
-								onClick={() => setIsFilterModalOpen(true)}
-								className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium flex items-center gap-2 border border-gray-200 whitespace-nowrap"
-							>
-								<Filter size={16} />
-								Filters
-							</button>
-						</div>
-
-						<div className="relative w-full md:w-80">
-							<Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-							<input
-								type="text"
-								placeholder="Search..."
-								value={searchQuery}
-								onChange={(e) => setSearchQuery(e.target.value)}
-								className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-							/>
-						</div>
+					<div className="relative w-full md:w-80">
+						<Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+						<input
+							type="text"
+							placeholder="Search..."
+							value={searchQuery}
+							onChange={(e) => setSearchQuery(e.target.value)}
+							className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+						/>
 					</div>
 				</div>
 
 				{/* Project Overview */}
-				<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-					<KPICard
-						label="Total Projects"
-						value={totalProjectsCount.toString()}
-						icon={Briefcase}
-					/>
-					<KPICard
-						label="In Process"
-						value={inProcessProjectsCount.toString()}
-						icon={Clock}
-					/>
-					<KPICard
-						label="Completed"
-						value={completedProjectsCount.toString()}
-						icon={CheckCircle2}
-					/>
+				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+					<MetricCard label="Total Projects" value={totalProjectsCount.toString()} icon={<Briefcase size={18} />} />
+					<MetricCard label="In Process" value={inProcessProjectsCount.toString()} icon={<Clock size={18} />} />
+					<MetricCard label="Completed" value={completedProjectsCount.toString()} icon={<CheckCircle2 size={18} />} />
 				</div>
 
-				{/* KPIs */}
-				<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-					<KPICard
-						label="Forecasted profit (budget)"
-						value={`${kpiData.forecastedProfit.toLocaleString()} ${currency}`}
-						icon={TrendingUp}
-					/>
-					<KPICard
-						label="Total Budget"
-						value={`${kpiData.totalBudget.toLocaleString()} ${currency}`}
-						icon={Wallet}
-					/>
-					<KPICard
-						label="Total Hours Allocated"
-						value={kpiData.totalHours.toString()}
-						subValue="hours"
-						icon={PieChart}
-					/>
+				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+					<MetricCard label="Forecasted profit (budget)" value={`${kpiData.forecastedProfit.toLocaleString()} ${currency}`} icon={<TrendingUp size={18} />} />
+					<MetricCard label="Total Budget" value={`${kpiData.totalBudget.toLocaleString()} ${currency}`} icon={<Wallet size={18} />} />
+					<MetricCard label="Total Hours Allocated" value={`${kpiData.totalHours} hours`} icon={<PieChart size={18} />} />
 				</div>
 
-				{/* Projects Table */}
-				<div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-					<div className="overflow-x-auto">
-						<div className="min-w-[1000px]">
-							{/* Table Header */}
-							<div className="grid grid-cols-12 gap-4 px-6 py-4 border-b border-gray-200 bg-white text-xs font-semibold text-gray-500 uppercase tracking-wider">
-								<div className="col-span-3">Project Name</div>
-								<div className="col-span-2">Start - End Date</div>
-								<div className="col-span-2">Total Budget</div>
-								<div className="col-span-2">Forecasted Profit</div>
-								<div className="col-span-1">Hours</div>
-								<div className="col-span-2">Status</div>
-							</div>
+				{/* Projects */}
+				{loading ? (
+					<div className="p-8 text-center text-gray-500">Loading projects...</div>
+				) : filteredCompanyGroups.length === 0 ? (
+					<EmptyState title="No projects found" description="Try clearing filters or search, or create a new project." />
+				) : (
+					<div className="space-y-8">
+						{filteredCompanyGroups.map((company) => (
+							<div key={company.id}>
+								<div className="flex items-center justify-between mb-3">
+									<span className="text-sm font-bold text-gray-900">{company.company_name}</span>
+									<span className="text-xs text-gray-500 font-medium">
+										{company.projects.length} project{company.projects.length !== 1 ? 's' : ''}
+									</span>
+								</div>
 
-							{/* Table Body */}
-							<div className="divide-y divide-gray-100">
-								{loading ? (
-									<div className="p-8 text-center text-gray-500">Loading projects...</div>
-								) : filteredCompanyGroups.length === 0 ? (
-									<div className="p-8 text-center text-gray-500">No projects found</div>
-								) : (
-									filteredCompanyGroups.map((company) => (
-										<div key={company.id} className="group">
-											{/* Company Header */}
-											<div className="px-6 py-3 bg-blue-50 flex items-center justify-between border-b border-blue-100">
-												<span className="text-sm font-bold text-blue-900">{company.company_name}</span>
-												<span className="text-xs text-blue-700 font-medium">
-													Total {company.projects.length} Project{company.projects.length !== 1 ? 's' : ''}
-												</span>
-											</div>
-
-											{/* Projects */}
-											<div className="divide-y divide-gray-50">
-												{company.projects.map((project) => (
-													<div
-														key={project.id}
-														onClick={() => navigate(`/projects/${project.project_no}`)}
-														className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-gray-50 transition-colors bg-white cursor-pointer"
-													>
-														<div className="col-span-3 flex items-center gap-3">
-															<span className="text-sm font-medium text-gray-900">
-																{project.project_name}
-															</span>
-														</div>
-														<div className="col-span-2 text-xs text-gray-600">
-															<div>{project.start_date}</div>
-															<div>{project.end_date}</div>
-														</div>
-														<div className="col-span-2 text-sm text-gray-900 font-medium">
-															{(parseFloat(project.budget.total_budget) || 0).toLocaleString()} {project.budget.currency}
-														</div>
-														<div className="col-span-2 text-sm text-green-600 font-medium">
-															{(parseFloat(project.budget.forecasted_profit) || 0).toLocaleString()} {project.budget.currency}
-														</div>
-														<div className="col-span-1 text-sm text-gray-900 font-medium">
-															{project.budget.billable_hours != null ? Number(project.budget.billable_hours) : project.budget.total_hours}h
-														</div>
-														<div className="col-span-2">
-															<StatusSelect
-																project={project}
-																statusChoices={statusChoices}
-																onChange={handleStatusChange}
-															/>
-														</div>
-													</div>
-												))}
-											</div>
-										</div>
-									))
-								)}
+								<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+									{company.projects.map((project) => {
+										const { health, pct } = projectHealth(project);
+										return (
+											<ProjectHealthCard
+												key={project.id}
+												name={project.project_name}
+												health={health}
+												budgetUsedPct={pct}
+												totalBudget={`${(parseFloat(project.budget?.total_budget) || 0).toLocaleString()} ${project.budget?.currency || 'INR'}`}
+												totalHours={`${project.budget?.billable_hours != null ? Number(project.budget.billable_hours) : (project.budget?.total_hours || 0)}h`}
+												startDate={project.start_date ? new Date(project.start_date).toLocaleDateString() : undefined}
+												endDate={project.end_date ? new Date(project.end_date).toLocaleDateString() : undefined}
+												statusControl={
+													<StatusSelect project={project} statusChoices={statusChoices} onChange={handleStatusChange} />
+												}
+												onClick={() => navigate(`/projects/${project.project_no}`)}
+											/>
+										);
+									})}
+								</div>
 							</div>
-						</div>
+						))}
 					</div>
-				</div>
+				)}
 			</div>
 
 			<CreateProjectModal
@@ -479,7 +395,7 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 								<select
 									value={advancedFilters.project_name}
 									onChange={(e) => setAdvancedFilters(prev => ({ ...prev, project_name: e.target.value }))}
-									className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+									className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
 								>
 									<option value="">All Projects</option>
 									{allProjectNames.map((name, idx) => (
@@ -489,13 +405,13 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 							</div>
 						</div>
 						<div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50 mt-auto">
-							<Button variant="secondary" onClick={() => {
+							<Button variant="secondary" className="!w-auto px-6" onClick={() => {
 								setAdvancedFilters(appliedFilters);
 								setIsFilterModalOpen(false);
 							}}>
 								Cancel
 							</Button>
-							<Button onClick={() => {
+							<Button className="!w-auto px-6" onClick={() => {
 								setAppliedFilters(advancedFilters);
 								setIsFilterModalOpen(false);
 							}}>
@@ -505,6 +421,6 @@ export default function ProjectsScreen({ userRole, currentPage, onNavigate }: an
 					</div>
 				</div>
 			)}
-		</Layout>
+		</AppShell>
 	);
 }

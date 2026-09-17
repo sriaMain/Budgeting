@@ -8,6 +8,8 @@ import { X } from 'lucide-react';
 import { Button } from './Button';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
+import { SearchableSelect } from './SearchableSelect';
+import type { SearchableSelectOption } from './SearchableSelect';
 
 interface AddExpenseModalProps {
     isOpen: boolean;
@@ -21,6 +23,7 @@ export interface ExpenseData {
     amount: number;
     description: string;
     project: number;
+    gl_account?: number;
 }
 
 export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
@@ -35,13 +38,32 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [categories, setCategories] = useState<Array<{ key: string; label: string }>>([]);
     const [isLoadingCategories, setIsLoadingCategories] = useState(false);
+    const [glAccountOptions, setGlAccountOptions] = useState<SearchableSelectOption[]>([]);
+    const [glAccount, setGlAccount] = useState<SearchableSelectOption | null>(null);
 
-    // Fetch categories when modal opens
+    // Fetch categories + GL accounts when modal opens
     useEffect(() => {
         if (isOpen) {
             fetchCategories();
+            fetchGlAccounts();
         }
     }, [isOpen]);
+
+    const fetchGlAccounts = async () => {
+        try {
+            const response = await axiosInstance.get<{ id: number; code: string; name: string; account_type?: string }[]>(
+                '/gl-accounts/?active_only=true'
+            );
+            const options = (response.data || []).map((acc) => ({
+                id: acc.id,
+                label: `${acc.code} - ${acc.name}`,
+                sublabel: acc.account_type,
+            }));
+            setGlAccountOptions(options);
+        } catch (error) {
+            console.error('Error fetching GL accounts:', error);
+        }
+    };
 
     const fetchCategories = async () => {
         try {
@@ -90,6 +112,10 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
             project: parseInt(projectId)
         };
 
+        if (glAccount) {
+            expenseData.gl_account = Number(glAccount.id);
+        }
+
         console.log('=== Creating Expense ===');
         console.log('Project ID:', projectId);
         console.log('Expense Data:', expenseData);
@@ -119,6 +145,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 setCategory('');
                 setAmount('');
                 setDescription('');
+                setGlAccount(null);
                 onClose();
             }
         } catch (error: any) {
@@ -184,6 +211,22 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                                 </svg>
                             </div>
                         </div>
+                    </div>
+
+                    {/* GL Account */}
+                    <div>
+                        <label className="block text-base font-semibold text-gray-900 mb-2">
+                            GL Account
+                        </label>
+                        <SearchableSelect
+                            options={glAccountOptions}
+                            value={glAccount}
+                            onChange={setGlAccount}
+                            placeholder="Search account..."
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                            Optional — ties this expense to a budget line's GL Account so Actual spend rolls up correctly.
+                        </p>
                     </div>
 
                     {/* Amount */}

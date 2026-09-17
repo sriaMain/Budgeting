@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Layout } from '../components/Layout';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Filter } from 'lucide-react';
@@ -8,6 +8,10 @@ import { ReusableTable } from '../components/ReusableTable';
 import { AddTaskModal } from '../components/AddTaskModal';
 import { AssignTaskModal } from '../components/AssignTaskModal';
 import { AddExpenseModal } from '../components/AddExpenseModal';
+import { BudgetLinesPanel } from '../components/BudgetLinesPanel';
+import { MilestonesPanel } from '../components/MilestonesPanel';
+import { ResourcesPanel } from '../components/ResourcesPanel';
+import { FinancialSummaryPanel } from '../components/FinancialSummaryPanel';
 import { TaskBoardView } from '../components/TaskBoardView';
 import { TaskCalendarView } from '../components/TaskCalendarView';
 import { TaskGanttView } from '../components/TaskGanttView';
@@ -204,6 +208,37 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         fetchFirstQuote();
         fetchAttachments();
     }, [projectId]);
+
+    // Invoices are only ever populated from this one project-detail fetch,
+    // which the mount effect above runs once. Anything that creates an
+    // invoice elsewhere on this page (Milestones tab billing, T&M period
+    // billing in Financial Summary) has no way to tell that effect to
+    // re-run, so the Finances tab kept showing stale ("No invoices") data
+    // until a full page reload. Refetching whenever the Finances tab is
+    // opened keeps it current without needing every child component to
+    // know about the parent's state.
+    const refreshInvoices = useCallback(async () => {
+        if (!projectId) return;
+        setIsLoadingInvoices(true);
+        try {
+            const response = await axiosInstance.get(`/projects/${projectId}/`);
+            const projectData = response.data;
+            setProject(projectData);
+            if (projectData.invoices && Array.isArray(projectData.invoices)) {
+                setInvoices(projectData.invoices);
+            }
+        } catch (error) {
+            console.error('Error refreshing invoices:', error);
+        } finally {
+            setIsLoadingInvoices(false);
+        }
+    }, [projectId]);
+
+    useEffect(() => {
+        if (activeTab === 'Finances') {
+            refreshInvoices();
+        }
+    }, [activeTab, refreshInvoices]);
 
     // Fetch first available quote for invoice generation
     const fetchFirstQuote = async () => {
@@ -627,6 +662,17 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         : Math.max(0, totalBudgetAmount - usedBudgetAmount);
     const budgetCurrency = project?.budget?.currency || 'INR';
 
+    // Project Types and Project Financial Management: only show the tab
+    // relevant to this project's engagement model (Fixed -> Milestones,
+    // T&M -> Resources); Financial Summary is common to both.
+    const engagementType: 'fixed' | 'time_and_material' = project?.engagement_type || 'fixed';
+    const mainTabs = [
+        'Tasks', 'Time', 'Budget',
+        ...(engagementType === 'fixed' ? ['Milestones'] : ['Resources']),
+        'Financial Summary',
+        'Finances', 'Details', 'Payment',
+    ];
+
     const budgetHealth = totalBudgetAmount <= 0
         ? { label: 'No budget set', className: 'bg-gray-50 border-gray-200 text-gray-700', bar: 'bg-gray-400' }
         : budgetUsedPercent >= 100
@@ -751,7 +797,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                     {/* Main Tabs */}
                     <div className="border-b border-gray-200 px-6">
                         <div className="flex gap-8 overflow-x-auto">
-                            {['Tasks', 'Time', 'Budget', 'Finances', 'Details', 'Payment'].map((tab) => (
+                            {mainTabs.map((tab) => (
                                 <button
                                     type="button"
                                     key={tab}
@@ -925,7 +971,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 {/* Budget Sub Tabs: Budget health, Revenue, Profit */}
                                 <div className="border-b border-gray-200">
                                     <div className="flex gap-6">
-                                        {['Budget health', 'Revenue', 'Profit'].map((subTab) => (
+                                        {['Budget health', 'Revenue', 'Profit', 'GL Accounts'].map((subTab) => (
                                             <button
                                                 key={subTab}
                                                 type="button"
@@ -1154,7 +1200,27 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                         );
                                     })()
                                 )}
+
+                                {/* GL Accounts Content — Budget Lines per GL Account */}
+                                {budgetSubTab === 'GL Accounts' && projectId && (
+                                    <BudgetLinesPanel projectId={projectId} currency={budgetCurrency} />
+                                )}
                             </div>
+                        )}
+
+                        {/* Milestones — Fixed Budget / Milestone-Based projects only */}
+                        {activeTab === 'Milestones' && projectId && (
+                            <MilestonesPanel projectId={projectId} currency={budgetCurrency} />
+                        )}
+
+                        {/* Resources — Time & Material projects only */}
+                        {activeTab === 'Resources' && projectId && (
+                            <ResourcesPanel projectId={projectId} currency={budgetCurrency} />
+                        )}
+
+                        {/* Financial Summary — common to both engagement types */}
+                        {activeTab === 'Financial Summary' && projectId && (
+                            <FinancialSummaryPanel projectId={projectId} engagementType={engagementType} currency={budgetCurrency} />
                         )}
 
                         {activeTab === 'Finances' && (
@@ -1570,6 +1636,40 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                     month: 'short',
                                                                     year: 'numeric'
                                                                 })}
+                                                            </p>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Project Type */}
+                                                    {project.project_type && (
+                                                        <div>
+                                                            <label className="text-xs font-medium text-gray-500 uppercase">Project Type</label>
+                                                            <p className="text-sm text-gray-900 mt-1 capitalize">{project.project_type}</p>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Call Center */}
+                                                    {project.call_center_name && (
+                                                        <div>
+                                                            <label className="text-xs font-medium text-gray-500 uppercase">Call Center</label>
+                                                            <p className="text-sm text-gray-900 mt-1">{project.call_center_name}</p>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Profit Center */}
+                                                    {project.profit_center_name && (
+                                                        <div>
+                                                            <label className="text-xs font-medium text-gray-500 uppercase">Profit Center</label>
+                                                            <p className="text-sm text-gray-900 mt-1">{project.profit_center_name}</p>
+                                                        </div>
+                                                    )}
+
+                                                    {/* GL Account */}
+                                                    {project.gl_account_name && (
+                                                        <div>
+                                                            <label className="text-xs font-medium text-gray-500 uppercase">GL Account</label>
+                                                            <p className="text-sm text-gray-900 mt-1">
+                                                                {project.gl_account_code ? `${project.gl_account_code} - ` : ''}{project.gl_account_name}
                                                             </p>
                                                         </div>
                                                     )}

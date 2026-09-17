@@ -63,6 +63,9 @@ interface QuoteData {
     tax_percentage: string;
     total_amount: string;
     items: ProductRow[];
+    call_center_name?: string | null;
+    profit_center_name?: string | null;
+    gl_account_name?: string | null;
 }
 
 export default function QuoteDetailsPage({
@@ -269,6 +272,15 @@ export default function QuoteDetailsPage({
                                 }
                             />
                         </div>
+                        {quoteData.call_center_name && (
+                            <InfoDisplay label="Call Center" value={quoteData.call_center_name} />
+                        )}
+                        {quoteData.profit_center_name && (
+                            <InfoDisplay label="Profit Center" value={quoteData.profit_center_name} />
+                        )}
+                        {quoteData.gl_account_name && (
+                            <InfoDisplay label="GL Account" value={quoteData.gl_account_name} />
+                        )}
                     </div>
 
                     {/* Create Project Button - Separate row for better visibility */}

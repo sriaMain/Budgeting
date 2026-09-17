@@ -75,6 +75,18 @@ class Quote(models.Model):
     client = models.ForeignKey('client.Company', on_delete=models.SET_NULL, related_name='quotes', null=True)
     poc = models.ForeignKey('client.POC', on_delete=models.SET_NULL, related_name='quotes', null=True)
 
+    # Accounting attribution, carried over to the Project created from this
+    # quote once it's Confirmed (see Project.call_center/profit_center/gl_account).
+    call_center = models.ForeignKey(
+        'core.CallCenter', on_delete=models.SET_NULL, null=True, blank=True, related_name='quotes'
+    )
+    profit_center = models.ForeignKey(
+        'core.ProfitCenter', on_delete=models.SET_NULL, null=True, blank=True, related_name='quotes'
+    )
+    gl_account = models.ForeignKey(
+        'core.GLAccount', on_delete=models.SET_NULL, null=True, blank=True, related_name='quotes'
+    )
+
     # Optional link to an existing Project this quote was added to
     # (e.g. a follow-up/phase-2 quote raised against an already-created project).
     # Distinct from Project.created_from_quotation, which tracks the single

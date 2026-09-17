@@ -24,6 +24,19 @@ interface CreateProjectModalProps {
 
 type TabType = 'project' | 'budget';
 
+type EngagementType = 'fixed' | 'time_and_material';
+
+const ENGAGEMENT_TYPES: { value: EngagementType; label: string; description: string }[] = [
+    { value: 'fixed', label: 'Fixed Budget / Milestone-Based', description: 'A fixed contract value billed in milestones/phases.' },
+    { value: 'time_and_material', label: 'Time & Material (T&M)', description: 'Recurring billing based on staffed resources.' },
+];
+
+const BILLING_FREQUENCIES: { value: string; label: string }[] = [
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'biweekly', label: 'Bi-Weekly' },
+    { value: 'monthly', label: 'Monthly' },
+];
+
 interface ProjectManagerOption {
     id: number;
     name: string;
@@ -74,9 +87,26 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     const [priceList, setPriceList] = useState('INR');
     const [isLoadingQuoteBudget, setIsLoadingQuoteBudget] = useState(false);
 
+    // Project Types / Financial Management: engagement model - a DIFFERENT
+    // axis from internal/external above (project_type), controls the
+    // Milestones-vs-Resources workflow on the project detail page.
+    const [engagementType, setEngagementType] = useState<EngagementType>('fixed');
+    const [contractValue, setContractValue] = useState('');
+    const [paymentTerms, setPaymentTerms] = useState('');
+    const [billingFrequency, setBillingFrequency] = useState('monthly');
+    const [monthlyBillingAmount, setMonthlyBillingAmount] = useState('');
+
     // Project Manager + POC
     const [projectManagerOptions, setProjectManagerOptions] = useState<SearchableSelectOption[]>([]);
     const [projectManager, setProjectManager] = useState<SearchableSelectOption | null>(null);
+
+    // Accounting attribution
+    const [callCenterOptions, setCallCenterOptions] = useState<SearchableSelectOption[]>([]);
+    const [callCenter, setCallCenter] = useState<SearchableSelectOption | null>(null);
+    const [profitCenterOptions, setProfitCenterOptions] = useState<SearchableSelectOption[]>([]);
+    const [profitCenter, setProfitCenter] = useState<SearchableSelectOption | null>(null);
+    const [glAccountOptions, setGlAccountOptions] = useState<SearchableSelectOption[]>([]);
+    const [glAccount, setGlAccount] = useState<SearchableSelectOption | null>(null);
     // Raw combined list from the API, kept as-is (with type) so the POC
     // dropdown can be filtered per category without a second round-trip.
     const [pocOptionsRaw, setPocOptionsRaw] = useState<PocOption[]>([]);
@@ -119,6 +149,24 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             .then((res) => setPocOptionsRaw(res.data || []))
             .catch((err) => console.error('Failed to fetch POC options:', err));
 
+        axiosInstance.get<{ id: number; code: string; name: string }[]>('/call-centers/?active_only=true')
+            .then((res) => setCallCenterOptions(
+                (res.data || []).map((c) => ({ id: c.id, label: `${c.code} - ${c.name}` }))
+            ))
+            .catch((err) => console.error('Failed to fetch call centers:', err));
+
+        axiosInstance.get<{ id: number; code: string; name: string }[]>('/profit-centers/?active_only=true')
+            .then((res) => setProfitCenterOptions(
+                (res.data || []).map((c) => ({ id: c.id, label: `${c.code} - ${c.name}` }))
+            ))
+            .catch((err) => console.error('Failed to fetch profit centers:', err));
+
+        axiosInstance.get<{ id: number; code: string; name: string }[]>('/gl-accounts/?active_only=true')
+            .then((res) => setGlAccountOptions(
+                (res.data || []).map((c) => ({ id: c.id, label: `${c.code} - ${c.name}` }))
+            ))
+            .catch((err) => console.error('Failed to fetch GL accounts:', err));
+
         axiosInstance.get<{ id: number; company_name: string }[]>('/client/dropdown/')
             .then((res) => {
                 const options = (res.data || []).map((c) => ({ id: c.id, label: c.company_name }));
@@ -142,6 +190,14 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
         setProjectManager(null);
         setPocCategory('employee');
         setPoc(null);
+        setCallCenter(null);
+        setProfitCenter(null);
+        setGlAccount(null);
+        setEngagementType('fixed');
+        setContractValue('');
+        setPaymentTerms('');
+        setBillingFrequency('monthly');
+        setMonthlyBillingAmount('');
     }, [isOpen, clientName]);
 
     // Show the client's own saved contact person for reference - separate
@@ -212,6 +268,14 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             toast.error('Project name is required');
             return;
         }
+        if (engagementType === 'fixed' && !contractValue) {
+            toast.error('Contract value is required for Fixed Budget / Milestone-Based projects');
+            return;
+        }
+        if (engagementType === 'time_and_material' && !monthlyBillingAmount) {
+            toast.error('Monthly billing amount is required for Time & Material projects');
+            return;
+        }
 
         setIsSaving(true);
         try {
@@ -238,8 +302,17 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                 project_type: projectType,
                 start_date: startDate,
                 end_date: dueDate || null,
-                budget: {}
+                budget: {},
+                engagement_type: engagementType,
+                payment_terms: paymentTerms || undefined,
             };
+
+            if (engagementType === 'fixed') {
+                payload.contract_value = parseFloat(contractValue);
+            } else {
+                payload.monthly_billing_amount = parseFloat(monthlyBillingAmount);
+                payload.billing_frequency = billingFrequency;
+            }
 
             if (client) {
                 payload.client = client.id;
@@ -250,6 +323,15 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             if (poc) {
                 payload.poc_type = pocCategory;
                 payload.poc_id = poc.id;
+            }
+            if (callCenter) {
+                payload.call_center = callCenter.id;
+            }
+            if (profitCenter) {
+                payload.profit_center = profitCenter.id;
+            }
+            if (glAccount) {
+                payload.gl_account = glAccount.id;
             }
 
             // Configure budget based on project type
@@ -415,6 +497,69 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                     />
                                 </div>
 
+                                {/* Project Type (engagement/billing model) */}
+                                <div>
+                                    <label className="block text-base font-medium text-gray-900 mb-3">
+                                        Project Type
+                                    </label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {ENGAGEMENT_TYPES.map((type) => (
+                                            <button
+                                                key={type.value}
+                                                type="button"
+                                                onClick={() => setEngagementType(type.value)}
+                                                className={`text-left p-3 rounded-lg border transition-colors ${engagementType === type.value
+                                                    ? 'border-blue-600 bg-blue-50'
+                                                    : 'border-gray-300 hover:bg-gray-50'
+                                                    }`}
+                                            >
+                                                <p className="text-sm font-semibold text-gray-900">{type.label}</p>
+                                                <p className="text-xs text-gray-500 mt-0.5">{type.description}</p>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                                        {engagementType === 'fixed' ? (
+                                            <InputField
+                                                label={`Contract value (${priceList})`}
+                                                type="number"
+                                                value={contractValue}
+                                                onChange={(e) => setContractValue(e.target.value)}
+                                                placeholder="0"
+                                            />
+                                        ) : (
+                                            <>
+                                                <InputField
+                                                    label={`Monthly billing amount (${priceList})`}
+                                                    type="number"
+                                                    value={monthlyBillingAmount}
+                                                    onChange={(e) => setMonthlyBillingAmount(e.target.value)}
+                                                    placeholder="0"
+                                                />
+                                                <div>
+                                                    <label className="block text-sm text-gray-600 mb-1">Billing Frequency</label>
+                                                    <select
+                                                        value={billingFrequency}
+                                                        onChange={(e) => setBillingFrequency(e.target.value)}
+                                                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                                                    >
+                                                        {BILLING_FREQUENCIES.map((f) => (
+                                                            <option key={f.value} value={f.value}>{f.label}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </>
+                                        )}
+                                        <InputField
+                                            label="Payment terms"
+                                            value={paymentTerms}
+                                            onChange={(e) => setPaymentTerms(e.target.value)}
+                                            placeholder="e.g. Net 30"
+                                        />
+                                    </div>
+                                </div>
+
                                 {/* Project Setup */}
                                 <div>
                                     <label className="block text-base font-medium text-gray-900 mb-3">
@@ -450,6 +595,40 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                 placeholder="Select Project Manager"
                                                 emptyMessage="No employees with the Project Manager role"
                                             />
+                                        </div>
+
+                                        {/* Accounting Attribution */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                            <div>
+                                                <label className="block text-sm text-gray-600 mb-1">Call Center</label>
+                                                <SearchableSelect
+                                                    options={callCenterOptions}
+                                                    value={callCenter}
+                                                    onChange={setCallCenter}
+                                                    placeholder="Select Call Center"
+                                                    emptyMessage="No call centers found"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm text-gray-600 mb-1">Profit Center</label>
+                                                <SearchableSelect
+                                                    options={profitCenterOptions}
+                                                    value={profitCenter}
+                                                    onChange={setProfitCenter}
+                                                    placeholder="Select Profit Center"
+                                                    emptyMessage="No profit centers found"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm text-gray-600 mb-1">GL Account</label>
+                                                <SearchableSelect
+                                                    options={glAccountOptions}
+                                                    value={glAccount}
+                                                    onChange={setGlAccount}
+                                                    placeholder="Select GL Account"
+                                                    emptyMessage="No GL accounts found"
+                                                />
+                                            </div>
                                         </div>
 
                                         {/* POC */}

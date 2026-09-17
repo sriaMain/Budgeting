@@ -5,6 +5,17 @@
     <link rel="icon" type="image/png" href="/sria_logo_gray.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>project_budgeting</title>
+    <script>
+      // Applied before React mounts so there's no flash of the wrong theme
+      // on load. Kept in sync with src/hooks/useTheme.ts's own logic.
+      (function () {
+        try {
+          var stored = localStorage.getItem('pbt-theme');
+          var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

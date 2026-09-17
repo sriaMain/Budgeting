@@ -146,7 +146,7 @@ const App: React.FC = () => {
           <Route
             path="/projects"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={['admin', 'manager']}>
                 <ProjectsScreen
                   userRole={userRole}
                   currentPage={currentPage}

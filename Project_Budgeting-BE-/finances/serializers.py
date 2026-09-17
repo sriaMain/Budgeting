@@ -299,14 +299,14 @@ class InvoiceListSerializer(serializers.ModelSerializer):
     client_id = serializers.IntegerField(source='client.id', read_only=True)
     client_name = serializers.CharField(source='client.name', read_only=True)
     client_email = serializers.SerializerMethodField()
-    quote_no = serializers.CharField(source='quote.quote_no', read_only=True)
+    quote_no = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     payment_status = serializers.SerializerMethodField()
     payment_percentage = serializers.SerializerMethodField()
     days_until_due = serializers.SerializerMethodField()
     is_overdue = serializers.SerializerMethodField()
     project = ProjectDetailSerializer(read_only=True, allow_null=True)
-    
+
     class Meta:
         model = Invoice
         fields = [
@@ -334,7 +334,11 @@ class InvoiceListSerializer(serializers.ModelSerializer):
     def get_client_email(self, obj):
         """Get client email if available"""
         return getattr(obj.client, 'email', '')
-    
+
+    def get_quote_no(self, obj):
+        """Quote is optional now (milestone/T&M invoices have none)."""
+        return obj.quote.quote_no if obj.quote else None
+
     def get_payment_status(self, obj):
         """Get human-readable payment status"""
         if obj.balance_amount == 0:
@@ -373,8 +377,8 @@ class InvoiceDetailSerializer(serializers.ModelSerializer):
     client_id = serializers.IntegerField(source='client.id', read_only=True)
     client_name = serializers.CharField(source='client.company_name', read_only=True)
 
-    quote_id = serializers.IntegerField(source='quote.id', read_only=True)
-    quote_no = serializers.CharField(source='quote.quote_no', read_only=True)
+    quote_id = serializers.SerializerMethodField()
+    quote_no = serializers.SerializerMethodField()
 
     project = ProjectDetailSerializer(read_only=True, allow_null=True)
 
@@ -393,6 +397,13 @@ class InvoiceDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
         fields = '__all__'
+
+    def get_quote_id(self, obj):
+        """Quote is optional now (milestone/T&M invoices have none)."""
+        return obj.quote_id
+
+    def get_quote_no(self, obj):
+        return obj.quote.quote_no if obj.quote else None
 
     def get_created_by_name(self, obj):
         return obj.created_by.get_full_name() if obj.created_by else None
