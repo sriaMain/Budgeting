@@ -92,21 +92,21 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     // Milestones-vs-Resources workflow on the project detail page.
     const [engagementType, setEngagementType] = useState<EngagementType>('fixed');
     const [contractValue, setContractValue] = useState('');
-    const [paymentTerms, setPaymentTerms] = useState('');
     const [billingFrequency, setBillingFrequency] = useState('monthly');
     const [monthlyBillingAmount, setMonthlyBillingAmount] = useState('');
+
+    // Project Contract: Project % and Project Amount are kept in sync with
+    // each other (and with contract value) by the handlers below - only one
+    // of the two needs to be entered, the other is derived. Remaining Amount
+    // is never stored as its own input state; it's always computed from
+    // contractValue/projectAmount at render time.
+    const [projectPercentage, setProjectPercentage] = useState('');
+    const [projectAmount, setProjectAmount] = useState('');
 
     // Project Manager + POC
     const [projectManagerOptions, setProjectManagerOptions] = useState<SearchableSelectOption[]>([]);
     const [projectManager, setProjectManager] = useState<SearchableSelectOption | null>(null);
 
-    // Accounting attribution
-    const [callCenterOptions, setCallCenterOptions] = useState<SearchableSelectOption[]>([]);
-    const [callCenter, setCallCenter] = useState<SearchableSelectOption | null>(null);
-    const [profitCenterOptions, setProfitCenterOptions] = useState<SearchableSelectOption[]>([]);
-    const [profitCenter, setProfitCenter] = useState<SearchableSelectOption | null>(null);
-    const [glAccountOptions, setGlAccountOptions] = useState<SearchableSelectOption[]>([]);
-    const [glAccount, setGlAccount] = useState<SearchableSelectOption | null>(null);
     // Raw combined list from the API, kept as-is (with type) so the POC
     // dropdown can be filtered per category without a second round-trip.
     const [pocOptionsRaw, setPocOptionsRaw] = useState<PocOption[]>([]);
@@ -149,24 +149,6 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             .then((res) => setPocOptionsRaw(res.data || []))
             .catch((err) => console.error('Failed to fetch POC options:', err));
 
-        axiosInstance.get<{ id: number; code: string; name: string }[]>('/call-centers/?active_only=true')
-            .then((res) => setCallCenterOptions(
-                (res.data || []).map((c) => ({ id: c.id, label: `${c.code} - ${c.name}` }))
-            ))
-            .catch((err) => console.error('Failed to fetch call centers:', err));
-
-        axiosInstance.get<{ id: number; code: string; name: string }[]>('/profit-centers/?active_only=true')
-            .then((res) => setProfitCenterOptions(
-                (res.data || []).map((c) => ({ id: c.id, label: `${c.code} - ${c.name}` }))
-            ))
-            .catch((err) => console.error('Failed to fetch profit centers:', err));
-
-        axiosInstance.get<{ id: number; code: string; name: string }[]>('/gl-accounts/?active_only=true')
-            .then((res) => setGlAccountOptions(
-                (res.data || []).map((c) => ({ id: c.id, label: `${c.code} - ${c.name}` }))
-            ))
-            .catch((err) => console.error('Failed to fetch GL accounts:', err));
-
         axiosInstance.get<{ id: number; company_name: string }[]>('/client/dropdown/')
             .then((res) => {
                 const options = (res.data || []).map((c) => ({ id: c.id, label: c.company_name }));
@@ -190,14 +172,12 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
         setProjectManager(null);
         setPocCategory('employee');
         setPoc(null);
-        setCallCenter(null);
-        setProfitCenter(null);
-        setGlAccount(null);
         setEngagementType('fixed');
         setContractValue('');
-        setPaymentTerms('');
         setBillingFrequency('monthly');
         setMonthlyBillingAmount('');
+        setProjectPercentage('');
+        setProjectAmount('');
     }, [isOpen, clientName]);
 
     // Show the client's own saved contact person for reference - separate
@@ -236,6 +216,11 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             if (quote.currency) {
                 setPriceList(quote.currency);
             }
+            // Contract Value must exclude GST: sub_total is the quote's
+            // pre-tax base amount, total_amount includes tax_percentage.
+            if (quote.sub_total != null) {
+                setContractValue(String(quote.sub_total));
+            }
         } catch (error) {
             console.error('Failed to fetch quote budget data:', error);
         } finally {
@@ -263,6 +248,44 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 
     if (!isOpen) return null;
 
+    // Project Contract: Contract Value x Project % = Project Amount, and
+    // Remaining Amount = Contract Value - Project Amount. Only one of
+    // Project %/Project Amount needs to be entered - the other three
+    // handlers below keep everything else in sync so the fields never
+    // disagree with each other.
+    const handleContractValueChange = (value: string) => {
+        setContractValue(value);
+        const cv = parseFloat(value) || 0;
+        if (projectAmount !== '') {
+            const amt = parseFloat(projectAmount) || 0;
+            setProjectPercentage(cv > 0 ? ((amt / cv) * 100).toFixed(2) : '');
+        } else if (projectPercentage !== '') {
+            const pct = parseFloat(projectPercentage) || 0;
+            setProjectAmount(cv > 0 ? ((cv * pct) / 100).toFixed(2) : '');
+        }
+    };
+
+    const handleProjectPercentageChange = (value: string) => {
+        setProjectPercentage(value);
+        const cv = parseFloat(contractValue) || 0;
+        const pct = parseFloat(value);
+        setProjectAmount(!isNaN(pct) && cv > 0 ? ((cv * pct) / 100).toFixed(2) : '');
+    };
+
+    const handleProjectAmountChange = (value: string) => {
+        setProjectAmount(value);
+        const cv = parseFloat(contractValue) || 0;
+        const amt = parseFloat(value);
+        setProjectPercentage(!isNaN(amt) && cv > 0 ? ((amt / cv) * 100).toFixed(2) : '');
+    };
+
+    const remainingAmountDisplay = (() => {
+        if (!contractValue) return '—';
+        const cv = parseFloat(contractValue) || 0;
+        const amt = parseFloat(projectAmount) || 0;
+        return `${(cv - amt).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${priceList}`;
+    })();
+
     const handleCreateProject = async () => {
         if (!projectName) {
             toast.error('Project name is required');
@@ -275,6 +298,27 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
         if (engagementType === 'time_and_material' && !monthlyBillingAmount) {
             toast.error('Monthly billing amount is required for Time & Material projects');
             return;
+        }
+        if (engagementType === 'fixed' && (projectPercentage !== '' || projectAmount !== '')) {
+            const cv = parseFloat(contractValue) || 0;
+            if (projectPercentage !== '') {
+                const pct = parseFloat(projectPercentage);
+                if (isNaN(pct) || pct < 0 || pct > 100) {
+                    toast.error('Project % must be between 0 and 100');
+                    return;
+                }
+            }
+            if (projectAmount !== '') {
+                const amt = parseFloat(projectAmount);
+                if (isNaN(amt) || amt < 0) {
+                    toast.error('Profit Margin cannot be negative');
+                    return;
+                }
+                if (amt > cv) {
+                    toast.error('Profit Margin cannot be greater than Contract Value');
+                    return;
+                }
+            }
         }
 
         setIsSaving(true);
@@ -304,11 +348,16 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                 end_date: dueDate || null,
                 budget: {},
                 engagement_type: engagementType,
-                payment_terms: paymentTerms || undefined,
             };
 
             if (engagementType === 'fixed') {
                 payload.contract_value = parseFloat(contractValue);
+                if (projectAmount !== '') {
+                    payload.project_amount = parseFloat(projectAmount);
+                }
+                if (projectPercentage !== '') {
+                    payload.project_percentage = parseFloat(projectPercentage);
+                }
             } else {
                 payload.monthly_billing_amount = parseFloat(monthlyBillingAmount);
                 payload.billing_frequency = billingFrequency;
@@ -323,15 +372,6 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             if (poc) {
                 payload.poc_type = pocCategory;
                 payload.poc_id = poc.id;
-            }
-            if (callCenter) {
-                payload.call_center = callCenter.id;
-            }
-            if (profitCenter) {
-                payload.profit_center = profitCenter.id;
-            }
-            if (glAccount) {
-                payload.gl_account = glAccount.id;
             }
 
             // Configure budget based on project type
@@ -522,10 +562,10 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                                         {engagementType === 'fixed' ? (
                                             <InputField
-                                                label={`Contract value (${priceList})`}
+                                                label={`Contract value (${priceList})${quoteId ? ' - excl. GST' : ''}`}
                                                 type="number"
                                                 value={contractValue}
-                                                onChange={(e) => setContractValue(e.target.value)}
+                                                onChange={(e) => handleContractValueChange(e.target.value)}
                                                 placeholder="0"
                                             />
                                         ) : (
@@ -551,13 +591,55 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                 </div>
                                             </>
                                         )}
-                                        <InputField
-                                            label="Payment terms"
-                                            value={paymentTerms}
-                                            onChange={(e) => setPaymentTerms(e.target.value)}
-                                            placeholder="e.g. Net 30"
-                                        />
                                     </div>
+
+                                    {/* Project Contract: Project % / Project Amount / Remaining Amount,
+                                        calculated against the Contract Value above. */}
+                                    {engagementType === 'fixed' && (
+                                        <div className="mt-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+                                            <p className="text-sm font-semibold text-gray-900 mb-3">Project Contract</p>
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Contract Value</label>
+                                                    <p className="text-sm font-semibold text-gray-900 mt-2">
+                                                        {contractValue
+                                                            ? `${parseFloat(contractValue).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${priceList}`
+                                                            : '—'}
+                                                    </p>
+                                                    {quoteId && <p className="text-[11px] text-gray-400">Excluding GST</p>}
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Project %</label>
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        max={100}
+                                                        step="0.01"
+                                                        value={projectPercentage}
+                                                        onChange={(e) => handleProjectPercentageChange(e.target.value)}
+                                                        placeholder="0"
+                                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Profit Margin ({priceList})</label>
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        step="0.01"
+                                                        value={projectAmount}
+                                                        onChange={(e) => handleProjectAmountChange(e.target.value)}
+                                                        placeholder="0"
+                                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Remaining Amount</label>
+                                                    <p className="text-sm font-semibold text-gray-900 mt-2">{remainingAmountDisplay}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Project Setup */}
@@ -595,40 +677,6 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                 placeholder="Select Project Manager"
                                                 emptyMessage="No employees with the Project Manager role"
                                             />
-                                        </div>
-
-                                        {/* Accounting Attribution */}
-                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                            <div>
-                                                <label className="block text-sm text-gray-600 mb-1">Call Center</label>
-                                                <SearchableSelect
-                                                    options={callCenterOptions}
-                                                    value={callCenter}
-                                                    onChange={setCallCenter}
-                                                    placeholder="Select Call Center"
-                                                    emptyMessage="No call centers found"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm text-gray-600 mb-1">Profit Center</label>
-                                                <SearchableSelect
-                                                    options={profitCenterOptions}
-                                                    value={profitCenter}
-                                                    onChange={setProfitCenter}
-                                                    placeholder="Select Profit Center"
-                                                    emptyMessage="No profit centers found"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm text-gray-600 mb-1">GL Account</label>
-                                                <SearchableSelect
-                                                    options={glAccountOptions}
-                                                    value={glAccount}
-                                                    onChange={setGlAccount}
-                                                    placeholder="Select GL Account"
-                                                    emptyMessage="No GL accounts found"
-                                                />
-                                            </div>
                                         </div>
 
                                         {/* POC */}
@@ -679,7 +727,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-sm text-gray-600 mb-1">Due Date</label>
+                                                <label className="block text-sm text-gray-600 mb-1">End Date</label>
                                                 <InputField
                                                     type="date"
                                                     value={dueDate}

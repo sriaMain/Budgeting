@@ -249,7 +249,7 @@ export default function QuoteDetailsPage({
                         <InfoDisplay label="Quote No" value={quoteData.quote_no} />
                         <InfoDisplay label="Author" value={quoteData.author} />
                         <InfoDisplay label="Date of Issue" value={quoteData.date_of_issue} />
-                        <InfoDisplay label="Due Date" value={quoteData.due_date} />
+                        <InfoDisplay label="End Date" value={quoteData.due_date} />
                         <InfoDisplay label="Quote Name" value={quoteData.quote_name} />
                         <InfoDisplay
                             label="Status"

@@ -295,7 +295,14 @@ def get_project_tab_data(filters):
             "invoiced": invoiced,
             "received": received,
             "expenses": expenses,
+            # Realized profit: only meaningful once payments have actually
+            # been received (received - expenses).
             "profit": received - expenses,
+            # Forecasted profit: budget - expenses, available even before any
+            # invoice/payment exists. Same figure as ProjectBudget.forecasted_profit
+            # (Project Details > Budget > Profit tab), kept consistent by
+            # reusing that one property instead of recalculating it here.
+            "forecasted_profit": pb.forecasted_profit if pb.forecasted_profit is not None else Decimal("0.00"),
         })
 
     return {"rows": data}

@@ -20,6 +20,8 @@ import { toast } from 'react-hot-toast';
 import { parseApiErrors } from '../utils/parseApiErrors';
 import store from '../store/store';
 
+const fmtCurrency = (value: number | string | null | undefined, currency?: string) =>
+    `${(Number(value) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || 'INR'}`;
 
 interface Task {
     id: string;
@@ -699,6 +701,15 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         ? Math.round((profitOrLoss / totalInvoicedAmount) * 100)
         : null;
 
+    // Forecasted Profit: budget - bills & expenses, straight from the backend's
+    // ProjectBudget.forecasted_profit (same figure used in Reports > Project
+    // Reports). Shown only pre-invoice, as a clearly-labeled estimate — it is
+    // never used for the Healthy/Loss-making badge above, which stays tied to
+    // realized (invoiced) profit only.
+    const forecastedProfitAmount = project?.budget?.forecasted_profit != null
+        ? Number(project.budget.forecasted_profit)
+        : null;
+
     const currentUsername = store.getState().auth.username;
 
     const overdueTasksCount = tasks.filter(t => {
@@ -1141,11 +1152,32 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 {/* Profit Content */}
                                 {budgetSubTab === 'Profit' && (
                                     profitOrLoss === null ? (
-                                        <div className="bg-gray-50 rounded-lg border border-gray-200 p-8 text-center">
-                                            <p className="text-sm text-gray-600">
-                                                No invoices have been raised for this project yet, so profit can't be calculated.
-                                                Profit is based on invoiced revenue, not the quoted amount, so it will appear here once an invoice is created.
-                                            </p>
+                                        <div className="space-y-4">
+                                            <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 text-center">
+                                                <p className="text-sm text-gray-600">
+                                                    No invoices have been raised for this project yet, so realized profit can't be calculated.
+                                                    Shown below is a forecast instead, based on the project's budget - it will be replaced by real invoiced profit once an invoice is created.
+                                                </p>
+                                            </div>
+                                            {forecastedProfitAmount !== null && (
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                        <p className="text-xs text-gray-500 mb-1">Budget</p>
+                                                        <p className="text-xl font-bold text-gray-900">{(Number(project?.budget?.total_budget) || 0).toLocaleString()} {budgetCurrency}</p>
+                                                    </div>
+                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                        <p className="text-xs text-gray-500 mb-1">Bills & Expenses</p>
+                                                        <p className="text-xl font-bold text-gray-900">{(Number(project?.budget?.bills_and_expenses) || 0).toLocaleString()} {budgetCurrency}</p>
+                                                    </div>
+                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                                        <p className="text-xs text-gray-500 mb-1">Forecasted Profit</p>
+                                                        <p className={`text-xl font-bold ${forecastedProfitAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                            {forecastedProfitAmount.toLocaleString()} {budgetCurrency}
+                                                        </p>
+                                                        <p className="text-xs text-gray-400 mt-1">Estimate - Budget − Bills & Expenses</p>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     ) : (() => {
                                         const profitStatus = profitOrLoss < 0
@@ -1679,6 +1711,50 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                             )}
                                         </div>
                                     </div>
+
+                                    {/* Project Contract Section (Fixed Budget only) */}
+                                    {project && project.engagement_type === 'fixed' && project.contract_value != null && (
+                                        <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-800">
+                                            <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800">
+                                                <h3 className="font-semibold text-gray-900 text-sm dark:text-white">Project Contract</h3>
+                                            </div>
+                                            <div className="px-6 py-6 bg-white dark:bg-gray-900">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="text-xs font-medium text-gray-500 uppercase dark:text-gray-400">Contract Value</label>
+                                                        <p className="text-sm font-semibold text-gray-900 mt-1 dark:text-white">
+                                                            {fmtCurrency(project.contract_value, project.budget?.currency || project.currency)}
+                                                        </p>
+                                                        {project.created_from_quotation && (
+                                                            <p className="text-[11px] text-gray-400 mt-0.5">Excluding GST</p>
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs font-medium text-gray-500 uppercase dark:text-gray-400">Project %</label>
+                                                        <p className="text-sm font-semibold text-gray-900 mt-1 dark:text-white">
+                                                            {project.project_percentage != null ? `${project.project_percentage}%` : '—'}
+                                                        </p>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs font-medium text-gray-500 uppercase dark:text-gray-400">Profit Margin</label>
+                                                        <p className="text-sm font-semibold text-gray-900 mt-1 dark:text-white">
+                                                            {project.project_amount != null
+                                                                ? fmtCurrency(project.project_amount, project.budget?.currency || project.currency)
+                                                                : '—'}
+                                                        </p>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs font-medium text-gray-500 uppercase dark:text-gray-400">Remaining Amount</label>
+                                                        <p className="text-sm font-semibold text-gray-900 mt-1 dark:text-white">
+                                                            {project.remaining_amount != null
+                                                                ? fmtCurrency(project.remaining_amount, project.budget?.currency || project.currency)
+                                                                : '—'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Files Section */}
                                     <div className="border border-gray-200 rounded-lg overflow-hidden">

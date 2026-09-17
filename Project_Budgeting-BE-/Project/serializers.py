@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 from .models import (Project, ProjectBudget, BudgetLine, Milestone, ResourceAssignment, Task, Timesheet,
                       TimesheetEntry, TaskTimerLog, TaskExtraHoursRequest)
@@ -552,9 +553,16 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
             'payment_terms',
             'billing_frequency',
             'monthly_billing_amount',
+            # Project Contract: a slice of the Contract Value for this
+            # project. remaining_amount is read-only - it's always derived,
+            # never accepted as input (see validate() below).
+            'project_percentage',
+            'project_amount',
+            'remaining_amount',
         )
         extra_kwargs = {
             'client': {'required': False},
+            'remaining_amount': {'read_only': True},
         }
     def get_fields(self):
         fields = super().get_fields()
@@ -598,6 +606,65 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     "contract_value": "Contract value is required for Fixed Budget / Milestone-Based projects."
                 })
+
+            # =============================
+            # 🔹 PROJECT CONTRACT: Project % / Project Amount / Remaining Amount
+            # Exactly one of Project %/Project Amount drives the calculation
+            # per request - whichever the client actually sent. Project
+            # Amount wins if both arrive together, since it's the more
+            # precise (rupee) figure; Project % is then re-derived from it so
+            # the two never disagree. Remaining Amount is always derived,
+            # never accepted as input.
+            # =============================
+            project_amount = data.get('project_amount', None)
+            project_percentage = data.get('project_percentage', None)
+            has_amount = project_amount is not None
+            has_percentage = project_percentage is not None
+
+            if not has_amount and not has_percentage and self.instance is not None:
+                # Neither sent in this request (e.g. a PATCH that only
+                # changes contract_value) - re-derive from whatever the
+                # project already had, so the three fields stay in sync.
+                project_amount = self.instance.project_amount
+                project_percentage = self.instance.project_percentage
+                has_amount = project_amount is not None
+                has_percentage = project_percentage is not None
+
+            if has_amount or has_percentage:
+                contract_value = Decimal(contract_value)
+                if contract_value <= 0:
+                    raise serializers.ValidationError({
+                        "project_amount": "Contract Value must be greater than 0 before setting Project % or Project Amount."
+                    })
+
+                if has_amount:
+                    project_amount = Decimal(str(project_amount))
+                    if project_amount < 0:
+                        raise serializers.ValidationError({
+                            "project_amount": "Project Amount cannot be negative."
+                        })
+                    if project_amount > contract_value:
+                        raise serializers.ValidationError({
+                            "project_amount": "Project Amount cannot be greater than Contract Value."
+                        })
+                    project_percentage = (project_amount / contract_value * Decimal('100')).quantize(Decimal('0.01'))
+                else:
+                    project_percentage = Decimal(str(project_percentage))
+                    if project_percentage < 0 or project_percentage > 100:
+                        raise serializers.ValidationError({
+                            "project_percentage": "Project % must be between 0 and 100."
+                        })
+                    project_amount = (contract_value * project_percentage / Decimal('100')).quantize(Decimal('0.01'))
+
+                remaining_amount = (contract_value - project_amount).quantize(Decimal('0.01'))
+                if remaining_amount < 0:
+                    raise serializers.ValidationError({
+                        "project_amount": "Remaining Amount cannot be negative."
+                    })
+
+                data['project_amount'] = project_amount
+                data['project_percentage'] = project_percentage
+                data['remaining_amount'] = remaining_amount
         elif engagement_type == 'time_and_material':
             monthly_billing_amount = data.get(
                 'monthly_billing_amount', getattr(self.instance, 'monthly_billing_amount', None)
@@ -756,6 +823,9 @@ class ProjectListSerializer(serializers.ModelSerializer):
             'payment_terms',
             'billing_frequency',
             'monthly_billing_amount',
+            'project_percentage',
+            'project_amount',
+            'remaining_amount',
         )
 
     def get_budget(self, obj):

@@ -90,6 +90,8 @@ interface ProjectReportRow {
     received: number;
     expenses: number;
     profit: number;
+    /** Budget - expenses: available even before any invoice/payment exists. */
+    forecasted_profit: number;
 }
 
 interface ProjectReportsResponse {
@@ -606,6 +608,18 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                         ) : <ArrowUpDown size={14} className="opacity-40" />}
                                     </div>
                                 </th>
+                                <th
+                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                    onClick={() => handleSort('forecasted_profit')}
+                                    title="Budget minus expenses - an estimate available even before any invoice is raised"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Forecasted Profit
+                                        {sortColumn === 'forecasted_profit' ? (
+                                            sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                                        ) : <ArrowUpDown size={14} className="opacity-40" />}
+                                    </div>
+                                </th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -616,7 +630,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                 if (data.length === 0) {
                                     return (
                                         <tr>
-                                            <td colSpan={7} className="px-6 py-10 text-center text-sm text-gray-500">
+                                            <td colSpan={8} className="px-6 py-10 text-center text-sm text-gray-500">
                                                 No project records found for the selected filters.
                                             </td>
                                         </tr>
@@ -642,6 +656,11 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                         <td className="px-6 py-4 text-sm">
                                             <span className={`font-semibold ${row.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                                                 {formatCurrency(row.profit)}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-sm">
+                                            <span className={`font-semibold ${row.forecasted_profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                {formatCurrency(row.forecasted_profit)}
                                             </span>
                                         </td>
                                     </tr>

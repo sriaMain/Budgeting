@@ -86,12 +86,6 @@ interface UnitChoice {
   label: string;
 }
 
-interface MasterDataOption {
-  id: number;
-  code: string;
-  name: string;
-}
-
 export default function AddQuotePage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -114,9 +108,6 @@ export default function AddQuotePage() {
   const [services, setServices] = useState<Service[]>([]);
   const [statusChoices, setStatusChoices] = useState<StatusChoice[]>([]);
   const [unitChoices, setUnitChoices] = useState<UnitChoice[]>([]);
-  const [callCenters, setCallCenters] = useState<MasterDataOption[]>([]);
-  const [profitCenters, setProfitCenters] = useState<MasterDataOption[]>([]);
-  const [glAccounts, setGlAccounts] = useState<MasterDataOption[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errors, setErrors] = useState<{ general?: string }>({});
@@ -136,9 +127,6 @@ export default function AddQuotePage() {
     poc: '',
     status: '',
     quoteName: '',
-    callCenter: '',
-    profitCenter: '',
-    glAccount: ''
   });
 
   const [items, setItems] = useState<ProductRow[]>([
@@ -218,9 +206,6 @@ export default function AddQuotePage() {
             poc: '', // Projects might not have POC in the same way
             status: data.status || '',
             quoteName: data.project_name || '',
-            callCenter: data.call_center != null ? String(data.call_center) : '',
-            profitCenter: data.profit_center != null ? String(data.profit_center) : '',
-            glAccount: data.gl_account != null ? String(data.gl_account) : ''
           });
         } else {
           // Check if quote is confirmed - set flag but allow editing
@@ -236,9 +221,6 @@ export default function AddQuotePage() {
             poc: data.poc_details?.poc_name || '',
             status: data.status || '',
             quoteName: data.quote_name || '',
-            callCenter: data.call_center != null ? String(data.call_center) : '',
-            profitCenter: data.profit_center != null ? String(data.profit_center) : '',
-            glAccount: data.gl_account != null ? String(data.gl_account) : ''
           });
 
           // Store original status to compare later
@@ -282,9 +264,6 @@ export default function AddQuotePage() {
         fetchProductGroupsWithModules(),
         fetchStatusChoices(),
         fetchUnitChoices(),
-        fetchCallCenters(),
-        fetchProfitCenters(),
-        fetchGlAccounts()
       ]);
     } catch (error) {
       console.error('Error initializing data:', error);
@@ -351,41 +330,6 @@ export default function AddQuotePage() {
     }
   };
 
-  const fetchCallCenters = async () => {
-    try {
-      const response = await axiosInstance.get('/call-centers/?active_only=true');
-      if (response.status === 200) {
-        setCallCenters(response.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch call centers:', err);
-      throw err;
-    }
-  };
-
-  const fetchProfitCenters = async () => {
-    try {
-      const response = await axiosInstance.get('/profit-centers/?active_only=true');
-      if (response.status === 200) {
-        setProfitCenters(response.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch profit centers:', err);
-      throw err;
-    }
-  };
-
-  const fetchGlAccounts = async () => {
-    try {
-      const response = await axiosInstance.get('/gl-accounts/?active_only=true');
-      if (response.status === 200) {
-        setGlAccounts(response.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch GL accounts:', err);
-      throw err;
-    }
-  };
 
   const fetchUnitChoices = async () => {
     try {
@@ -519,19 +463,12 @@ export default function AddQuotePage() {
 
       console.log('Submitting payload items:', quoteItems);
 
-      const accountingAttribution = {
-        call_center: quoteDetails.callCenter ? parseInt(quoteDetails.callCenter, 10) : null,
-        profit_center: quoteDetails.profitCenter ? parseInt(quoteDetails.profitCenter, 10) : null,
-        gl_account: quoteDetails.glAccount ? parseInt(quoteDetails.glAccount, 10) : null,
-      };
-
       // Build payload - only include status if it changed (for edit mode)
       const basePayload = projectId ? {
         project_name: quoteDetails.quoteName?.trim() || '',
         start_date: quoteDetails.dateOfIssue,
         end_date: quoteDetails.dueDate,
         client: selectedClient?.id || null,
-        ...accountingAttribution,
       } : {
         quote_name: quoteDetails.quoteName?.trim() || '',
         date_of_issue: quoteDetails.dateOfIssue,
@@ -540,7 +477,6 @@ export default function AddQuotePage() {
         ...(pocId && { poc: pocId }),
         tax_percentage: taxPercentage,
         items: quoteItems,
-        ...accountingAttribution,
         // Link this quote back to the project it's being raised for
         // (e.g. a Phase 2 quote), if created from that project's page
         ...(forProjectId && { project: parseInt(forProjectId, 10) })
@@ -646,7 +582,7 @@ export default function AddQuotePage() {
                   forProjectId ? `/projects/${forProjectId}?tab=Finances` :
                     '/pipeline'
               )}
-              className="text-blue-600 hover:text-blue-800 font-semibold transition-colors flex items-center gap-1"
+              className="text-teal-700 hover:text-teal-800 font-semibold transition-colors flex items-center gap-1"
             >
               <ArrowLeft size={16} className="hidden sm:block" />
               <ArrowLeft size={14} className="sm:hidden" />
@@ -660,7 +596,7 @@ export default function AddQuotePage() {
             {isLoadingData && (
               <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-20 flex items-center justify-center">
                 <div className="text-center">
-                  <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-blue-600 mb-4"></div>
+                  <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-teal-600 mb-4"></div>
                   <p className="text-gray-600 font-medium">Loading {projectId ? 'project' : 'quote'} data...</p>
                 </div>
               </div>
@@ -720,7 +656,7 @@ export default function AddQuotePage() {
                       value={quoteDetails.dateOfIssue}
                       onChange={(e) => handleDetailChange('dateOfIssue', e.target.value)}
                       disabled={isConfirmedQuote}
-                      className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                      className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
                     />
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
@@ -730,7 +666,7 @@ export default function AddQuotePage() {
                         <select
                           value={quoteDetails.client}
                           onChange={(e) => handleDetailChange('client', e.target.value)}
-                          className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                          className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
                           disabled={isLoadingData || isConfirmedQuote}
                         >
                           <option value="">
@@ -748,7 +684,7 @@ export default function AddQuotePage() {
                         type="button"
                         onClick={() => setIsAddClientModalOpen(true)}
                         disabled={isConfirmedQuote}
-                        className="flex-shrink-0 flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
+                        className="flex-shrink-0 flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-teal-700"
                         title="Add New Client"
                       >
                         <Plus size={20} strokeWidth={2.5} />
@@ -763,7 +699,7 @@ export default function AddQuotePage() {
                         <select
                           value={quoteDetails.poc}
                           onChange={(e) => handleDetailChange('poc', e.target.value)}
-                          className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                          className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
                           disabled={!quoteDetails.client || isLoadingData || isConfirmedQuote}
                         >
                           <option value="">
@@ -783,7 +719,7 @@ export default function AddQuotePage() {
                         type="button"
                         onClick={() => setIsAddPOCModalOpen(true)}
                         disabled={!quoteDetails.client || isConfirmedQuote}
-                        className="flex-shrink-0 flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-shrink-0 flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Add New POC"
                       >
                         <Plus size={20} strokeWidth={2.5} />
@@ -801,7 +737,7 @@ export default function AddQuotePage() {
                         onChange={(e) => handleDetailChange('quoteName', e.target.value)}
                         maxLength={25}
                         disabled={isConfirmedQuote}
-                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
                       />
                       <p className="text-xs text-gray-500 mt-1">{quoteDetails.quoteName.length}/25 characters (alphabets only)</p>
                     </div>
@@ -810,13 +746,13 @@ export default function AddQuotePage() {
 
                 <div className="space-y-4 sm:space-y-5">
                   <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                    <label className="text-sm sm:text-base font-medium text-gray-700">Due Date</label>
+                    <label className="text-sm sm:text-base font-medium text-gray-700">End Date</label>
                     <input
                       type="date"
                       value={quoteDetails.dueDate}
                       onChange={(e) => handleDetailChange('dueDate', e.target.value)}
                       disabled={isConfirmedQuote}
-                      className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                      className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
                     />
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
@@ -825,7 +761,7 @@ export default function AddQuotePage() {
                       <select
                         value={quoteDetails.status}
                         onChange={(e) => handleDetailChange('status', e.target.value)}
-                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 cursor-pointer"
                         disabled={isLoadingData || statusChoices.length === 0}
                       >
                         <option value="" disabled>Select Status</option>
@@ -838,70 +774,13 @@ export default function AddQuotePage() {
                       <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                    <label className="text-sm sm:text-base font-medium text-gray-700">Call Center</label>
-                    <div className="relative">
-                      <select
-                        value={quoteDetails.callCenter}
-                        onChange={(e) => handleDetailChange('callCenter', e.target.value)}
-                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        disabled={isLoadingData}
-                      >
-                        <option value="">Select Call Center</option>
-                        {callCenters.map(option => (
-                          <option key={option.id} value={option.id}>
-                            {option.code} - {option.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                    <label className="text-sm sm:text-base font-medium text-gray-700">Profit Center</label>
-                    <div className="relative">
-                      <select
-                        value={quoteDetails.profitCenter}
-                        onChange={(e) => handleDetailChange('profitCenter', e.target.value)}
-                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        disabled={isLoadingData}
-                      >
-                        <option value="">Select Profit Center</option>
-                        {profitCenters.map(option => (
-                          <option key={option.id} value={option.id}>
-                            {option.code} - {option.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                    <label className="text-sm sm:text-base font-medium text-gray-700">GL Account</label>
-                    <div className="relative">
-                      <select
-                        value={quoteDetails.glAccount}
-                        onChange={(e) => handleDetailChange('glAccount', e.target.value)}
-                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        disabled={isLoadingData}
-                      >
-                        <option value="">Select GL Account</option>
-                        {glAccounts.map(option => (
-                          <option key={option.id} value={option.id}>
-                            {option.code} - {option.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
 
             <div className="p-4 sm:p-6 md:p-8 pb-0">
-              <div className="hidden lg:block">
-                <div className="grid grid-cols-[50px_140px_2fr_200px_140px_140px_50px] gap-4 mb-2 text-sm font-semibold text-gray-700 px-2">
+              <div className="hidden lg:block border border-gray-200 rounded-lg overflow-hidden">
+                <div className="grid grid-cols-[50px_140px_2fr_200px_140px_140px_50px] gap-4 bg-gray-50 border-b border-gray-200 px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   <div></div>
                   <div>Group</div>
                   <div>Product | Description</div>
@@ -911,11 +790,11 @@ export default function AddQuotePage() {
                   <div></div>
                 </div>
 
-                <div className="border-t border-gray-200">
+                <div className="divide-y divide-gray-100 bg-white">
                   {items.map((item) => (
-                    <div key={item.id} className="group border-b border-gray-100 py-4 hover:bg-gray-50 transition-colors">
-                      <div className="grid grid-cols-[50px_140px_2fr_200px_140px_140px_50px] gap-4 items-start px-2">
-                        <div className="flex justify-center pt-2.5 cursor-move text-gray-400 hover:text-gray-600">
+                    <div key={item.id} className="px-4 py-4 hover:bg-gray-50 transition-colors">
+                      <div className="grid grid-cols-[50px_140px_2fr_200px_140px_140px_50px] gap-4 items-start">
+                        <div className="flex justify-center self-center cursor-move text-gray-400 hover:text-gray-600">
                           <GripVertical size={18} />
                         </div>
                         <div>
@@ -923,7 +802,7 @@ export default function AddQuotePage() {
                             <select
                               value={item.group}
                               onChange={(e) => handleItemChange(item.id, 'group', e.target.value)}
-                              className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                              className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                             >
                               <option value="">Product Group</option>
                               {productGroups.map(group => (
@@ -941,7 +820,7 @@ export default function AddQuotePage() {
                               <select
                                 value={item.product}
                                 onChange={(e) => handleItemChange(item.id, 'product', e.target.value)}
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white font-medium focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                                 disabled={!item.group}
                               >
                                 <option value="">
@@ -960,7 +839,7 @@ export default function AddQuotePage() {
                             <button
                               type="button"
                               onClick={() => setIsAddServiceModalOpen(true)}
-                              className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors shadow-sm"
+                              className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors shadow-sm"
                             >
                               <Plus size={16} strokeWidth={2.5} />
                             </button>
@@ -969,7 +848,7 @@ export default function AddQuotePage() {
                             value={item.description}
                             onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
                             placeholder="Product or service description"
-                            className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm text-gray-600 h-20 resize-none focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm text-gray-600 h-20 resize-none focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                           />
                         </div>
                         <div className="flex space-x-2">
@@ -977,13 +856,13 @@ export default function AddQuotePage() {
                             type="number"
                             value={item.quantity}
                             onChange={(e) => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                            className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                           />
                           <div className="relative w-24 shrink-0">
                             <select
                               value={item.unit}
                               onChange={(e) => handleItemChange(item.id, 'unit', e.target.value)}
-                              className="w-full px-2 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                              className="w-full px-2 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                               disabled={isLoadingData || unitChoices.length === 0}
                             >
                               {unitChoices.map(choice => (
@@ -1001,15 +880,16 @@ export default function AddQuotePage() {
                             placeholder="Price"
                             value={item.unit_price || ''}
                             onChange={(e) => handleItemChange(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                            className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 placeholder-gray-400"
+                            className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 placeholder-gray-400"
                           />
                         </div>
-                        <div className="pt-2.5 text-right text-sm font-bold text-gray-800">
+                        <div className="self-center text-right text-sm font-bold text-gray-900">
                           {calculateRowTotal(item).toFixed(2)}
                         </div>
                         <button
                           onClick={() => removeRow(item.id)}
-                          className="flex justify-center pt-2.5 text-gray-300 hover:text-red-500 transition-colors"
+                          className="self-center flex justify-center p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                          aria-label="Remove row"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -1040,7 +920,7 @@ export default function AddQuotePage() {
                         <select
                           value={item.group}
                           onChange={(e) => handleItemChange(item.id, 'group', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                         >
                           <option value="">Select Group</option>
                           {productGroups.map(group => (
@@ -1059,7 +939,7 @@ export default function AddQuotePage() {
                           <select
                             value={item.product}
                             onChange={(e) => handleItemChange(item.id, 'product', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                             disabled={!item.group}
                           >
                             <option value="">
@@ -1078,7 +958,7 @@ export default function AddQuotePage() {
                         <button
                           type="button"
                           onClick={() => setIsAddServiceModalOpen(true)}
-                          className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                          className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors"
                         >
                           <Plus size={16} strokeWidth={2.5} />
                         </button>
@@ -1090,7 +970,7 @@ export default function AddQuotePage() {
                         value={item.description}
                         onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
                         placeholder="Product or service description"
-                        className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 h-16 resize-none focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 h-16 resize-none focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -1100,7 +980,7 @@ export default function AddQuotePage() {
                           type="number"
                           value={item.quantity}
                           onChange={(e) => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                         />
                       </div>
                       <div>
@@ -1109,7 +989,7 @@ export default function AddQuotePage() {
                           <select
                             value={item.unit}
                             onChange={(e) => handleItemChange(item.id, 'unit', e.target.value)}
-                            className="w-full px-2 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-2 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                             disabled={isLoadingData || unitChoices.length === 0}
                           >
                             {unitChoices.map(choice => (
@@ -1130,7 +1010,7 @@ export default function AddQuotePage() {
                           placeholder="0.00"
                           value={item.unit_price || ''}
                           onChange={(e) => handleItemChange(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                         />
                       </div>
                       <div>
@@ -1147,7 +1027,7 @@ export default function AddQuotePage() {
               <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-6 mb-6 sm:mb-8">
                 <button
                   onClick={addNewRow}
-                  className="px-4 sm:px-5 py-2 sm:py-2.5 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 transition-colors shadow-sm"
+                  className="px-4 sm:px-5 py-2 sm:py-2.5 bg-teal-700 text-white text-sm font-semibold rounded hover:bg-teal-800 transition-colors shadow-sm"
                 >
                   Add New Row
                 </button>
@@ -1166,7 +1046,7 @@ export default function AddQuotePage() {
                     <div className="flex items-center gap-3">
                       <div className="relative w-20">
                         <select
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm appearance-none bg-white pr-6 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm appearance-none bg-white pr-6 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600"
                           value={taxPercentage}
                           onChange={(e) => setTaxPercentage(parseFloat(e.target.value))}
                         >
@@ -1201,7 +1081,7 @@ export default function AddQuotePage() {
               <button
                 onClick={handleSubmit}
                 disabled={isSaving}
-                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-8 sm:px-12 rounded shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full sm:w-auto bg-teal-700 hover:bg-teal-800 text-white font-semibold py-2.5 px-8 sm:px-12 rounded shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSaving ? 'Saving...' : (isEditMode ? 'Update' : 'Save')} {projectId ? 'Project' : 'Quote'}
               </button>

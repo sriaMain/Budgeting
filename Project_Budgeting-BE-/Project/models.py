@@ -73,6 +73,28 @@ class Project(models.Model):
         max_length=100, blank=True, help_text="e.g. Net 30, Net 15, Due on Receipt."
     )
 
+    # --- Project Contract (Fixed Budget only): a slice of the Contract
+    # Value carved out for this project, expressed as either a percentage or
+    # a direct amount. The two are always kept numerically in sync, and
+    # remaining_amount is always derived - never entered directly. Stored as
+    # separate fields (not folded into contract_value) so the original
+    # Contract Value is never overwritten.
+    project_percentage = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Percentage of the Contract Value carved out for this project."
+    )
+    project_amount = models.DecimalField(
+        max_digits=15, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Contract Value x Project %, or entered directly."
+    )
+    remaining_amount = models.DecimalField(
+        max_digits=15, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Contract Value minus Project Amount. Always auto-calculated, never entered directly."
+    )
+
     status = models.CharField(
     max_length=50,
     choices=STATUS_CHOICES,
@@ -125,6 +147,10 @@ class Project(models.Model):
                 self.profit_center = self.created_from_quotation.profit_center
             if not self.gl_account:
                 self.gl_account = self.created_from_quotation.gl_account
+            if not self.contract_value:
+                # Contract Value excludes GST: the quote's sub_total is its
+                # pre-tax base amount, while total_amount includes tax_percentage.
+                self.contract_value = self.created_from_quotation.sub_total
 
         if self.end_date < self.start_date:
             raise ValidationError("End date cannot be before start date.")

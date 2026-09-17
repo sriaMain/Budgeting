@@ -214,6 +214,7 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const activeNavItemRef = useRef<HTMLButtonElement | null>(null);
   const search = useGlobalSearch();
   const notifications = useNotifications();
   const { theme, toggleTheme } = useTheme();
@@ -260,6 +261,16 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [search]);
 
+  // The nav strip scrolls horizontally (hidden scrollbar) when there isn't
+  // room for every item, e.g. Administration/Approvals get squeezed out on
+  // medium-width screens. Without this, the active section's tab can end up
+  // scrolled out of view with nothing visibly highlighted, making it look
+  // like the header "lost its place" after navigating. Keep the active tab
+  // scrolled into view on every navigation so it's always visible.
+  useEffect(() => {
+    activeNavItemRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [location.pathname]);
+
   const goToResult = (result: SearchResult) => {
     navigate(result.path);
     search.setValue('');
@@ -284,6 +295,7 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
     return (
       <button
         key={item.path}
+        ref={!mobile && active ? activeNavItemRef : undefined}
         type="button"
         onClick={() => go(item.path)}
         className={
