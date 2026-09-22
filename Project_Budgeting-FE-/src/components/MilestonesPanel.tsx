@@ -53,26 +53,26 @@ const num = (v: string | number | undefined | null): number => {
 };
 
 const STATUS_BADGE: Record<string, string> = {
-    not_started: 'bg-gray-100 text-gray-700',
-    in_progress: 'bg-blue-50 text-blue-700',
-    completed: 'bg-green-50 text-green-700',
-    on_hold: 'bg-amber-50 text-amber-700',
-    cancelled: 'bg-red-50 text-red-700',
+    not_started: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300',
+    in_progress: 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300',
+    completed: 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300',
+    on_hold: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    cancelled: 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300',
 };
 
 const BILLING_BADGE: Record<string, { label: string; className: string }> = {
-    not_billed: { label: 'Not Billed', className: 'bg-gray-100 text-gray-700' },
-    partially_invoiced: { label: 'Partially Invoiced', className: 'bg-amber-50 text-amber-700' },
-    invoiced: { label: 'Invoiced', className: 'bg-blue-50 text-blue-700' },
+    not_billed: { label: 'Not Billed', className: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300' },
+    partially_invoiced: { label: 'Partially Invoiced', className: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300' },
+    invoiced: { label: 'Invoiced', className: 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300' },
 };
 
 const PAYMENT_BADGE: Record<string, { label: string; className: string }> = {
-    not_invoiced: { label: 'Not Invoiced', className: 'bg-gray-100 text-gray-700' },
-    draft: { label: 'Draft', className: 'bg-gray-100 text-gray-700' },
-    sent: { label: 'Sent', className: 'bg-blue-50 text-blue-700' },
-    partially_paid: { label: 'Partially Paid', className: 'bg-amber-50 text-amber-700' },
-    paid: { label: 'Paid', className: 'bg-green-50 text-green-700' },
-    overdue: { label: 'Overdue', className: 'bg-red-50 text-red-700' },
+    not_invoiced: { label: 'Not Invoiced', className: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300' },
+    draft: { label: 'Draft', className: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300' },
+    sent: { label: 'Sent', className: 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300' },
+    partially_paid: { label: 'Partially Paid', className: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300' },
+    paid: { label: 'Paid', className: 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300' },
+    overdue: { label: 'Overdue', className: 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300' },
 };
 
 const emptyForm = {
@@ -247,7 +247,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
     };
 
     const renderStatusBadge = (map: Record<string, { label: string; className: string }>, key: string) => {
-        const entry = map[key] || { label: key, className: 'bg-gray-100 text-gray-700' };
+        const entry = map[key] || { label: key, className: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300' };
         return (
             <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${entry.className}`}>
                 {entry.label}
@@ -258,7 +258,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-900">Milestones</p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white">Milestones</p>
                 <button
                     type="button"
                     onClick={() => setShowAddForm((v) => !v)}
@@ -269,83 +269,83 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
             </div>
 
             {showAddForm && (
-                <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
+                <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4 space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                         <div className="md:col-span-2">
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Name</label>
                             <input
                                 type="text"
                                 value={form.name}
                                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                                 placeholder="e.g. Training"
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.name ? 'border-red-400' : 'border-gray-300'}`}
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.name ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                             />
-                            {formErrors.name && <p className="text-xs text-red-600 mt-1">{formErrors.name}</p>}
+                            {formErrors.name && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.name}</p>}
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Sequence</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Sequence</label>
                             <input
                                 type="number"
                                 value={form.sequence}
                                 onChange={(e) => setForm({ ...form, sequence: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Status</label>
                             <select
                                 value={form.status}
                                 onChange={(e) => setForm({ ...form, status: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             >
                                 {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Planned Start</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Planned Start</label>
                             <input
                                 type="date"
                                 value={form.planned_start_date}
                                 onChange={(e) => setForm({ ...form, planned_start_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Planned End</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Planned End</label>
                             <input
                                 type="date"
                                 value={form.planned_end_date}
                                 onChange={(e) => setForm({ ...form, planned_end_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Budget Amount</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Budget Amount</label>
                             <input
                                 type="number"
                                 value={form.budget_amount}
                                 onChange={(e) => setForm({ ...form, budget_amount: e.target.value })}
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.budget_amount ? 'border-red-400' : 'border-gray-300'}`}
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.budget_amount ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                             />
-                            {formErrors.budget_amount && <p className="text-xs text-red-600 mt-1">{formErrors.budget_amount}</p>}
+                            {formErrors.budget_amount && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.budget_amount}</p>}
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Billing Amount</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Billing Amount</label>
                             <input
                                 type="number"
                                 value={form.billing_amount}
                                 onChange={(e) => setForm({ ...form, billing_amount: e.target.value })}
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.billing_amount ? 'border-red-400' : 'border-gray-300'}`}
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.billing_amount ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                             />
-                            {formErrors.billing_amount && <p className="text-xs text-red-600 mt-1">{formErrors.billing_amount}</p>}
+                            {formErrors.billing_amount && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.billing_amount}</p>}
                         </div>
                         <div className="md:col-span-4">
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Description</label>
                             <textarea
                                 value={form.description}
                                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                                 rows={2}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             />
                         </div>
                     </div>
@@ -362,15 +362,15 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                 </div>
             )}
 
-            <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-x-auto">
                 {isLoading ? (
-                    <p className="p-4 text-sm text-gray-500">Loading milestones...</p>
+                    <p className="p-4 text-sm text-gray-500 dark:text-gray-400">Loading milestones...</p>
                 ) : milestones.length === 0 ? (
-                    <p className="p-4 text-sm text-gray-500">No milestones yet. Add one above.</p>
+                    <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No milestones yet. Add one above.</p>
                 ) : (
                     <table className="w-full text-sm">
                         <thead>
-                            <tr className="border-b border-gray-200 text-left text-xs text-gray-500 uppercase">
+                            <tr className="border-b border-gray-200 dark:border-gray-800 text-left text-xs text-gray-500 dark:text-gray-400 uppercase">
                                 <th className="px-4 py-2">#</th>
                                 <th className="px-4 py-2">Milestone</th>
                                 <th className="px-4 py-2">Status</th>
@@ -389,20 +389,20 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                 const margin = num(m.margin);
                                 const overBudget = num(m.actual_cost) > num(m.budget_amount) && num(m.budget_amount) > 0;
                                 return (
-                                    <tr key={m.id} className="border-b border-gray-100 align-top">
-                                        <td className="px-4 py-2 text-gray-500">{m.sequence}</td>
+                                    <tr key={m.id} className="border-b border-gray-100 dark:border-gray-800 align-top">
+                                        <td className="px-4 py-2 text-gray-500 dark:text-gray-400">{m.sequence}</td>
                                         <td className="px-4 py-2">
                                             {isEditing ? (
                                                 <input
                                                     type="text"
                                                     value={editForm.name}
                                                     onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                                                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                                    className="w-full px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm"
                                                 />
                                             ) : (
                                                 <>
-                                                    <p className="text-gray-900 font-medium">{m.name}</p>
-                                                    {m.description && <p className="text-xs text-gray-500">{m.description}</p>}
+                                                    <p className="text-gray-900 dark:text-white font-medium">{m.name}</p>
+                                                    {m.description && <p className="text-xs text-gray-500 dark:text-gray-400">{m.description}</p>}
                                                 </>
                                             )}
                                         </td>
@@ -411,12 +411,12 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                                 <select
                                                     value={editForm.status}
                                                     onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                                                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                                    className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm"
                                                 >
                                                     {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                                                 </select>
                                             ) : (
-                                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_BADGE[m.status] || 'bg-gray-100 text-gray-700'}`}>
+                                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_BADGE[m.status] || 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
                                                     {m.status_display}
                                                 </span>
                                             )}
@@ -427,13 +427,13 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                                     type="number"
                                                     value={editForm.budget_amount}
                                                     onChange={(e) => setEditForm({ ...editForm, budget_amount: e.target.value })}
-                                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                                                    className="w-24 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm text-right"
                                                 />
                                             ) : (
                                                 <span>{num(m.budget_amount).toLocaleString()} {currency}</span>
                                             )}
                                         </td>
-                                        <td className={`px-4 py-2 text-right ${overBudget ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
+                                        <td className={`px-4 py-2 text-right ${overBudget ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-900 dark:text-white'}`}>
                                             {num(m.actual_cost).toLocaleString()} {currency}
                                             {overBudget && <span className="ml-1 text-[10px] uppercase">Over</span>}
                                         </td>
@@ -443,13 +443,13 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                                     type="number"
                                                     value={editForm.billing_amount}
                                                     onChange={(e) => setEditForm({ ...editForm, billing_amount: e.target.value })}
-                                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                                                    className="w-24 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm text-right"
                                                 />
                                             ) : (
                                                 <span>{num(m.billing_amount).toLocaleString()} {currency}</span>
                                             )}
                                         </td>
-                                        <td className={`px-4 py-2 text-right font-medium ${margin < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                        <td className={`px-4 py-2 text-right font-medium ${margin < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                                             {margin.toLocaleString()} {currency}
                                         </td>
                                         <td className="px-4 py-2">{renderStatusBadge(BILLING_BADGE, m.billing_status)}</td>
@@ -457,14 +457,14 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                         <td className="px-4 py-2 text-right whitespace-nowrap">
                                             {isEditing ? (
                                                 <>
-                                                    <button onClick={() => handleSaveEdit(m.id)} className="text-xs text-blue-600 hover:underline mr-2">Save</button>
-                                                    <button onClick={() => setEditingId(null)} className="text-xs text-gray-500 hover:underline">Cancel</button>
+                                                    <button onClick={() => handleSaveEdit(m.id)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline mr-2">Save</button>
+                                                    <button onClick={() => setEditingId(null)} className="text-xs text-gray-500 dark:text-gray-400 hover:underline">Cancel</button>
                                                 </>
                                             ) : (
                                                 <>
-                                                    <button onClick={() => openInvoiceModal(m)} className="text-xs text-blue-600 hover:underline mr-2">Bill</button>
-                                                    <button onClick={() => startEdit(m)} className="text-xs text-gray-600 hover:underline mr-2">Edit</button>
-                                                    <button onClick={() => handleArchive(m.id)} className="text-xs text-red-600 hover:underline">Archive</button>
+                                                    <button onClick={() => openInvoiceModal(m)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline mr-2">Bill</button>
+                                                    <button onClick={() => startEdit(m)} className="text-xs text-gray-600 dark:text-gray-400 hover:underline mr-2">Edit</button>
+                                                    <button onClick={() => handleArchive(m.id)} className="text-xs text-red-600 dark:text-red-400 hover:underline">Archive</button>
                                                 </>
                                             )}
                                         </td>
@@ -473,12 +473,12 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                             })}
                         </tbody>
                         <tfoot>
-                            <tr className="bg-gray-50 font-semibold">
+                            <tr className="bg-gray-50 dark:bg-gray-800 font-semibold">
                                 <td className="px-4 py-2" colSpan={3}>Total</td>
                                 <td className="px-4 py-2 text-right">{totals.budget.toLocaleString()} {currency}</td>
                                 <td className="px-4 py-2 text-right">{totals.actual.toLocaleString()} {currency}</td>
                                 <td className="px-4 py-2 text-right">{totals.billing.toLocaleString()} {currency}</td>
-                                <td className={`px-4 py-2 text-right ${(totals.billing - totals.actual) < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                <td className={`px-4 py-2 text-right ${(totals.billing - totals.actual) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                                     {(totals.billing - totals.actual).toLocaleString()} {currency}
                                 </td>
                                 <td colSpan={3} />
@@ -490,33 +490,33 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
 
             {invoiceModalMilestone && (
                 <div
-                    className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4"
+                    className="fixed inset-0 bg-black/30 dark:bg-black/50 z-50 flex items-center justify-center p-4"
                     onClick={() => setInvoiceModalMilestone(null)}
                 >
                     <div
-                        className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5"
+                        className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-sm p-5"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <p className="text-base font-semibold text-gray-900 mb-1">Create Invoice</p>
-                        <p className="text-xs text-gray-500 mb-4">{invoiceModalMilestone.name}</p>
+                        <p className="text-base font-semibold text-gray-900 dark:text-white mb-1">Create Invoice</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">{invoiceModalMilestone.name}</p>
 
                         <div className="space-y-3">
                             <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Invoice Amount</label>
+                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Invoice Amount</label>
                                 <input
                                     type="number"
                                     value={invoiceAmount}
                                     onChange={(e) => setInvoiceAmount(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Due in (days)</label>
+                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Due in (days)</label>
                                 <input
                                     type="number"
                                     value={invoiceDueDays}
                                     onChange={(e) => setInvoiceDueDays(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                                 />
                             </div>
                         </div>
@@ -526,7 +526,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                 type="button"
                                 onClick={() => setInvoiceModalMilestone(null)}
                                 disabled={isCreatingInvoice}
-                                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
                             >
                                 Cancel
                             </button>

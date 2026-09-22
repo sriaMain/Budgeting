@@ -362,16 +362,16 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
     const renderLineRow = (line: BudgetLine, showGlAccountColumn: boolean) => {
         if (editingLineId === line.id) {
             return (
-                <tr key={line.id} className="border-b border-gray-100 bg-blue-50/40">
+                <tr key={line.id} className="border-b border-gray-100 dark:border-gray-800 bg-blue-50/40">
                     <td className="px-4 py-2 align-top">
                         <input
                             type="text"
                             value={editDescription}
                             onChange={(e) => setEditDescription(e.target.value)}
-                            className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-md text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                            className="w-full px-2 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                         />
                         {editErrors.description && (
-                            <p className="text-[11px] text-red-600 mt-1">{editErrors.description}</p>
+                            <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{editErrors.description}</p>
                         )}
                     </td>
                     {showGlAccountColumn && (
@@ -384,12 +384,12 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                                 emptyMessage="No GL Accounts yet"
                             />
                             {editErrors.glAccount && (
-                                <p className="text-[11px] text-red-600 mt-1">{editErrors.glAccount}</p>
+                                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{editErrors.glAccount}</p>
                             )}
                             <button
                                 type="button"
                                 onClick={openGlAccountModal}
-                                className="text-[11px] text-blue-600 hover:underline mt-1"
+                                className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline mt-1"
                             >
                                 + Add new GL Account
                             </button>
@@ -402,10 +402,10 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                             onChange={(e) => setEditPlannedAmount(e.target.value)}
                             step="0.01"
                             min="0"
-                            className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-md text-sm text-gray-900 text-right focus:outline-none focus:ring-2 focus:ring-blue-600"
+                            className="w-full px-2 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md text-sm text-gray-900 dark:text-white text-right focus:outline-none focus:ring-2 focus:ring-blue-600"
                         />
                         {editErrors.plannedAmount && (
-                            <p className="text-[11px] text-red-600 mt-1 text-left">{editErrors.plannedAmount}</p>
+                            <p className="text-[11px] text-red-600 dark:text-red-400 mt-1 text-left">{editErrors.plannedAmount}</p>
                         )}
                     </td>
                     <td className="px-4 py-2 align-top text-right whitespace-nowrap">
@@ -413,7 +413,7 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                             type="button"
                             onClick={() => handleSaveEdit(line.id)}
                             disabled={isSavingEdit}
-                            className="text-xs font-medium text-blue-600 hover:underline disabled:opacity-50 mr-3"
+                            className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50 mr-3"
                         >
                             {isSavingEdit ? 'Saving...' : 'Save'}
                         </button>
@@ -421,7 +421,7 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                             type="button"
                             onClick={cancelEdit}
                             disabled={isSavingEdit}
-                            className="text-xs font-medium text-gray-500 hover:underline disabled:opacity-50"
+                            className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:underline disabled:opacity-50"
                         >
                             Cancel
                         </button>
@@ -431,24 +431,24 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
         }
 
         return (
-            <tr key={line.id} className="border-b border-gray-100">
-                <td className="px-4 py-2 text-gray-900">{line.description}</td>
+            <tr key={line.id} className="border-b border-gray-100 dark:border-gray-800">
+                <td className="px-4 py-2 text-gray-900 dark:text-white">{line.description}</td>
                 {showGlAccountColumn && (
-                    <td className="px-4 py-2 text-gray-600">{line.gl_account_code} - {line.gl_account_name}</td>
+                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{line.gl_account_code} - {line.gl_account_name}</td>
                 )}
-                <td className="px-4 py-2 text-right text-gray-900">{num(line.planned_amount).toLocaleString()} {currency}</td>
+                <td className="px-4 py-2 text-right text-gray-900 dark:text-white">{num(line.planned_amount).toLocaleString()} {currency}</td>
                 <td className="px-4 py-2 text-right whitespace-nowrap">
                     <button
                         type="button"
                         onClick={() => startEdit(line)}
-                        className="text-xs font-medium text-blue-600 hover:underline mr-3"
+                        className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline mr-3"
                     >
                         Edit
                     </button>
                     <button
                         type="button"
                         onClick={() => handleDeleteLine(line.id)}
-                        className="text-xs font-medium text-red-600 hover:underline"
+                        className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline"
                     >
                         Delete
                     </button>
@@ -460,24 +460,24 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
     return (
         <div className="space-y-4">
             {/* Add Budget Line */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <p className="text-sm font-semibold text-gray-900 mb-3">Add Budget Line</p>
+            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                <p className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Add Budget Line</p>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div className="md:col-span-2">
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Description</label>
                         <input
                             type="text"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                             placeholder="e.g. Employee Cost"
-                            className={`w-full px-3 py-2 bg-white border rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 ${addErrors.description ? 'border-red-400' : 'border-gray-300'}`}
+                            className={`w-full px-3 py-2 bg-white dark:bg-gray-900 border rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 ${addErrors.description ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                         />
                         {addErrors.description && (
-                            <p className="text-xs text-red-600 mt-1">{addErrors.description}</p>
+                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">{addErrors.description}</p>
                         )}
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">GL Account</label>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">GL Account</label>
                         <SearchableSelect
                             options={glAccountOptions}
                             value={newGlAccount}
@@ -486,18 +486,18 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                             emptyMessage="No GL Accounts yet"
                         />
                         {addErrors.glAccount && (
-                            <p className="text-xs text-red-600 mt-1">{addErrors.glAccount}</p>
+                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">{addErrors.glAccount}</p>
                         )}
                         <button
                             type="button"
                             onClick={openGlAccountModal}
-                            className="text-xs text-blue-600 hover:underline mt-1"
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
                         >
                             + Add new GL Account
                         </button>
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Planned Amount</label>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Planned Amount</label>
                         <input
                             type="number"
                             value={plannedAmount}
@@ -505,10 +505,10 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                             placeholder="0.00"
                             step="0.01"
                             min="0"
-                            className={`w-full px-3 py-2 bg-white border rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 ${addErrors.plannedAmount ? 'border-red-400' : 'border-gray-300'}`}
+                            className={`w-full px-3 py-2 bg-white dark:bg-gray-900 border rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 ${addErrors.plannedAmount ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                         />
                         {addErrors.plannedAmount && (
-                            <p className="text-xs text-red-600 mt-1">{addErrors.plannedAmount}</p>
+                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">{addErrors.plannedAmount}</p>
                         )}
                     </div>
                 </div>
@@ -534,29 +534,29 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                         placeholder="Filter by GL Account..."
                     />
                 </div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 sm:ml-auto">
+                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 sm:ml-auto">
                     <input
                         type="checkbox"
                         checked={groupByGl}
                         onChange={(e) => setGroupByGl(e.target.checked)}
-                        className="rounded border-gray-300"
+                        className="rounded border-gray-300 dark:border-gray-700"
                     />
                     Group by GL Account
                 </label>
             </div>
 
             {/* Lines list */}
-            <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-x-auto">
                 {isLoading ? (
-                    <p className="p-4 text-sm text-gray-500">Loading budget lines...</p>
+                    <p className="p-4 text-sm text-gray-500 dark:text-gray-400">Loading budget lines...</p>
                 ) : filteredLines.length === 0 ? (
-                    <p className="p-4 text-sm text-gray-500">No budget lines yet. Add one above.</p>
+                    <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No budget lines yet. Add one above.</p>
                 ) : groupByGl ? (
-                    <div className="divide-y divide-gray-200">
+                    <div className="divide-y divide-gray-200 dark:divide-gray-800">
                         {groupedSections.map((section) => (
                             <div key={section.code}>
-                                <div className="px-4 py-2 bg-gray-50">
-                                    <p className="text-sm font-semibold text-gray-900">{section.code} - {section.name}</p>
+                                <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800">
+                                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{section.code} - {section.name}</p>
                                 </div>
                                 <table className="w-full text-sm">
                                     <tbody>
@@ -569,7 +569,7 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                 ) : (
                     <table className="w-full text-sm">
                         <thead>
-                            <tr className="border-b border-gray-200 text-left text-xs text-gray-500 uppercase">
+                            <tr className="border-b border-gray-200 dark:border-gray-800 text-left text-xs text-gray-500 dark:text-gray-400 uppercase">
                                 <th className="px-4 py-2">Description</th>
                                 <th className="px-4 py-2">GL Account</th>
                                 <th className="px-4 py-2 text-right">Planned Amount</th>
@@ -585,19 +585,19 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
 
             {/* Total Planned Amount, by GL Account, plus grand total */}
             {totalsByAccount.length > 0 && (
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                    <p className="text-sm font-semibold text-gray-900 mb-2">Total Planned Amount</p>
+                <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Total Planned Amount</p>
                     <div className="space-y-1">
                         {totalsByAccount.map((row) => (
-                            <div key={row.code} className="flex items-center justify-between text-sm text-gray-600">
+                            <div key={row.code} className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
                                 <span>{row.code} - {row.name}</span>
                                 <span>{row.total.toLocaleString()} {currency}</span>
                             </div>
                         ))}
                     </div>
-                    <div className="mt-2 pt-2 border-t border-gray-200 flex items-center justify-between">
-                        <span className="text-sm font-semibold text-gray-900">Total</span>
-                        <span className="text-base font-bold text-gray-900">{grandTotal.toLocaleString()} {currency}</span>
+                    <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">Total</span>
+                        <span className="text-base font-bold text-gray-900 dark:text-white">{grandTotal.toLocaleString()} {currency}</span>
                     </div>
                 </div>
             )}
@@ -606,48 +606,48 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                 Chart-of-Accounts table used everywhere else in the app. */}
             {isGlAccountModalOpen && (
                 <div
-                    className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4"
+                    className="fixed inset-0 bg-black/30 dark:bg-black/50 z-50 flex items-center justify-center p-4"
                     onClick={() => setIsGlAccountModalOpen(false)}
                 >
                     <div
-                        className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5"
+                        className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-sm p-5"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <p className="text-base font-semibold text-gray-900 mb-3">Add new GL Account</p>
+                        <p className="text-base font-semibold text-gray-900 dark:text-white mb-3">Add new GL Account</p>
 
                         <div className="space-y-3">
                             <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Account Code</label>
+                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Account Code</label>
                                 <input
                                     type="text"
                                     value={newAccountCode}
                                     onChange={(e) => setNewAccountCode(e.target.value)}
                                     placeholder="e.g. 5000"
-                                    className={`w-full px-3 py-2 bg-white border rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 ${newAccountErrors.code ? 'border-red-400' : 'border-gray-300'}`}
+                                    className={`w-full px-3 py-2 bg-white dark:bg-gray-900 border rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 ${newAccountErrors.code ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                                 />
                                 {newAccountErrors.code && (
-                                    <p className="text-xs text-red-600 mt-1">{newAccountErrors.code}</p>
+                                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">{newAccountErrors.code}</p>
                                 )}
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Account Name</label>
+                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Account Name</label>
                                 <input
                                     type="text"
                                     value={newAccountName}
                                     onChange={(e) => setNewAccountName(e.target.value)}
                                     placeholder="e.g. Employee Expense"
-                                    className={`w-full px-3 py-2 bg-white border rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 ${newAccountErrors.name ? 'border-red-400' : 'border-gray-300'}`}
+                                    className={`w-full px-3 py-2 bg-white dark:bg-gray-900 border rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 ${newAccountErrors.name ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                                 />
                                 {newAccountErrors.name && (
-                                    <p className="text-xs text-red-600 mt-1">{newAccountErrors.name}</p>
+                                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">{newAccountErrors.name}</p>
                                 )}
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Account Type</label>
+                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Account Type</label>
                                 <select
                                     value={newAccountType}
                                     onChange={(e) => setNewAccountType(e.target.value)}
-                                    className={`w-full px-3 py-2 bg-white border rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 ${newAccountErrors.accountType ? 'border-red-400' : 'border-gray-300'}`}
+                                    className={`w-full px-3 py-2 bg-white dark:bg-gray-900 border rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 ${newAccountErrors.accountType ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                                 >
                                     <option value="">Select type</option>
                                     {GL_ACCOUNT_TYPE_CHOICES.map((choice) => (
@@ -655,7 +655,7 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                                     ))}
                                 </select>
                                 {newAccountErrors.accountType && (
-                                    <p className="text-xs text-red-600 mt-1">{newAccountErrors.accountType}</p>
+                                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">{newAccountErrors.accountType}</p>
                                 )}
                             </div>
                         </div>
@@ -665,7 +665,7 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                                 type="button"
                                 onClick={() => setIsGlAccountModalOpen(false)}
                                 disabled={isCreatingAccount}
-                                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
                             >
                                 Cancel
                             </button>

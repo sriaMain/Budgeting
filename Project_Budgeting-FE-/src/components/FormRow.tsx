@@ -9,7 +9,7 @@ interface FormRowProps {
 export const FormRow: React.FC<FormRowProps> = ({ label, required, children }) => {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
-      <label className="text-sm font-bold text-gray-700">
+      <label className="text-sm font-bold text-gray-700 dark:text-gray-300">
         {label}
         {required && <span className="text-red-500 ml-0.5">*</span>}
       </label>

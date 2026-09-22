@@ -116,7 +116,7 @@ export const FreelancerRateCardsTab: React.FC<Props> = ({ freelancerId, pricingM
         {
             header: 'Status',
             accessor: (c) => (
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.is_current ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.is_current ? 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
                     {c.is_active ? (c.is_current ? 'Active' : 'Scheduled/Expired') : 'Inactive'}
                 </span>
             ),

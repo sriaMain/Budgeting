@@ -68,8 +68,13 @@ const App: React.FC = () => {
 
 
   return (
-    <main className="min-h-screen w-full bg-white">
-      <Toaster position="top-right" />
+    <main className="min-h-screen w-full bg-white dark:bg-gray-950">
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          className: '!bg-white !text-gray-900 dark:!bg-gray-800 dark:!text-gray-100 dark:!border dark:!border-gray-700',
+        }}
+      />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<CenteredAuthPage><LoginForm /></CenteredAuthPage>} />

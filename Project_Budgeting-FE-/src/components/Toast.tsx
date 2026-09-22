@@ -22,10 +22,10 @@ export const Toast: React.FC<ToastProps> = ({
     return () => clearTimeout(timer);
   }, [duration, onClose]);
 
-  const bgColor = type === "success" ? "bg-green-50" : type === "error" ? "bg-red-50" : "bg-blue-50";
-  const borderColor = type === "success" ? "border-green-200" : type === "error" ? "border-red-200" : "border-blue-200";
-  const textColor = type === "success" ? "text-green-800" : type === "error" ? "text-red-800" : "text-blue-800";
-  const iconColor = type === "success" ? "text-green-600" : type === "error" ? "text-red-600" : "text-blue-600";
+  const bgColor = type === "success" ? "bg-green-50 dark:bg-green-500/10" : type === "error" ? "bg-red-50 dark:bg-red-500/10" : "bg-blue-50 dark:bg-blue-500/10";
+  const borderColor = type === "success" ? "border-green-200 dark:border-green-500/30" : type === "error" ? "border-red-200 dark:border-red-500/30" : "border-blue-200 dark:border-blue-500/30";
+  const textColor = type === "success" ? "text-green-800 dark:text-green-300" : type === "error" ? "text-red-800 dark:text-red-300" : "text-blue-800 dark:text-blue-300";
+  const iconColor = type === "success" ? "text-green-600 dark:text-green-400" : type === "error" ? "text-red-600 dark:text-red-400" : "text-blue-600 dark:text-blue-400";
 
   return (
     <div

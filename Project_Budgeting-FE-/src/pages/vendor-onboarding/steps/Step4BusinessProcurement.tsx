@@ -16,7 +16,7 @@ export const Step4BusinessProcurement: React.FC<Props> = ({ currencyOptions }) =
   return (
     <div className="space-y-8">
       <section>
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Procurement Information</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Procurement Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InputField label="Account Group *" {...register('step4.account_group')} error={errors.step4?.account_group?.message} />
           <InputField label="Purchasing Organization *" {...register('step4.purchasing_org')} error={errors.step4?.purchasing_org?.message} />
@@ -32,7 +32,7 @@ export const Step4BusinessProcurement: React.FC<Props> = ({ currencyOptions }) =
       </section>
 
       <section className="border-t pt-6">
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Additional Details (Optional)</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Additional Details (Optional)</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InputField label="Grouping Key" {...register('step4.grouping_key')} />
           <InputField label="Partner Category" {...register('step4.partner_category')} />

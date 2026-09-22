@@ -47,7 +47,7 @@ export function ApprovalActionBar<TPayload>({
     <div className="flex items-center gap-3">
       <button
         onClick={() => setIsRequestModalOpen(true)}
-        className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium border border-amber-600 text-amber-700 hover:bg-amber-50 transition-colors"
+        className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium border border-amber-600 text-amber-700 hover:bg-amber-50 transition-colors dark:text-amber-400 dark:hover:bg-amber-500/10"
       >
         <MessageSquareWarning className="w-4 h-4" />
         Request Changes

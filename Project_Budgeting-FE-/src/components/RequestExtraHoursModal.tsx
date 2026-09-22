@@ -122,18 +122,18 @@ export const RequestExtraHoursModal: React.FC<RequestExtraHoursModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto dark:bg-gray-900 dark:shadow-black/40">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <AlertTriangle className="text-orange-600" size={24} />
+            <div className="p-2 bg-orange-100 rounded-lg dark:bg-orange-500/15">
+              <AlertTriangle className="text-orange-600 dark:text-orange-400" size={24} />
             </div>
-            <h2 className="text-xl font-bold text-gray-900">Request Additional Hours</h2>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Request Additional Hours</h2>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-gray-400 hover:text-gray-600 transition-colors dark:text-gray-500 dark:hover:text-gray-300"
             disabled={isSubmitting}
           >
             <X size={24} />
@@ -143,14 +143,14 @@ export const RequestExtraHoursModal: React.FC<RequestExtraHoursModalProps> = ({
         {/* Content */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Warning Message */}
-          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 dark:bg-orange-500/10 dark:border-orange-500/30">
             <div className="flex items-start gap-3">
-              <Clock className="text-orange-600 mt-0.5 flex-shrink-0" size={20} />
+              <Clock className="text-orange-600 mt-0.5 flex-shrink-0 dark:text-orange-400" size={20} />
               <div className="flex-1">
-                <p className="text-sm font-semibold text-orange-900 mb-1">
+                <p className="text-sm font-semibold text-orange-900 mb-1 dark:text-orange-300">
                   Time Limit Exceeded
                 </p>
-                <p className="text-sm text-orange-700">
+                <p className="text-sm text-orange-700 dark:text-orange-300">
                   You have exceeded the allocated time for this task by{' '}
                   <span className="font-bold font-mono">
                     {exceededFormatted || `${exceededHours.toFixed(2)}h`}
@@ -161,20 +161,20 @@ export const RequestExtraHoursModal: React.FC<RequestExtraHoursModalProps> = ({
           </div>
 
           {/* Task Info */}
-          <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+          <div className="bg-gray-50 rounded-lg p-4 space-y-2 dark:bg-gray-800">
             <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Task:</span>
-              <span className="text-sm font-semibold text-gray-900">{taskTitle}</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">Task:</span>
+              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{taskTitle}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Allocated Hours:</span>
-              <span className="text-sm font-semibold text-gray-900 font-mono">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Allocated Hours:</span>
+              <span className="text-sm font-semibold text-gray-900 font-mono dark:text-gray-100">
                 {allocatedFormatted || `${allocatedHours.toFixed(2)}h`}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Consumed Hours:</span>
-              <span className="text-sm font-semibold text-orange-600 font-mono">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Consumed Hours:</span>
+              <span className="text-sm font-semibold text-orange-600 font-mono dark:text-orange-400">
                 {consumedFormatted || `${consumedHours.toFixed(2)}h`}
               </span>
             </div>
@@ -182,7 +182,7 @@ export const RequestExtraHoursModal: React.FC<RequestExtraHoursModalProps> = ({
 
           {/* Requested Hours Input */}
           <div>
-            <label htmlFor="requestedHours" className="block text-sm font-semibold text-gray-700 mb-2">
+            <label htmlFor="requestedHours" className="block text-sm font-semibold text-gray-700 mb-2 dark:text-gray-300">
               Additional Hours Needed <span className="text-red-500">*</span>
             </label>
             <input
@@ -190,20 +190,20 @@ export const RequestExtraHoursModal: React.FC<RequestExtraHoursModalProps> = ({
               type="text"
               value={requestedHours}
               onChange={(e) => setRequestedHours(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all font-mono"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all font-mono dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
               placeholder="HH:MM:SS (e.g., 05:30:00)"
               required
               disabled={isSubmitting}
               pattern="[0-9]{1,2}:[0-5][0-9](:[0-5][0-9])?"
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               Auto-calculated as (Consumed - Allocated) in HH:MM:SS format. You can adjust this value as needed.
             </p>
           </div>
 
           {/* Reason Textarea */}
           <div>
-            <label htmlFor="reason" className="block text-sm font-semibold text-gray-700 mb-2">
+            <label htmlFor="reason" className="block text-sm font-semibold text-gray-700 mb-2 dark:text-gray-300">
               Reason for Additional Time <span className="text-red-500">*</span>
             </label>
             <textarea
@@ -211,12 +211,12 @@ export const RequestExtraHoursModal: React.FC<RequestExtraHoursModalProps> = ({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={4}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all resize-none"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all resize-none dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
               placeholder="Please explain why you need additional time..."
               required
               disabled={isSubmitting}
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               Provide a clear explanation for the admin to review
             </p>
           </div>
@@ -226,7 +226,7 @@ export const RequestExtraHoursModal: React.FC<RequestExtraHoursModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+              className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
               disabled={isSubmitting}
             >
               Cancel

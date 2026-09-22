@@ -158,20 +158,20 @@ export const FreelancerContractsTab: React.FC<Props> = ({ freelancerId, contract
                     <Checkbox label="Agreement Signed" checked={!!values.agreement_signed} onChange={set('agreement_signed')} />
                 </div>
                 <div className="mb-5">
-                    <label className="block text-base font-medium text-gray-900 mb-2">Contract Document</label>
+                    <label className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">Contract Document</label>
                     <input
                         type="file"
                         onChange={(e) => setFile(e.target.files?.[0] || null)}
-                        className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-input-bg file:text-gray-900 file:font-medium"
+                        className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-input-bg file:text-gray-900 file:font-medium dark:text-gray-400 dark:file:bg-gray-800 dark:file:text-gray-100"
                     />
                 </div>
                 <div>
-                    <label className="block text-base font-medium text-gray-900 mb-2">Notes</label>
+                    <label className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">Notes</label>
                     <textarea
                         value={values.notes}
                         onChange={set('notes')}
                         rows={3}
-                        className="w-full px-4 py-3 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white transition-all"
+                        className="w-full px-4 py-3 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white transition-all dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:shadow-none dark:focus:bg-gray-800 dark:focus:ring-violet-500"
                     />
                 </div>
             </Modal>

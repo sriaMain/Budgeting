@@ -16,7 +16,7 @@ const VARIANT_STYLES: Record<NonNullable<SkeletonProps['variant']>, string> = {
 export const Skeleton: React.FC<SkeletonProps> = ({ variant = 'text', count = 1, className = '' }) => (
   <div className="animate-pulse space-y-2" aria-hidden="true">
     {Array.from({ length: count }).map((_, i) => (
-      <div key={i} className={`bg-gray-100 ${VARIANT_STYLES[variant]} ${className}`} />
+      <div key={i} className={`bg-gray-100 dark:bg-gray-800 ${VARIANT_STYLES[variant]} ${className}`} />
     ))}
   </div>
 );

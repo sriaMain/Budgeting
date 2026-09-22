@@ -136,6 +136,16 @@ export interface RecentActivityItem {
   link: string | null;
 }
 
+export interface FreelancerStats {
+  total: number;
+  active: number;
+  available: number;
+  assigned: number;
+  pending_onboarding: number;
+  /** Sum of this month's Expense rows tagged to a freelancer - never PAN/bank data. */
+  cost_this_month: number;
+}
+
 export interface AdminOverview {
   kpis: AdminKpis;
   portfolio: PortfolioSummary;
@@ -145,4 +155,5 @@ export interface AdminOverview {
   resource_utilization: ResourceUtilizationRow[];
   action_center: ActionCenterItem[];
   recent_activity: RecentActivityItem[];
+  freelancers: FreelancerStats;
 }

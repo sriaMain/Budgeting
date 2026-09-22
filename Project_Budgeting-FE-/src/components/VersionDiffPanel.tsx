@@ -79,7 +79,7 @@ interface VersionDiffPanelProps {
 
 export const VersionDiffPanel: React.FC<VersionDiffPanelProps> = ({ versions }) => {
   if (versions.length === 0) {
-    return <p className="text-sm text-gray-500">No submissions yet.</p>;
+    return <p className="text-sm text-gray-500 dark:text-gray-400">No submissions yet.</p>;
   }
 
   const sorted = [...versions].sort((a, b) => a.version_number - b.version_number);
@@ -92,34 +92,34 @@ export const VersionDiffPanel: React.FC<VersionDiffPanelProps> = ({ versions }) 
         const isFirst = idx === 0;
 
         return (
-          <div key={version.id} className="border border-gray-200 rounded-lg p-4">
+          <div key={version.id} className="border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
-              <History className="w-4 h-4 text-gray-400" />
-              <p className="text-sm font-semibold text-gray-900">
+              <History className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">
                 Version {version.version_number} — {version.is_resubmission ? 'Vendor Resubmitted' : 'Vendor Submitted'}
               </p>
-              <span className="text-xs text-gray-400">{new Date(version.created_at).toLocaleString()}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">{new Date(version.created_at).toLocaleString()}</span>
             </div>
 
             {isFirst ? (
-              <p className="text-sm text-gray-500 pl-6">Initial submission.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 pl-6">Initial submission.</p>
             ) : fieldChanges.length === 0 && documentChanges.length === 0 ? (
-              <p className="text-sm text-gray-500 pl-6">No changes detected from the previous submission.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 pl-6">No changes detected from the previous submission.</p>
             ) : (
               <div className="pl-6 space-y-2">
                 {fieldChanges.map((change) => (
                   <div key={`${change.group}-${change.field}`} className="text-sm">
-                    <span className="text-gray-500">{GROUP_LABELS[change.group]} — {labelForField(change.field)}: </span>
-                    <span className="text-red-600 line-through mr-2">{change.previous}</span>
-                    <span className="text-green-700 font-medium">{change.next}</span>
+                    <span className="text-gray-500 dark:text-gray-400">{GROUP_LABELS[change.group]} — {labelForField(change.field)}: </span>
+                    <span className="text-red-600 dark:text-red-400 line-through mr-2">{change.previous}</span>
+                    <span className="text-green-700 dark:text-green-300 font-medium">{change.next}</span>
                   </div>
                 ))}
                 {documentChanges.map((change) => (
                   <div key={change.category} className="text-sm">
-                    <span className="text-gray-500">Document ({change.category.replace(/_/g, ' ')}): </span>
-                    {change.previous && <span className="text-red-600 line-through mr-2">{change.previous}</span>}
-                    {change.next && <span className="text-green-700 font-medium">{change.next}</span>}
-                    {!change.next && <span className="text-red-600">Removed</span>}
+                    <span className="text-gray-500 dark:text-gray-400">Document ({change.category.replace(/_/g, ' ')}): </span>
+                    {change.previous && <span className="text-red-600 dark:text-red-400 line-through mr-2">{change.previous}</span>}
+                    {change.next && <span className="text-green-700 dark:text-green-300 font-medium">{change.next}</span>}
+                    {!change.next && <span className="text-red-600 dark:text-red-400">Removed</span>}
                   </div>
                 ))}
               </div>

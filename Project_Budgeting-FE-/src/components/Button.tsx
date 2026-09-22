@@ -16,7 +16,7 @@ export const Button: React.FC<ButtonProps> = ({
   disabled,
   ...props
 }) => {
-  const baseStyles = "w-full rounded-lg font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2";
+  const baseStyles = "w-full rounded-lg font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2";
 
   const sizes = {
     sm: "py-2 px-4 text-sm",
@@ -26,9 +26,9 @@ export const Button: React.FC<ButtonProps> = ({
 
   const variants = {
     primary: "bg-brand-800 hover:bg-brand-900 text-white focus:ring-brand-800 shadow-md hover:shadow-lg",
-    secondary: "bg-transparent text-brand-800 hover:bg-blue-50 focus:ring-brand-800",
+    secondary: "bg-transparent text-brand-800 hover:bg-blue-50 focus:ring-brand-800 dark:text-violet-300 dark:hover:bg-gray-800",
     danger: "bg-risk-600 hover:bg-risk-700 text-white focus:ring-risk-600 shadow-md hover:shadow-lg",
-    ghost: "bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:ring-gray-400",
+    ghost: "bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:ring-gray-400 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200",
   };
 
   return (

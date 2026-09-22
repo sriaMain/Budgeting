@@ -60,7 +60,7 @@ export const StatCard: React.FC<StatCardProps> = ({
         {hasChange && change !== 0 && (
           <span
             className={`flex items-center gap-0.5 text-sm font-medium ${
-              isGood ? 'text-green-600' : isBad ? 'text-red-600' : 'text-gray-500'
+              isGood ? 'text-green-600 dark:text-green-400' : isBad ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'
             }`}
           >
             {isUp ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
@@ -71,7 +71,7 @@ export const StatCard: React.FC<StatCardProps> = ({
       {statusLabel && (
         <p
           className={`mt-1.5 text-xs font-medium ${
-            status === 'risk' ? 'text-risk-600' : status === 'watch' ? 'text-amber-600' : 'text-teal-700'
+            status === 'risk' ? 'text-risk-600 dark:text-red-400' : status === 'watch' ? 'text-amber-600 dark:text-amber-400' : 'text-teal-700 dark:text-violet-400'
           }`}
         >
           {statusLabel}

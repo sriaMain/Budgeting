@@ -372,31 +372,31 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
         {
             label: 'Total Revenue',
             amount: formatCurrency(financeOverview.summary_cards.total_revenue),
-            icon: <DollarSign size={20} className="text-blue-600" />,
+            icon: <DollarSign size={20} className="text-blue-600 dark:text-blue-400" />,
             trend: null as string | null
         },
         {
             label: 'Total Expenses',
             amount: formatCurrency(financeOverview.summary_cards.total_expenses),
-            icon: <TrendingUp size={20} className="text-rose-600" />,
+            icon: <TrendingUp size={20} className="text-rose-600 dark:text-rose-400" />,
             trend: null as string | null
         },
         {
             label: 'Total Profit',
             amount: formatCurrency(financeOverview.summary_cards.total_profit),
-            icon: <PieChart size={20} className="text-emerald-600" />,
+            icon: <PieChart size={20} className="text-emerald-600 dark:text-emerald-400" />,
             trend: null as string | null
         },
         {
             label: 'Total Outstanding',
             amount: formatCurrency(financeOverview.summary_cards.total_outstanding),
-            icon: <Clock size={20} className="text-amber-600" />,
+            icon: <Clock size={20} className="text-amber-600 dark:text-amber-400" />,
             trend: null as string | null
         },
         {
             label: 'Collection Rate',
             amount: `${financeOverview.summary_cards.overall_collection_rate.toFixed(2)}%`,
-            icon: <CheckCircle size={20} className="text-indigo-600" />,
+            icon: <CheckCircle size={20} className="text-indigo-600 dark:text-indigo-400" />,
             trend: null as string | null
         },
     ] : [];
@@ -431,10 +431,10 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
             case 'Financial Reports':
                 return (
                     <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-gray-50 z-10">
-                            <tr className="border-b border-gray-200">
+                        <thead className="sticky top-0 bg-gray-50 z-10 dark:bg-gray-800">
+                            <tr className="border-b border-gray-200 dark:border-gray-700">
                                 <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
                                     onClick={() => handleSort('invoice_no')}
                                 >
                                     <div className="flex items-center gap-2">
@@ -444,9 +444,9 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                         ) : <ArrowUpDown size={14} className="opacity-40" />}
                                     </div>
                                 </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Client Name</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Client Name</th>
                                 <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
                                     onClick={() => handleSort('invoice_total')}
                                 >
                                     <div className="flex items-center gap-2">
@@ -456,9 +456,9 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                         ) : <ArrowUpDown size={14} className="opacity-40" />}
                                     </div>
                                 </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Amount Paid</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Outstanding</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Amount Paid</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Outstanding</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">
                                     <div className="flex items-center gap-2">
                                         Status
                                         <div className="relative">
@@ -467,27 +467,27 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                                     e.stopPropagation();
                                                     setShowStatusDropdown(!showStatusDropdown);
                                                 }}
-                                                className="hover:bg-gray-200 p-1 rounded transition-colors"
+                                                className="hover:bg-gray-200 p-1 rounded transition-colors dark:hover:bg-gray-700"
                                             >
                                                 <ChevronDown size={14} />
                                             </button>
                                             {showStatusDropdown && (
-                                                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] min-w-[180px]">
-                                                    <button onClick={() => { setSelectedStatus(''); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: '' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors border-b border-gray-100">All Statuses</button>
-                                                    <button onClick={() => { setSelectedStatus('paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">Paid</button>
-                                                    <button onClick={() => { setSelectedStatus('partially_paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'partially_paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">Partially Paid</button>
-                                                    <button onClick={() => { setSelectedStatus('issued'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'issued' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">Issued</button>
-                                                    <button onClick={() => { setSelectedStatus('overdue'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'overdue' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">Overdue</button>
+                                                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] min-w-[180px] dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
+                                                    <button onClick={() => { setSelectedStatus(''); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: '' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors border-b border-gray-100 dark:text-gray-200 dark:hover:bg-gray-700 dark:border-gray-700">All Statuses</button>
+                                                    <button onClick={() => { setSelectedStatus('paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Paid</button>
+                                                    <button onClick={() => { setSelectedStatus('partially_paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'partially_paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Partially Paid</button>
+                                                    <button onClick={() => { setSelectedStatus('issued'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'issued' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Issued</button>
+                                                    <button onClick={() => { setSelectedStatus('overdue'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'overdue' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Overdue</button>
                                                 </div>
                                             )}
                                         </div>
                                     </div>
                                 </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Due Date</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Last Payment</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Due Date</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Last Payment</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {(() => {
                                 let data = financialReports?.rows || [];
                                 data = filterByStatus(data, 'status');
@@ -495,34 +495,34 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                 if (data.length === 0) {
                                     return (
                                         <tr>
-                                            <td colSpan={8} className="px-6 py-10 text-center text-sm text-gray-500">
+                                            <td colSpan={8} className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
                                                 No financial records found for the selected filters.
                                             </td>
                                         </tr>
                                     );
                                 }
                                 return data.map((row, idx) => (
-                                    <tr key={idx} className="hover:bg-gray-50 transition-colors group">
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium">{row.invoice_no}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700">{row.client_name}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-semibold">{formatCurrency(row.invoice_total)}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700">{formatCurrency(row.amount_paid)}</td>
+                                    <tr key={idx} className="hover:bg-gray-50 transition-colors group dark:hover:bg-gray-800">
+                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.invoice_no}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{row.client_name}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 font-semibold dark:text-gray-300">{formatCurrency(row.invoice_total)}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatCurrency(row.amount_paid)}</td>
                                         <td className="px-6 py-4 text-sm">
-                                            <span className={`font-semibold ${row.outstanding_balance > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                            <span className={`font-semibold ${row.outstanding_balance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                                                 {formatCurrency(row.outstanding_balance)}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-sm">
-                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${row.status === 'Paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                                                row.status === 'Partially Paid' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                                                    row.status === 'Issued' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
-                                                        'bg-rose-50 text-rose-700 border border-rose-100'
+                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${row.status === 'Paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/20' :
+                                                row.status === 'Partially Paid' ? 'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/20' :
+                                                    row.status === 'Issued' ? 'bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/20' :
+                                                        'bg-rose-50 text-rose-700 border border-rose-100 dark:bg-rose-500/15 dark:text-rose-300 dark:border-rose-500/20'
                                                 }`}>
                                                 {row.status}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-gray-600">{new Date(row.due_date).toLocaleDateString()}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-600">
+                                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{new Date(row.due_date).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
                                             {row.last_payment_date ? new Date(row.last_payment_date).toLocaleDateString() : '-'}
                                         </td>
                                     </tr>
@@ -534,11 +534,11 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
             case 'Project Reports':
                 return (
                     <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-gray-50 z-10">
-                            <tr className="border-b border-gray-200">
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Project No</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Project Name</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                        <thead className="sticky top-0 bg-gray-50 z-10 dark:bg-gray-800">
+                            <tr className="border-b border-gray-200 dark:border-gray-700">
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Project No</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Project Name</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">
                                     <div className="flex items-center gap-2">
                                         Status
                                         <div className="relative">
@@ -547,24 +547,24 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                                     e.stopPropagation();
                                                     setShowStatusDropdown(!showStatusDropdown);
                                                 }}
-                                                className="hover:bg-gray-200 p-1 rounded transition-colors"
+                                                className="hover:bg-gray-200 p-1 rounded transition-colors dark:hover:bg-gray-700"
                                             >
                                                 <ChevronDown size={14} />
                                             </button>
                                             {showStatusDropdown && (
-                                                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] min-w-[180px]">
-                                                    <button onClick={() => { setSelectedStatus(''); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors border-b border-gray-100">All Statuses</button>
-                                                    <button onClick={() => { setSelectedStatus('completed'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">Completed</button>
-                                                    <button onClick={() => { setSelectedStatus('in_progress'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">In Progress</button>
-                                                    <button onClick={() => { setSelectedStatus('planning'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">Planning</button>
-                                                    <button onClick={() => { setSelectedStatus('on_hold'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">On Hold</button>
+                                                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] min-w-[180px] dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
+                                                    <button onClick={() => { setSelectedStatus(''); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors border-b border-gray-100 dark:text-gray-200 dark:hover:bg-gray-700 dark:border-gray-700">All Statuses</button>
+                                                    <button onClick={() => { setSelectedStatus('completed'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Completed</button>
+                                                    <button onClick={() => { setSelectedStatus('in_progress'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">In Progress</button>
+                                                    <button onClick={() => { setSelectedStatus('planning'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Planning</button>
+                                                    <button onClick={() => { setSelectedStatus('on_hold'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">On Hold</button>
                                                 </div>
                                             )}
                                         </div>
                                     </div>
                                 </th>
                                 <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
                                     onClick={() => handleSort('budget')}
                                 >
                                     <div className="flex items-center gap-2">
@@ -575,7 +575,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                     </div>
                                 </th>
                                 <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
                                     onClick={() => handleSort('invoiced')}
                                 >
                                     <div className="flex items-center gap-2">
@@ -586,7 +586,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                     </div>
                                 </th>
                                 <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
                                     onClick={() => handleSort('received')}
                                 >
                                     <div className="flex items-center gap-2">
@@ -596,9 +596,9 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                         ) : <ArrowUpDown size={14} className="opacity-40" />}
                                     </div>
                                 </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Expenses</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Expenses</th>
                                 <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
                                     onClick={() => handleSort('profit')}
                                 >
                                     <div className="flex items-center gap-2">
@@ -609,7 +609,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                     </div>
                                 </th>
                                 <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
                                     onClick={() => handleSort('forecasted_profit')}
                                     title="Budget minus expenses - an estimate available even before any invoice is raised"
                                 >
@@ -622,7 +622,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                 </th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {(() => {
                                 let data = projectReports?.rows || [];
                                 data = filterByStatus(data, 'project_status');
@@ -630,36 +630,36 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                 if (data.length === 0) {
                                     return (
                                         <tr>
-                                            <td colSpan={8} className="px-6 py-10 text-center text-sm text-gray-500">
+                                            <td colSpan={8} className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
                                                 No project records found for the selected filters.
                                             </td>
                                         </tr>
                                     );
                                 }
                                 return data.map((row) => (
-                                    <tr key={row.project_no} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium">#{row.project_no}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium">{row.project_name}</td>
+                                    <tr key={row.project_no} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
+                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">#{row.project_no}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.project_name}</td>
                                         <td className="px-6 py-4 text-sm">
-                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${row.project_status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                                                row.project_status === 'planning' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                                                    row.project_status === 'in_progress' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
-                                                        'bg-gray-50 text-gray-700 border border-gray-100'
+                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${row.project_status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/20' :
+                                                row.project_status === 'planning' ? 'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/20' :
+                                                    row.project_status === 'in_progress' ? 'bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/20' :
+                                                        'bg-gray-50 text-gray-700 border border-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
                                                 }`}>
                                                 {row.project_status?.replace('_', ' ') || ''}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-semibold">{formatCurrency(row.budget)}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700">{formatCurrency(row.invoiced)}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700">{formatCurrency(row.received)}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700">{formatCurrency(row.expenses)}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 font-semibold dark:text-gray-300">{formatCurrency(row.budget)}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatCurrency(row.invoiced)}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatCurrency(row.received)}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatCurrency(row.expenses)}</td>
                                         <td className="px-6 py-4 text-sm">
-                                            <span className={`font-semibold ${row.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                            <span className={`font-semibold ${row.profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                                                 {formatCurrency(row.profit)}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-sm">
-                                            <span className={`font-semibold ${row.forecasted_profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                            <span className={`font-semibold ${row.forecasted_profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                                                 {formatCurrency(row.forecasted_profit)}
                                             </span>
                                         </td>
@@ -672,11 +672,11 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
             case 'Payment Reports':
                 return (
                     <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-gray-50 z-10">
-                            <tr className="border-b border-gray-200">
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Payment Date</th>
+                        <thead className="sticky top-0 bg-gray-50 z-10 dark:bg-gray-800">
+                            <tr className="border-b border-gray-200 dark:border-gray-700">
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Payment Date</th>
                                 <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
                                     onClick={() => handleSort('invoice__invoice_no')}
                                 >
                                     <div className="flex items-center gap-2">
@@ -686,10 +686,10 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                         ) : <ArrowUpDown size={14} className="opacity-40" />}
                                     </div>
                                 </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Client Name</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Payment Method</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Client Name</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Payment Method</th>
                                 <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
                                     onClick={() => handleSort('amount')}
                                 >
                                     <div className="flex items-center gap-2">
@@ -699,7 +699,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                         ) : <ArrowUpDown size={14} className="opacity-40" />}
                                     </div>
                                 </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">
                                     <div className="flex items-center gap-2">
                                         Invoice Status
                                         <div className="relative">
@@ -708,17 +708,17 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                                     e.stopPropagation();
                                                     setShowStatusDropdown(!showStatusDropdown);
                                                 }}
-                                                className="hover:bg-gray-200 p-1 rounded transition-colors"
+                                                className="hover:bg-gray-200 p-1 rounded transition-colors dark:hover:bg-gray-700"
                                             >
                                                 <ChevronDown size={14} />
                                             </button>
                                             {showStatusDropdown && (
-                                                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] min-w-[180px]">
-                                                    <button onClick={() => { setSelectedStatus(''); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: '' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors border-b border-gray-100">All Statuses</button>
-                                                    <button onClick={() => { setSelectedStatus('paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">Paid</button>
-                                                    <button onClick={() => { setSelectedStatus('partially_paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'partially_paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">Partially Paid</button>
-                                                    <button onClick={() => { setSelectedStatus('issued'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'issued' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">Issued</button>
-                                                    <button onClick={() => { setSelectedStatus('overdue'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'overdue' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors">Overdue</button>
+                                                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] min-w-[180px] dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
+                                                    <button onClick={() => { setSelectedStatus(''); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: '' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors border-b border-gray-100 dark:text-gray-200 dark:hover:bg-gray-700 dark:border-gray-700">All Statuses</button>
+                                                    <button onClick={() => { setSelectedStatus('paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Paid</button>
+                                                    <button onClick={() => { setSelectedStatus('partially_paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'partially_paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Partially Paid</button>
+                                                    <button onClick={() => { setSelectedStatus('issued'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'issued' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Issued</button>
+                                                    <button onClick={() => { setSelectedStatus('overdue'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'overdue' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Overdue</button>
                                                 </div>
                                             )}
                                         </div>
@@ -726,7 +726,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                 </th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {(() => {
                                 let data = paymentReports?.rows || [];
                                 data = filterByStatus(data, 'invoice__status');
@@ -734,32 +734,32 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                 if (data.length === 0) {
                                     return (
                                         <tr>
-                                            <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
+                                            <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
                                                 No payment records found for the selected filters.
                                             </td>
                                         </tr>
                                     );
                                 }
                                 return data.map((row, idx) => (
-                                    <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-6 py-4 text-sm text-gray-700">{new Date(row.payment_date).toLocaleDateString()}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium">{row.invoice__invoice_no}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700">{row.invoice__client__company_name}</td>
+                                    <tr key={idx} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
+                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{new Date(row.payment_date).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.invoice__invoice_no}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{row.invoice__client__company_name}</td>
                                         <td className="px-6 py-4 text-sm">
-                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${row.payment_method === 'Bank Transfer' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                                                row.payment_method === 'Credit Card' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
-                                                    row.payment_method === 'Debit Card' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' :
-                                                        'bg-gray-50 text-gray-700 border border-gray-100'
+                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${row.payment_method === 'Bank Transfer' ? 'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/20' :
+                                                row.payment_method === 'Credit Card' ? 'bg-purple-50 text-purple-700 border border-purple-100 dark:bg-purple-500/15 dark:text-purple-300 dark:border-purple-500/20' :
+                                                    row.payment_method === 'Debit Card' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/20' :
+                                                        'bg-gray-50 text-gray-700 border border-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
                                                 }`}>
                                                 {row.payment_method}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-semibold">{formatCurrency(row.amount)}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 font-semibold dark:text-gray-300">{formatCurrency(row.amount)}</td>
                                         <td className="px-6 py-4 text-sm">
-                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${row.invoice__status === 'Paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                                                row.invoice__status === 'Partially Paid' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
-                                                    row.invoice__status === 'Cancelled' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
-                                                        'bg-blue-50 text-blue-700 border border-blue-100'
+                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${row.invoice__status === 'Paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/20' :
+                                                row.invoice__status === 'Partially Paid' ? 'bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/20' :
+                                                    row.invoice__status === 'Cancelled' ? 'bg-rose-50 text-rose-700 border border-rose-100 dark:bg-rose-500/15 dark:text-rose-300 dark:border-rose-500/20' :
+                                                        'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/20'
                                                 }`}>
                                                 {row.invoice__status}
                                             </span>
@@ -773,31 +773,31 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
             case 'PO & Invoice Reports':
                 return (
                     <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-gray-50 z-10">
-                            <tr className="border-b border-gray-200">
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">PO Number</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Vendor Name</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Total Amount</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Paid</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Balance</th>
+                        <thead className="sticky top-0 bg-gray-50 z-10 dark:bg-gray-800">
+                            <tr className="border-b border-gray-200 dark:border-gray-700">
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">PO Number</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Vendor Name</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Total Amount</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Paid</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Balance</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {!poInvoiceReports?.rows?.length && (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-10 text-center text-sm text-gray-500">
+                                    <td colSpan={5} className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
                                         No PO/invoice records found for the selected filters.
                                     </td>
                                 </tr>
                             )}
                             {poInvoiceReports?.rows?.map((row, idx) => (
-                                <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-6 py-4 text-sm text-gray-700 font-medium">{row.po_no}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-700">{row.vendor__name}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-700 font-semibold">{formatCurrency(row.total_amount)}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-700">{formatCurrency(row.paid)}</td>
+                                <tr key={idx} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
+                                    <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.po_no}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{row.vendor__name}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-700 font-semibold dark:text-gray-300">{formatCurrency(row.total_amount)}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatCurrency(row.paid)}</td>
                                     <td className="px-6 py-4 text-sm">
-                                        <span className={`font-semibold ${row.balance === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                        <span className={`font-semibold ${row.balance === 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                                             {formatCurrency(row.balance)}
                                         </span>
                                     </td>
@@ -838,36 +838,36 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
 
                 return (
                     <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-gray-50 z-10">
-                            <tr className="border-b border-gray-200">
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Report Type</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Primary Detail</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Secondary Detail</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider">Status/Value</th>
+                        <thead className="sticky top-0 bg-gray-50 z-10 dark:bg-gray-800">
+                            <tr className="border-b border-gray-200 dark:border-gray-700">
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Report Type</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Primary Detail</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Secondary Detail</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Status/Value</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {allReports.length === 0 && (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-10 text-center text-sm text-gray-500">
+                                    <td colSpan={4} className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
                                         No records found for the selected filters.
                                     </td>
                                 </tr>
                             )}
                             {allReports.map((row, idx) => (
-                                <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                                <tr key={idx} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
                                     <td className="px-6 py-4 text-sm">
-                                        <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-bold uppercase">
+                                        <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-bold uppercase dark:bg-gray-800 dark:text-gray-400">
                                             {row.type}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 text-sm text-gray-700 font-medium">{row.primary}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-600">{row.secondary}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.primary}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{row.secondary}</td>
                                     <td className="px-6 py-4 text-sm">
-                                        <span className={`font-semibold ${row.type === 'Financial' ? 'text-emerald-600' :
-                                            row.type === 'Project' ? 'text-blue-600 capitalize' :
-                                                row.type === 'Payment' ? 'text-indigo-600' :
-                                                    'text-amber-600'
+                                        <span className={`font-semibold ${row.type === 'Financial' ? 'text-emerald-600 dark:text-emerald-400' :
+                                            row.type === 'Project' ? 'text-blue-600 capitalize dark:text-blue-400' :
+                                                row.type === 'Payment' ? 'text-indigo-600 dark:text-indigo-400' :
+                                                    'text-amber-600 dark:text-amber-400'
                                             }`}>
                                             {row.type === 'Project' ? row.status?.replace('_', ' ') || '' : row.status}
                                         </span>
@@ -890,25 +890,25 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                     <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                         <div>
                             <nav className="flex mb-2" aria-label="Breadcrumb">
-                                <ol className="flex items-center space-x-2 text-sm text-gray-500">
-                                    <li><a href="/dashboard" className="hover:text-blue-600 transition-colors">Home</a></li>
-                                    <li><span className="mx-1 text-gray-400">/</span></li>
-                                    <li className="text-gray-900 font-medium">Reports</li>
+                                <ol className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
+                                    <li><a href="/dashboard" className="hover:text-blue-600 transition-colors dark:hover:text-blue-400">Home</a></li>
+                                    <li><span className="mx-1 text-gray-400 dark:text-gray-600">/</span></li>
+                                    <li className="text-gray-900 font-medium dark:text-white">Reports</li>
                                 </ol>
                             </nav>
-                            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Reports</h1>
-                            <p className="text-gray-500 mt-1">Financial, Project, Payment & Invoice Insights</p>
+                            <h1 className="text-3xl font-bold text-gray-900 tracking-tight dark:text-white">Reports</h1>
+                            <p className="text-gray-500 mt-1 dark:text-gray-400">Financial, Project, Payment & Invoice Insights</p>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3">
                             {/* Calendar Icon */}
-                            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-                                <Calendar size={18} className="text-blue-600" />
+                            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg dark:bg-blue-500/10 dark:border-blue-900">
+                                <Calendar size={18} className="text-blue-600 dark:text-blue-400" />
                             </div>
 
                             {/* Date From */}
                             <div className="flex items-center gap-2">
-                                <label className="text-sm font-medium text-gray-700">From:</label>
+                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">From:</label>
                                 <input
                                     type="date"
                                     value={dateFrom}
@@ -918,13 +918,13 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                             setTimeout(() => handleApplyDateFilter(), 100);
                                         }
                                     }}
-                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                 />
                             </div>
 
                             {/* Date To */}
                             <div className="flex items-center gap-2">
-                                <label className="text-sm font-medium text-gray-700">To:</label>
+                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">To:</label>
                                 <input
                                     type="date"
                                     value={dateTo}
@@ -934,26 +934,26 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                             setTimeout(() => handleApplyDateFilter(), 100);
                                         }
                                     }}
-                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                 />
                             </div>
 
 
-                            <div className="h-8 w-px bg-gray-200 mx-1 hidden md:block"></div>
+                            <div className="h-8 w-px bg-gray-200 mx-1 hidden md:block dark:bg-gray-800"></div>
                             <button
                                 onClick={() => handleExport('excel')}
                                 disabled={exportLoading}
-                                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-900 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:border-gray-700"
                             >
-                                <FileSpreadsheet size={16} className="text-emerald-600" />
+                                <FileSpreadsheet size={16} className="text-emerald-600 dark:text-emerald-400" />
                                 {exportLoading ? 'Exporting...' : 'Export Excel'}
                             </button>
-                            <button 
+                            <button
                                 onClick={() => handleExport('pdf')}
                                 disabled={exportLoading}
-                                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-900 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:border-gray-700"
                             >
-                                <Download size={16} className="text-rose-600" />
+                                <Download size={16} className="text-rose-600 dark:text-rose-400" />
                                 {exportLoading ? 'Exporting...' : 'Export PDF'}
                             </button>
                         </div>
@@ -964,34 +964,34 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                         {loading ? (
                             // Loading skeleton
                             Array.from({ length: 5 }).map((_, idx) => (
-                                <div key={idx} className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm animate-pulse">
+                                <div key={idx} className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm animate-pulse dark:bg-gray-900 dark:border-gray-800">
                                     <div className="flex items-start justify-between">
-                                        <div className="w-10 h-10 bg-gray-200 rounded-lg"></div>
-                                        <div className="w-12 h-4 bg-gray-200 rounded"></div>
+                                        <div className="w-10 h-10 bg-gray-200 rounded-lg dark:bg-gray-700"></div>
+                                        <div className="w-12 h-4 bg-gray-200 rounded dark:bg-gray-700"></div>
                                     </div>
                                     <div className="mt-4">
-                                        <div className="w-16 h-4 bg-gray-200 rounded mb-2"></div>
-                                        <div className="w-24 h-8 bg-gray-200 rounded"></div>
+                                        <div className="w-16 h-4 bg-gray-200 rounded mb-2 dark:bg-gray-700"></div>
+                                        <div className="w-24 h-8 bg-gray-200 rounded dark:bg-gray-700"></div>
                                     </div>
                                 </div>
                             ))
                         ) : (
                             summaryCards.map((card, idx) => (
-                                <div key={idx} className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow group">
+                                <div key={idx} className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow group dark:bg-gray-900 dark:border-gray-800">
                                     <div className="flex items-start justify-between">
-                                        <div className="p-2 bg-gray-50 rounded-lg group-hover:bg-white transition-colors border border-transparent group-hover:border-gray-100">
+                                        <div className="p-2 bg-gray-50 rounded-lg group-hover:bg-white transition-colors border border-transparent group-hover:border-gray-100 dark:bg-gray-800 dark:group-hover:bg-gray-900 dark:group-hover:border-gray-800">
                                             {card.icon}
                                         </div>
                                         {card.trend && (
-                                            <span className={`text-xs font-bold flex items-center gap-0.5 ${card.trend.startsWith('+') ? 'text-emerald-600' : card.trend.startsWith('-') ? 'text-rose-600' : 'text-gray-600'}`}>
+                                            <span className={`text-xs font-bold flex items-center gap-0.5 ${card.trend.startsWith('+') ? 'text-emerald-600 dark:text-emerald-400' : card.trend.startsWith('-') ? 'text-rose-600 dark:text-rose-400' : 'text-gray-600 dark:text-gray-400'}`}>
                                                 {card.trend.startsWith('+') ? <ArrowUpRight size={12} /> : card.trend.startsWith('-') ? <ArrowDownRight size={12} /> : null}
                                                 {card.trend}
                                             </span>
                                         )}
                                     </div>
                                     <div className="mt-4">
-                                        <p className="text-sm font-medium text-gray-500">{card.label}</p>
-                                        <h3 className="text-2xl font-bold text-gray-900 mt-1">{card.amount}</h3>
+                                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{card.label}</p>
+                                        <h3 className="text-2xl font-bold text-gray-900 mt-1 dark:text-white">{card.amount}</h3>
                                     </div>
                                 </div>
                             ))
@@ -999,8 +999,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                     </div>
 
                     {/* Reports Tabs Section */}
-                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                        <div className="border-b border-gray-200 bg-gray-50/50 px-6">
+                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden dark:bg-gray-900 dark:border-gray-800">
+                        <div className="border-b border-gray-200 bg-gray-50/50 px-6 dark:border-gray-800 dark:bg-gray-800/50">
                             <nav className="flex -mb-px space-x-8 overflow-x-auto no-scrollbar">
                                 {tabs.map((tab) => (
                                     <button
@@ -1009,8 +1009,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                         className={`
                     whitespace-nowrap py-5 px-1 border-b-2 font-semibold text-sm transition-all
                     ${activeTab === tab
-                                                ? 'border-blue-600 text-blue-600'
-                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                                ? 'border-blue-600 text-blue-600 dark:border-violet-500 dark:text-violet-400'
+                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-700'
                                             }
                   `}
                                     >
@@ -1026,20 +1026,20 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                         </div>
 
                         {/* Table Footer */}
-                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-                            <p className="text-sm text-gray-500">
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between dark:bg-gray-800 dark:border-gray-800">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
                                 {(() => {
                                     const rowCount = getRowCount();
                                     return rowCount > 0 ? (
-                                        <>Showing <span className="font-medium text-gray-900">1</span> to <span className="font-medium text-gray-900">{rowCount}</span> of <span className="font-medium text-gray-900">{rowCount}</span> results</>
+                                        <>Showing <span className="font-medium text-gray-900 dark:text-gray-100">1</span> to <span className="font-medium text-gray-900 dark:text-gray-100">{rowCount}</span> of <span className="font-medium text-gray-900 dark:text-gray-100">{rowCount}</span> results</>
                                     ) : (
                                         <>No results found</>
                                     );
                                 })()}
                             </p>
                             <div className="flex gap-2">
-                                <button className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50" disabled>Previous</button>
-                                <button className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50" disabled>Next</button>
+                                <button className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-900" disabled>Previous</button>
+                                <button className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-900" disabled>Next</button>
                             </div>
                         </div>
                     </div>

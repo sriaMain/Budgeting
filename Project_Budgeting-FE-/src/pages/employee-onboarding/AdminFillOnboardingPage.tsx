@@ -235,15 +235,15 @@ const AdminFillOnboardingPage: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="max-w-4xl mx-auto py-16 text-center text-gray-500">Loading...</div>;
+    return <div className="max-w-4xl mx-auto py-16 text-center text-gray-500 dark:text-gray-400">Loading...</div>;
   }
 
   if (loadError || !detail || !choices) {
     return (
       <Layout userRole={userRole} currentPage="administration" onNavigate={() => {}}>
         <div className="max-w-lg mx-auto py-16 text-center">
-          <p className="text-lg font-semibold text-gray-900 mb-2">Not available</p>
-          <p className="text-sm text-gray-600">{loadError}</p>
+          <p className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Not available</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300">{loadError}</p>
         </div>
       </Layout>
     );
@@ -252,23 +252,23 @@ const AdminFillOnboardingPage: React.FC = () => {
   return (
     <Layout userRole={userRole} currentPage="administration" onNavigate={() => {}}>
       <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Employee Onboarding - Filling on their behalf</p>
+        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm dark:bg-gray-900 dark:border-gray-800">
+          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1 dark:text-blue-400">Employee Onboarding - Filling on their behalf</p>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{detail.account.display_name}</h1>
-              <p className="text-sm text-gray-500 mt-0.5">{detail.account.email}</p>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{detail.account.display_name}</h1>
+              <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">{detail.account.email}</p>
             </div>
             <StatusBadge status={detail.status} />
           </div>
-          <p className="text-xs text-gray-500 mt-3">
+          <p className="text-xs text-gray-500 mt-3 dark:text-gray-400">
             An onboarding invite with a secure link has already been sent to this employee. Anything you fill in
             here is saved immediately - they'll see it pre-filled and can complete/submit the rest themselves.
           </p>
         </div>
 
         <FormProvider {...methods}>
-          <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+          <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
             <VendorStepper
               steps={STEPS}
               currentStep={currentStep}
@@ -277,7 +277,7 @@ const AdminFillOnboardingPage: React.FC = () => {
             />
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+          <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm dark:bg-gray-900 dark:border-gray-800">
             {currentStep === 1 && (
               <Step1PersonalDetails
                 genderOptions={choices.genders}
@@ -317,7 +317,7 @@ const AdminFillOnboardingPage: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
             {currentStep > 1 ? (
               <Button variant="secondary" className="!w-auto px-6" onClick={handleBack}>
                 Back

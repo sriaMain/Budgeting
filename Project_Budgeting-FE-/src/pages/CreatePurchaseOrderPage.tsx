@@ -274,11 +274,11 @@ export default function CreatePurchaseOrderPage() {
                     <div className="flex items-center gap-4">
                         <button
                             onClick={handleBack}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                         >
-                            <ArrowLeft className="w-5 h-5 text-gray-600" />
+                            <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                         </button>
-                        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Create Purchase Order</h1>
+                        <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">Create Purchase Order</h1>
                     </div>
                     <button
                         className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
@@ -296,7 +296,7 @@ export default function CreatePurchaseOrderPage() {
                 ) : (
                     <div className="space-y-6">
                         {/* Basic Information */}
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 md:p-6">
+                        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm p-4 md:p-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                                 <InputField
                                     label="Reference Quote No"
@@ -307,13 +307,13 @@ export default function CreatePurchaseOrderPage() {
                                 
                                 {/* Vendor Selection */}
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-700">
-                                        <span className="text-red-500">*</span> Select Vendor
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        <span className="text-red-500 dark:text-red-400">*</span> Select Vendor
                                     </label>
                                     <select
                                         value={selectedVendorId || ''}
                                         onChange={(e) => setSelectedVendorId(Number(e.target.value))}
-                                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
                                         <option value="">Select a vendor</option>
                                         {vendors.map(vendor => (
@@ -327,41 +327,41 @@ export default function CreatePurchaseOrderPage() {
                         </div>
 
                         {/* Product Groups Table */}
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
                             <div className="overflow-x-auto">
                                 <table className="w-full min-w-[800px]">
-                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                    <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-800">
                                         <tr>
-                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase w-10"></th>
-                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase w-10"></th>
-                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Group</th>
-                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Product | Description</th>
-                                            <th className="px-2 md:px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Quantity</th>
-                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Unit</th>
-                                            <th className="px-2 md:px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Unit Price</th>
-                                            <th className="px-2 md:px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Amount</th>
+                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase w-10"></th>
+                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase w-10"></th>
+                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Group</th>
+                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Product | Description</th>
+                                            <th className="px-2 md:px-3 py-3 text-center text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Quantity</th>
+                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Unit</th>
+                                            <th className="px-2 md:px-3 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Unit Price</th>
+                                            <th className="px-2 md:px-3 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Amount</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-gray-100">
+                                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                                         {productRows.map((row) => (
-                                            <tr key={row.id} className="hover:bg-gray-50">
+                                            <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                                                 <td className="px-2 md:px-3 py-3">
                                                     <input
                                                         type="checkbox"
                                                         checked={row.selected}
                                                         onChange={() => handleCheckboxChange(row.id)}
-                                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                        className="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-700 rounded focus:ring-blue-500"
                                                     />
                                                 </td>
                                                 <td className="px-2 md:px-3 py-3">
-                                                    <GripVertical className="w-4 h-4 text-gray-400 cursor-move" />
+                                                    <GripVertical className="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-move" />
                                                 </td>
-                                                <td className="px-2 md:px-3 py-3 text-sm text-gray-900">{row.group}</td>
+                                                <td className="px-2 md:px-3 py-3 text-sm text-gray-900 dark:text-white">{row.group}</td>
                                                 <td className="px-2 md:px-3 py-3">
                                                     <div className="space-y-2">
-                                                        <p className="text-sm font-medium text-gray-900">{row.product}</p>
+                                                        <p className="text-sm font-medium text-gray-900 dark:text-white">{row.product}</p>
                                                         {row.description && (
-                                                            <p className="text-xs text-gray-500">{row.description}</p>
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400">{row.description}</p>
                                                         )}
                                                     </div>
                                                 </td>
@@ -370,20 +370,20 @@ export default function CreatePurchaseOrderPage() {
                                                         type="number"
                                                         value={row.quantity}
                                                         onChange={(e) => handleQuantityChange(row.id, e.target.value)}
-                                                        className="w-16 md:w-20 px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="w-16 md:w-20 px-2 md:px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     />
                                                 </td>
-                                                <td className="px-2 md:px-3 py-3 text-sm text-gray-900">{row.unit}</td>
+                                                <td className="px-2 md:px-3 py-3 text-sm text-gray-900 dark:text-white">{row.unit}</td>
                                                 <td className="px-2 md:px-3 py-3 text-right">
                                                     <input
                                                         type="number"
                                                         value={row.unitPrice}
                                                         onChange={(e) => handleUnitPriceChange(row.id, e.target.value)}
-                                                        className="w-24 md:w-28 px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="w-24 md:w-28 px-2 md:px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     />
                                                 </td>
                                                 <td className="px-2 md:px-3 py-3 text-right">
-                                                    <span className="text-sm font-medium text-gray-900">
+                                                    <span className="text-sm font-medium text-gray-900 dark:text-white">
                                                         {row.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                     </span>
                                                 </td>
@@ -395,16 +395,16 @@ export default function CreatePurchaseOrderPage() {
                         </div>
 
                         {/* Totals Section */}
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 md:p-6">
+                        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm p-4 md:p-6">
                             <div className="flex justify-end">
                                 <div className="w-full max-w-md space-y-3">
                                     <div className="flex justify-between text-sm">
-                                        <span className="text-gray-600">Subtotal</span>
-                                        <span className="font-medium text-gray-900">{totals.subTotal}</span>
+                                        <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
+                                        <span className="font-medium text-gray-900 dark:text-white">{totals.subTotal}</span>
                                     </div>
                                     <div className="flex justify-between text-base font-bold border-t pt-3">
-                                        <span className="text-gray-900">Total</span>
-                                        <span className="text-gray-900">{totals.total}</span>
+                                        <span className="text-gray-900 dark:text-white">Total</span>
+                                        <span className="text-gray-900 dark:text-white">{totals.total}</span>
                                     </div>
                                 </div>
                             </div>

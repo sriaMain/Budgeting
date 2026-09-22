@@ -76,17 +76,17 @@ export const ApprovalDrawer: React.FC<ApprovalDrawerProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-labelledby="approval-drawer-title">
-      <div className="absolute inset-0 bg-navy-900/40" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col">
-        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
+      <div className="absolute inset-0 bg-navy-900/40 dark:bg-black/50" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col dark:bg-gray-900 dark:shadow-black/40">
+        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-800">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700">Approval decision</p>
-            <h2 id="approval-drawer-title" className="mt-1 text-lg font-semibold text-gray-900">{title}</h2>
+            <h2 id="approval-drawer-title" className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{title}</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="p-1.5 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
             aria-label="Close"
           >
             <X size={18} />
@@ -94,15 +94,15 @@ export const ApprovalDrawer: React.FC<ApprovalDrawerProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {summary && <p className="text-sm text-gray-600">{summary}</p>}
+          {summary && <p className="text-sm text-gray-600 dark:text-gray-400">{summary}</p>}
 
           {impact && (
-            <div className="rounded-lg bg-teal-50 border border-teal-100 px-4 py-3 text-sm text-teal-900">{impact}</div>
+            <div className="rounded-lg bg-teal-50 border border-teal-100 px-4 py-3 text-sm text-teal-900 dark:bg-violet-500/10 dark:border-violet-900/40 dark:text-violet-300">{impact}</div>
           )}
 
           {documents && documents.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Documents</p>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">Documents</p>
               <ul className="space-y-1.5">
                 {documents.map((doc) => (
                   <li key={doc.name}>
@@ -116,7 +116,7 @@ export const ApprovalDrawer: React.FC<ApprovalDrawerProps> = ({
                         <FileText size={14} /> {doc.name}
                       </a>
                     ) : (
-                      <span className="flex items-center gap-2 text-sm text-gray-600">
+                      <span className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                         <FileText size={14} /> {doc.name}
                       </span>
                     )}
@@ -127,13 +127,13 @@ export const ApprovalDrawer: React.FC<ApprovalDrawerProps> = ({
           )}
 
           <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Approval trail</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 dark:text-gray-400">Approval trail</p>
             <ApprovalTimeline events={historyEvents} />
           </div>
         </div>
 
-        <div className="border-t border-gray-100 px-6 py-5 space-y-3">
-          <label className="block text-xs font-medium text-gray-600" htmlFor="approval-drawer-comment">
+        <div className="border-t border-gray-100 px-6 py-5 space-y-3 dark:border-gray-800">
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400" htmlFor="approval-drawer-comment">
             Comment {onReject || onRequestChanges ? '(required to reject or request changes)' : '(optional)'}
           </label>
           <textarea
@@ -141,10 +141,10 @@ export const ApprovalDrawer: React.FC<ApprovalDrawerProps> = ({
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             rows={3}
-            className="w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-600"
+            className="w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
           />
           <div className="flex items-center justify-end gap-2 pt-1">
-            <button type="button" onClick={onClose} className={`${actionButtonClass} text-gray-500 hover:bg-gray-100`}>
+            <button type="button" onClick={onClose} className={`${actionButtonClass} text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800`}>
               Cancel
             </button>
             {onRequestChanges && (
@@ -152,7 +152,7 @@ export const ApprovalDrawer: React.FC<ApprovalDrawerProps> = ({
                 type="button"
                 onClick={() => run('request_changes', onRequestChanges)}
                 disabled={pending !== null || commentMissing('request_changes')}
-                className={`${actionButtonClass} border border-amber-600 text-amber-700 hover:bg-amber-50`}
+                className={`${actionButtonClass} border border-amber-600 text-amber-700 hover:bg-amber-50 dark:border-amber-500/60 dark:text-amber-400 dark:hover:bg-amber-500/10`}
               >
                 {pending === 'request_changes' ? 'Sending…' : 'Request changes'}
               </button>
@@ -172,7 +172,7 @@ export const ApprovalDrawer: React.FC<ApprovalDrawerProps> = ({
                 type="button"
                 disabled
                 title={rejectDisabledReason}
-                className={`${actionButtonClass} bg-risk-50 text-risk-600 cursor-not-allowed`}
+                className={`${actionButtonClass} bg-risk-50 text-risk-600 cursor-not-allowed dark:bg-red-500/10 dark:text-red-400`}
               >
                 Reject
               </button>

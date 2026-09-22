@@ -198,7 +198,7 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
     {
       header: "Module Name",
       accessor: "product_service_name",
-      className: "font-medium text-gray-900",
+      className: "font-medium text-gray-900 dark:text-white",
     },
     {
       header: "Product Group",
@@ -210,14 +210,14 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
   // If in modal mode, show only the form
   if (isModalMode) {
     return (
-      <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="fixed inset-0 bg-black/20 dark:bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           {/* Modal Header */}
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-xl">
-            <h3 className="text-xl font-bold text-gray-900">Add New Service/Product</h3>
+          <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center justify-between rounded-t-xl">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white">Add New Service/Product</h3>
             <button
               onClick={onModalClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
             >
               <X size={24} />
             </button>
@@ -226,7 +226,7 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
           {/* Modal Body */}
           <div className="p-6">
             {errors.general && (
-              <div className="mb-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center">
+              <div className="mb-4 p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 text-red-600 dark:text-red-400 text-sm rounded-lg flex items-center">
                 <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path>
                 </svg>
@@ -237,8 +237,8 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
             <form onSubmit={handleSave} className="space-y-6">
               {/* Product/Module Name */}
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
-                  <span className="text-red-500 mr-1">*</span>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <span className="text-red-500 dark:text-red-400 mr-1">*</span>
                   Product/Service name
                 </label>
                 <input
@@ -252,14 +252,14 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                     });
                     setErrors({});
                   }}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400 dark:placeholder-gray-500"
                   placeholder="Enter service/product name"
                 />
               </div>
 
               {/* Description */}
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
                   Description
                 </label>
                 <textarea
@@ -268,15 +268,15 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                   onChange={(e) =>
                     setFormData({ ...formData, description: e.target.value })
                   }
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400 resize-none"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400 dark:placeholder-gray-500 resize-none"
                   placeholder="Enter brief description"
                 />
               </div>
 
               {/* Product Group Dropdown with + Button */}
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
-                  <span className="text-red-500 mr-1">*</span>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <span className="text-red-500 dark:text-red-400 mr-1">*</span>
                   Product Group :
                 </label>
                 <div className="flex gap-2">
@@ -290,7 +290,7 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                           product_group: e.target.value,
                         })
                       }
-                      className={`w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white transition-all cursor-pointer ${!formData.product_group && "text-gray-500"
+                      className={`w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white dark:bg-gray-900 transition-all cursor-pointer ${!formData.product_group && "text-gray-500 dark:text-gray-400"
                         }`}
                     >
                       <option value="" disabled>
@@ -300,13 +300,13 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                         <option
                           key={group.id}
                           value={group.id}
-                          className="text-gray-900"
+                          className="text-gray-900 dark:text-white"
                         >
                           {group.product_group}
                         </option>
                       ))}
                     </select>
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500">
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500 dark:text-gray-400">
                       <svg
                         className="w-4 h-4"
                         fill="none"
@@ -326,7 +326,7 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(true)}
-                    className="flex-shrink-0 w-11 h-11 flex items-center justify-center bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                    className="flex-shrink-0 w-11 h-11 flex items-center justify-center bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/30 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors"
                     title="Add New Product Group"
                   >
                     <Plus size={20} />
@@ -339,7 +339,7 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                 <button
                   type="button"
                   onClick={onModalClose}
-                  className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                  className="px-6 py-2.5 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors font-medium"
                 >
                   Cancel
                 </button>
@@ -419,7 +419,7 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
         <div className="space-y-6">
           {/* Header & Actions */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <h2 className="text-2xl font-bold text-gray-800">Modules</h2>
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Modules</h2>
             <div className="flex items-center gap-4 w-full md:w-auto">
               <div className="relative flex-grow md:flex-grow-0">
                 <input
@@ -427,9 +427,9 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                   placeholder="Search modules..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full md:w-64"
+                  className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full md:w-64 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
                 />
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
               </div>
               <button
                 onClick={() => {
@@ -484,30 +484,30 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
         <div className="max-w-4xl mx-auto relative">
           {/* Blur overlay when navigating */}
           {isNavigating && (
-            <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto rounded-xl" />
+            <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto rounded-xl dark:bg-gray-900/60" />
           )}
 
           {/* Breadcrumb / Back */}
           <div className="mb-6 flex items-center gap-2 text-sm">
             <button
               onClick={() => setView("list")}
-              className="text-gray-500 hover:text-gray-900 flex items-center gap-1 transition-colors"
+              className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white flex items-center gap-1 transition-colors"
             >
               <ArrowLeft size={16} /> Back to Modules
             </button>
-            <span className="text-gray-300">/</span>
+            <span className="text-gray-300 dark:text-gray-600">/</span>
             <span className="font-semibold text-gray-800">
               {formData.id ? "Edit Module" : "Add New Module"}
             </span>
           </div>
 
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-            <h3 className="text-xl font-bold text-gray-900 mb-8">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-8">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-8">
               Module Details
             </h3>
 
             {errors.general && (
-              <div className="mt-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center">
+              <div className="mt-4 p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 text-red-600 dark:text-red-400 text-sm rounded-lg flex items-center">
                 <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path>
                 </svg>
@@ -518,8 +518,8 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
             <form onSubmit={handleSave} className="space-y-6">
               {/* Product/Module Name */}
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
-                  <span className="text-red-500 mr-1">*</span>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <span className="text-red-500 dark:text-red-400 mr-1">*</span>
                   Product/Module name
                 </label>
                 <input
@@ -533,14 +533,14 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                     });
                     setErrors({});
                   }}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400 dark:placeholder-gray-500"
                   placeholder="Enter module name"
                 />
               </div>
 
               {/* Description */}
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
                   Description
                 </label>
                 <textarea
@@ -549,15 +549,15 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                   onChange={(e) =>
                     setFormData({ ...formData, description: e.target.value })
                   }
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400 resize-none"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400 dark:placeholder-gray-500 resize-none"
                   placeholder="Enter brief description"
                 />
               </div>
 
               {/* Product Group Dropdown with + Button */}
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
-                  <span className="text-red-500 mr-1">*</span>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <span className="text-red-500 dark:text-red-400 mr-1">*</span>
                   Product Group :
                 </label>
                 <div className="flex gap-2">
@@ -571,7 +571,7 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                           product_group: e.target.value,
                         })
                       }
-                      className={`w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white transition-all cursor-pointer ${!formData.product_group && "text-gray-500"
+                      className={`w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white dark:bg-gray-900 transition-all cursor-pointer ${!formData.product_group && "text-gray-500 dark:text-gray-400"
                         }`}
                     >
                       <option value="" disabled>
@@ -581,14 +581,14 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                         <option
                           key={group.id}
                           value={group.id}
-                          className="text-gray-900"
+                          className="text-gray-900 dark:text-white"
                         >
                           {group.product_group}
                         </option>
                       ))}
                     </select>
                     {/* Custom Arrow Icon */}
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500">
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500 dark:text-gray-400">
                       <svg
                         className="w-4 h-4"
                         fill="none"
@@ -609,7 +609,7 @@ const ModulesTab: React.FC<ModulesTabProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(true)}
-                    className="flex-shrink-0 w-11 h-11 flex items-center justify-center bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                    className="flex-shrink-0 w-11 h-11 flex items-center justify-center bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/30 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors"
                     title="Add New Product Group"
                   >
                     <Plus size={20} />

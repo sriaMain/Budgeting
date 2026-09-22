@@ -24,8 +24,8 @@ export const VendorStepper: React.FC<VendorStepperProps> = ({ steps, currentStep
           const hasError = errorSteps?.has(step.index);
           const isClickable = isCompleted || isCurrent;
 
-          let circleClasses = 'bg-gray-100 text-gray-400 border-gray-300';
-          if (hasError) circleClasses = 'bg-red-100 text-red-600 border-red-400';
+          let circleClasses = 'bg-gray-100 text-gray-400 border-gray-300 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700';
+          if (hasError) circleClasses = 'bg-red-100 text-red-600 border-red-400 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/40';
           else if (isCompleted) circleClasses = 'bg-green-600 text-white border-green-600';
           else if (isCurrent) circleClasses = 'bg-blue-600 text-white border-blue-600';
 
@@ -40,12 +40,12 @@ export const VendorStepper: React.FC<VendorStepperProps> = ({ steps, currentStep
                 <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center text-sm font-bold ${circleClasses}`}>
                   {isCompleted && !hasError ? <Check className="w-4.5 h-4.5" /> : step.index}
                 </div>
-                <span className={`text-xs font-medium whitespace-nowrap ${isCurrent ? 'text-blue-700' : 'text-gray-500'}`}>
+                <span className={`text-xs font-medium whitespace-nowrap ${isCurrent ? 'text-blue-700 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>
                   {step.label}
                 </span>
               </button>
               {idx < steps.length - 1 && (
-                <div className={`h-0.5 flex-1 min-w-8 mx-1 ${completedSteps.has(step.index) ? 'bg-green-500' : 'bg-gray-200'}`} />
+                <div className={`h-0.5 flex-1 min-w-8 mx-1 ${completedSteps.has(step.index) ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-800'}`} />
               )}
             </React.Fragment>
           );

@@ -103,10 +103,10 @@ export const ForgotPasswordForm: React.FC = () => {
   //   }
 
   return (
-    <div className="flex flex-col md:flex-row w-full max-w-4xl mx-auto bg-white rounded-2xl  overflow-hidden min-h-[600px] animate-fadeIn relative">
+    <div className="flex flex-col md:flex-row w-full max-w-4xl mx-auto bg-white rounded-2xl  overflow-hidden min-h-[600px] animate-fadeIn relative dark:bg-gray-950">
       {/* Blur overlay when navigating */}
       {isNavigating && (
-        <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto" />
+        <div className="absolute inset-0 bg-white/40 dark:bg-gray-950/40 backdrop-blur-[2px] z-10 pointer-events-auto" />
       )}
       
       {/* Image Side */}
@@ -123,10 +123,10 @@ export const ForgotPasswordForm: React.FC = () => {
       {/* Form Side */}
       <div className="w-full md:w-1/2 p-8 md:p-12 flex flex-col justify-center">
         <div className="max-w-xs mx-auto w-full">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">
+          <h2 className="text-3xl font-bold text-gray-900 mb-2 dark:text-white">
             Forgot Your Password?
           </h2>
-          <p className="text-gray-500 mb-8 text-sm"></p>
+          <p className="text-gray-500 mb-8 text-sm dark:text-gray-400"></p>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <InputField
@@ -139,7 +139,7 @@ export const ForgotPasswordForm: React.FC = () => {
                 setError("");
               }}
               error={error}
-              className="bg-gray-50"
+              className="bg-gray-50 dark:bg-gray-800"
             />
 
             <Button type="submit" isLoading={isLoading}>
@@ -150,7 +150,7 @@ export const ForgotPasswordForm: React.FC = () => {
               <button
                 type="button"
                 onClick={goBack}
-                className="inline-flex items-center text-sm font-bold text-gray-900 hover:text-gray-700 transition-colors focus:outline-none"
+                className="inline-flex items-center text-sm font-bold text-gray-900 hover:text-gray-700 transition-colors focus:outline-none dark:text-gray-200 dark:hover:text-gray-400"
               >
                 <ArrowLeftIcon className="w-5 h-5 mr-2" />
                 Back to login

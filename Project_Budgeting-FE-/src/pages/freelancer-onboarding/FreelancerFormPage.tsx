@@ -10,12 +10,13 @@ import { Button } from '../../components/Button';
 import { DocumentList } from '../../components/DocumentList';
 import { SkillsInput } from '../../components/SkillsInput';
 import { Tabs, type TabItem } from '../../components/Tabs';
-import { VendorStepper, type StepConfig } from '../vendor-onboarding/components/VendorStepper';
 import { FreelancerRateCardsTab } from './FreelancerRateCardsTab';
 import { FreelancerContractsTab } from './FreelancerContractsTab';
 import { FreelancerProjectAssignmentsTab } from './FreelancerProjectAssignmentsTab';
 import { FreelancerTasksTab } from './FreelancerTasksTab';
 import { FreelancerBankDetailTab } from './FreelancerBankDetailTab';
+import { FreelancerEquipmentTab } from './FreelancerEquipmentTab';
+import { FreelancerActivityTab } from './FreelancerActivityTab';
 import { useAppSelector } from '../../hooks/useAppSelector';
 import * as api from '../../services/freelancerOnboarding';
 import { parseApiErrors } from '../../utils/parseApiErrors';
@@ -29,30 +30,32 @@ const DOCUMENT_SLOTS = [
 ];
 
 const EMPTY: FreelancerManualPayload = {
-    full_name: '', email: '', phone: '', location: '',
+    full_name: '', email: '', phone: '', alternate_phone: '', date_of_birth: '', gender: '',
+    location: '',
+    permanent_address_line1: '', permanent_address_line2: '', permanent_city: '',
+    permanent_state: '', permanent_country: '', permanent_pincode: '',
+    temp_same_as_permanent: false, temp_address_line1: '', temp_address_line2: '',
+    temp_city: '', temp_state: '', temp_country: '', temp_pincode: '',
+    emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '',
     professional_title: '', skills: '', years_of_experience: null, portfolio_url: '', linkedin_url: '',
     availability: '', preferred_start_date: '', available_until: '',
     hours_per_day: '', hours_per_week: '', notice_period_days: '', timezone: '',
     payment_method: '', currency: 'INR', rate: '',
+    notes: '', internal_remarks: '',
 };
-
-const CREATE_STEPS: StepConfig[] = [
-    { index: 1, label: 'Basic Details' },
-    { index: 2, label: 'Professional Details' },
-    { index: 3, label: 'Availability' },
-    { index: 4, label: 'Bank & KYC' },
-    { index: 5, label: 'Documents' },
-];
 
 const PROFILE_TABS: TabItem[] = [
     { key: 'profile', label: 'Profile' },
+    { key: 'address', label: 'Address' },
     { key: 'availability', label: 'Availability' },
+    { key: 'equipment', label: 'Equipment' },
     { key: 'bank', label: 'Bank & KYC' },
     { key: 'rates', label: 'Rate Cards' },
     { key: 'contracts', label: 'Contracts' },
     { key: 'projects', label: 'Projects' },
     { key: 'tasks', label: 'Tasks & Time' },
     { key: 'documents', label: 'Documents' },
+    { key: 'activity', label: 'Activity' },
 ];
 
 export function FreelancerFormContent() {
@@ -63,6 +66,7 @@ export function FreelancerFormContent() {
 
     const [id, setId] = useState<number | null>(freelancerId ? Number(freelancerId) : null);
     const [status, setStatus] = useState<string | null>(null);
+    const [freelancerCode, setFreelancerCode] = useState<string | null>(null);
     const [isEditing, setIsEditing] = useState(isCreate || searchParams.get('edit') === '1');
     const [values, setValues] = useState<FreelancerManualPayload>(EMPTY);
     const [choices, setChoices] = useState<FreelancerChoices | null>(null);
@@ -72,13 +76,12 @@ export function FreelancerFormContent() {
     const [isSaving, setIsSaving] = useState(false);
     const [activeTab, setActiveTab] = useState('profile');
 
-    // Captured once on mount and never re-derived - a plain "Add Freelancer"
-    // creates the record partway through step 1, so `id` stops being null
-    // long before the wizard is done, but the UI must stay in wizard mode
-    // (not jump to the tabbed management view) until the user hits Submit.
-    const [wizardMode] = useState(isCreate);
-    const [wizardStep, setWizardStep] = useState(1);
-    const [wizardCompletedSteps, setWizardCompletedSteps] = useState<Set<number>>(new Set());
+    // Captured once on mount and never re-derived - once the freelancer is
+    // created partway through the flow, `isCreate` (driven by the URL) flips
+    // to false, but "Finish" still needs to know whether this session started
+    // as a fresh add (so it can land on the profile view) or an edit of an
+    // existing record (so it can just drop back to read-only in place).
+    const [startedAsCreate] = useState(isCreate);
 
     useEffect(() => {
         api.getChoices().then(setChoices).catch(() => { });
@@ -89,8 +92,22 @@ export function FreelancerFormContent() {
         try {
             const data = await api.getFreelancer(freelancerPk);
             setStatus(data.status);
+            setFreelancerCode(data.freelancer_code);
             setValues({
-                full_name: data.full_name, email: data.email, phone: data.phone, location: data.location,
+                full_name: data.full_name, email: data.email, phone: data.phone,
+                alternate_phone: data.alternate_phone || '', date_of_birth: data.date_of_birth || '',
+                gender: data.gender || '', location: data.location,
+                permanent_address_line1: data.permanent_address_line1 || '',
+                permanent_address_line2: data.permanent_address_line2 || '',
+                permanent_city: data.permanent_city || '', permanent_state: data.permanent_state || '',
+                permanent_country: data.permanent_country || '', permanent_pincode: data.permanent_pincode || '',
+                temp_same_as_permanent: data.temp_same_as_permanent || false,
+                temp_address_line1: data.temp_address_line1 || '', temp_address_line2: data.temp_address_line2 || '',
+                temp_city: data.temp_city || '', temp_state: data.temp_state || '',
+                temp_country: data.temp_country || '', temp_pincode: data.temp_pincode || '',
+                emergency_contact_name: data.emergency_contact_name || '',
+                emergency_contact_phone: data.emergency_contact_phone || '',
+                emergency_contact_relationship: data.emergency_contact_relationship || '',
                 professional_title: data.professional_title, skills: data.skills,
                 years_of_experience: data.years_of_experience, portfolio_url: data.portfolio_url, linkedin_url: data.linkedin_url,
                 availability: data.availability, preferred_start_date: data.preferred_start_date || '',
@@ -98,6 +115,7 @@ export function FreelancerFormContent() {
                 hours_per_day: data.hours_per_day ?? '', hours_per_week: data.hours_per_week ?? '',
                 notice_period_days: data.notice_period_days ?? '', timezone: data.timezone || '',
                 payment_method: data.payment_method, currency: data.currency, rate: data.rate ?? '',
+                notes: data.notes || '', internal_remarks: data.internal_remarks || '',
             });
             const docs = await api.listDocuments(freelancerPk);
             setDocuments(docs);
@@ -118,50 +136,55 @@ export function FreelancerFormContent() {
         setValues((v) => ({ ...v, [field]: e.target.value }));
     };
 
+    // Copies the permanent address into the temporary address fields once,
+    // on check (rather than keeping them live-linked), per Section 4's "do
+    // not duplicate data unnecessarily" - each field still holds its own
+    // value afterwards, it's just seeded from the permanent address.
+    const handleSameAsPermanent = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const checked = e.target.checked;
+        setValues((v) => ({
+            ...v,
+            temp_same_as_permanent: checked,
+            ...(checked ? {
+                temp_address_line1: v.permanent_address_line1,
+                temp_address_line2: v.permanent_address_line2,
+                temp_city: v.permanent_city,
+                temp_state: v.permanent_state,
+                temp_country: v.permanent_country,
+                temp_pincode: v.permanent_pincode,
+            } : {}),
+        }));
+    };
+
     const sanitizePayload = (source: FreelancerManualPayload): FreelancerManualPayload => {
         // DRF's IntegerField/DateField (unlike DecimalField/CharField) reject
         // "" outright instead of treating it as "not provided" - strip these
         // before sending or clearing them errors out the whole save.
         const payload: FreelancerManualPayload = { ...source };
-        (['years_of_experience', 'notice_period_days', 'preferred_start_date', 'available_until'] as const).forEach((key) => {
+        (['years_of_experience', 'notice_period_days', 'preferred_start_date', 'available_until', 'date_of_birth'] as const).forEach((key) => {
             if (payload[key] === '') delete payload[key];
         });
         return payload;
     };
 
-    const handleSave = async () => {
-        setIsSaving(true);
-        setErrors({});
-        try {
-            const payload = sanitizePayload(values);
-            if (id) {
-                await api.updateFreelancer(id, payload);
-                toast.success('Freelancer updated');
-                setIsEditing(false);
-                loadFreelancer(id);
-            } else {
-                const created = await api.addFreelancerManually(payload);
-                toast.success('Freelancer saved');
-                setId(created.id);
-                setStatus(created.status);
-                navigate(`/freelancers/${created.id}`, { replace: true });
-            }
-        } catch (err) {
-            const parsed = parseApiErrors(err);
-            setErrors(parsed);
-            toast.error(parsed.general || 'Failed to save freelancer');
-        } finally {
-            setIsSaving(false);
-        }
+    // Tabs whose fields live on the top-level `values` object and are
+    // persisted through this same create-or-update call; every other tab
+    // (equipment, bank, rate cards, ...) manages its own save internally
+    // once a freelancer id exists, so Next there just moves the tab along.
+    const SAVE_ON_NEXT_TABS = ['profile', 'address', 'availability'];
+    const currentTabIndex = PROFILE_TABS.findIndex((t) => t.key === activeTab);
+
+    const goToTab = (index: number) => {
+        const clamped = Math.max(0, Math.min(index, PROFILE_TABS.length - 1));
+        setActiveTab(PROFILE_TABS[clamped].key);
     };
 
-    // Persists whatever's filled in so far (create on the way out of step 1,
-    // PATCH on every step after that - same "always send the whole flat
-    // object" approach as handleSave, since Freelancer has no per-step
-    // sub-resources the way Vendor does) then advances the wizard step.
-    const persistWizardStep = async (): Promise<boolean> => {
-        setErrors({});
-        if (wizardStep === 1 && (!values.full_name || !values.email)) {
+    // Creates the freelancer (first time, wherever id is still null) or
+    // PATCHes it (every time after) - same "always send the whole flat
+    // object" approach used throughout this form, since Freelancer has no
+    // per-tab sub-resources the way Vendor does.
+    const persistCoreFields = async (): Promise<boolean> => {
+        if (!values.full_name || !values.email) {
             setErrors({
                 full_name: !values.full_name ? 'Full name is required' : '',
                 email: !values.email ? 'Email is required' : '',
@@ -169,11 +192,12 @@ export function FreelancerFormContent() {
             toast.error('Full name and email are required');
             return false;
         }
-        if (wizardStep === 3 && !values.timezone) {
+        if (activeTab === 'availability' && !values.timezone) {
             setErrors({ timezone: 'Time zone is required' });
             toast.error('Time zone is required');
             return false;
         }
+        setErrors({});
         setIsSaving(true);
         try {
             const payload = sanitizePayload(values);
@@ -183,165 +207,42 @@ export function FreelancerFormContent() {
                 const created = await api.addFreelancerManually(payload);
                 setId(created.id);
                 setStatus(created.status);
+                setFreelancerCode(created.freelancer_code);
+                navigate(`/freelancers/${created.id}?edit=1`, { replace: true });
             }
             return true;
         } catch (err) {
             const parsed = parseApiErrors(err);
             setErrors(parsed);
-            toast.error(parsed.general || 'Failed to save this step');
+            toast.error(parsed.general || 'Failed to save');
             return false;
         } finally {
             setIsSaving(false);
         }
     };
 
-    const handleWizardNext = async () => {
-        const ok = await persistWizardStep();
-        if (ok) {
-            setWizardCompletedSteps((prev) => new Set(prev).add(wizardStep));
-            setWizardStep((s) => Math.min(s + 1, CREATE_STEPS.length));
+    const handleBack = () => goToTab(currentTabIndex - 1);
+
+    const handleNext = async () => {
+        if (isEditing && SAVE_ON_NEXT_TABS.includes(activeTab)) {
+            const ok = await persistCoreFields();
+            if (!ok) return;
         }
+        goToTab(currentTabIndex + 1);
     };
 
-    const handleWizardBack = () => setWizardStep((s) => Math.max(s - 1, 1));
-
-    const handleWizardStepClick = (step: number) => {
-        if (wizardCompletedSteps.has(step) || step === wizardStep) setWizardStep(step);
-    };
-
-    const handleWizardSubmit = async () => {
-        const ok = await persistWizardStep();
-        if (ok && id) {
-            toast.success('Freelancer created');
-            navigate('/freelancers', { replace: true });
+    const handleFinish = async () => {
+        if (isEditing && SAVE_ON_NEXT_TABS.includes(activeTab)) {
+            const ok = await persistCoreFields();
+            if (!ok) return;
         }
+        setIsEditing(false);
+        toast.success(startedAsCreate ? 'Freelancer created' : 'Freelancer updated');
+        if (id) loadFreelancer(id);
     };
 
     if (loading) {
         return <div className="text-center p-12 text-gray-500">Loading freelancer...</div>;
-    }
-
-    if (wizardMode) {
-        return (
-            <div className="space-y-6 animate-fade-in-down">
-                <div className="flex items-center justify-between">
-                    <button
-                        onClick={() => navigate('/freelancers')}
-                        className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium text-sm"
-                    >
-                        <ArrowLeft size={18} /> Back to Freelancers
-                    </button>
-                </div>
-
-                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Add Freelancer</h2>
-
-                <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                    <VendorStepper
-                        steps={CREATE_STEPS}
-                        currentStep={wizardStep}
-                        completedSteps={wizardCompletedSteps}
-                        onStepClick={handleWizardStepClick}
-                    />
-                </div>
-
-                <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6 space-y-8">
-                    {wizardStep === 1 && (
-                        <section>
-                            <h3 className="text-base font-semibold text-gray-900 mb-3">Basic Details</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-                                <InputField label="Full Name *" placeholder="Enter full name" value={values.full_name} onChange={set('full_name')} error={errors.full_name} />
-                                <InputField label="Email *" type="email" placeholder="Enter email" value={values.email} onChange={set('email')} error={errors.email} />
-                                <InputField label="Phone Number" value={values.phone} onChange={set('phone')} />
-                                <InputField label="Location" value={values.location} onChange={set('location')} />
-                            </div>
-                        </section>
-                    )}
-
-                    {wizardStep === 2 && (
-                        <section>
-                            <h3 className="text-base font-semibold text-gray-900 mb-3">Professional Details</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-                                <InputField label="Professional Title / Role" value={values.professional_title} onChange={set('professional_title')} />
-                                <InputField label="Years of Experience" type="number" min={0} value={values.years_of_experience ?? ''} onChange={set('years_of_experience')} />
-                                <InputField label="Portfolio / Website" value={values.portfolio_url} onChange={set('portfolio_url')} />
-                                <InputField label="LinkedIn Profile" value={values.linkedin_url} onChange={set('linkedin_url')} />
-                            </div>
-                            <SkillsInput
-                                label="Skills"
-                                value={values.skills ?? ''}
-                                onChange={(skills) => setValues((v) => ({ ...v, skills }))}
-                            />
-                        </section>
-                    )}
-
-                    {wizardStep === 3 && (
-                        <section>
-                            <h3 className="text-base font-semibold text-gray-900 mb-3">Availability &amp; Capacity</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-                                <SelectField
-                                    label="Availability" placeholder="Select availability"
-                                    options={choices?.availabilities || []} value={values.availability} onChange={set('availability')}
-                                />
-                                <InputField label="Preferred Start Date" type="date" value={values.preferred_start_date || ''} onChange={set('preferred_start_date')} />
-                                <InputField label="Available Until" type="date" value={values.available_until || ''} onChange={set('available_until')} />
-                                <InputField label="Time Zone *" placeholder="e.g. Asia/Kolkata" value={values.timezone || ''} onChange={set('timezone')} error={errors.timezone} />
-                                <InputField label="Hours Per Day" type="number" min={0} value={values.hours_per_day ?? ''} onChange={set('hours_per_day')} />
-                                <InputField label="Hours Per Week (Max Capacity)" type="number" min={0} value={values.hours_per_week ?? ''} onChange={set('hours_per_week')} />
-                                <InputField label="Notice Period (days)" type="number" min={0} value={values.notice_period_days ?? ''} onChange={set('notice_period_days')} />
-                            </div>
-                        </section>
-                    )}
-
-                    {wizardStep === 4 && (
-                        id ? (
-                            <FreelancerBankDetailTab
-                                freelancerId={id}
-                                paymentMethods={choices?.bank_payment_methods || []}
-                            />
-                        ) : (
-                            <p className="text-sm text-gray-500">Complete Basic Details first to add bank/KYC details.</p>
-                        )
-                    )}
-
-                    {wizardStep === 5 && (
-                        id ? (
-                            <DocumentList
-                                slots={DOCUMENT_SLOTS}
-                                documents={documents}
-                                onUpload={async (category, file) => {
-                                    await api.uploadDocument(id, category, file);
-                                    setDocuments(await api.listDocuments(id));
-                                }}
-                                onDelete={async (docId) => {
-                                    await api.deleteDocument(id, docId);
-                                    setDocuments(await api.listDocuments(id));
-                                }}
-                                onDownload={async (docId) => {
-                                    const { download_url } = await api.downloadDocument(id, docId);
-                                    window.open(download_url, '_blank');
-                                }}
-                            />
-                        ) : (
-                            <p className="text-sm text-gray-500">Complete Basic Details first to attach documents.</p>
-                        )
-                    )}
-                </div>
-
-                <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                    {wizardStep > 1 ? (
-                        <Button variant="secondary" className="!w-auto px-6" onClick={handleWizardBack}>Back</Button>
-                    ) : <div />}
-                    <div className="flex items-center gap-3">
-                        {wizardStep < CREATE_STEPS.length && (
-                            <Button className="!w-auto px-6" onClick={handleWizardNext} isLoading={isSaving}>Next</Button>
-                        )}
-                        {wizardStep === CREATE_STEPS.length && (
-                            <Button className="!w-auto px-6" onClick={handleWizardSubmit} isLoading={isSaving}>Submit</Button>
-                        )}
-                    </div>
-                </div>
-            </div>
-        );
     }
 
     const readOnly = !isEditing;
@@ -351,7 +252,7 @@ export function FreelancerFormContent() {
             <div className="flex items-center justify-between">
                 <button
                     onClick={() => navigate('/freelancers')}
-                    className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium text-sm"
+                    className="flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium text-sm dark:text-gray-400 dark:hover:text-gray-100"
                 >
                     <ArrowLeft size={18} /> Back to Freelancers
                 </button>
@@ -359,22 +260,27 @@ export function FreelancerFormContent() {
             </div>
 
             <div className="flex items-center justify-between">
-                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                    {isCreate ? 'Add Freelancer' : values.full_name || 'Freelancer'}
-                </h2>
+                <div>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+                        {isCreate ? 'Add Freelancer' : values.full_name || 'Freelancer'}
+                    </h2>
+                    {freelancerCode && (
+                        <p className="text-sm font-mono text-gray-500 mt-0.5 dark:text-gray-400">{freelancerCode}</p>
+                    )}
+                </div>
                 {!isCreate && readOnly && (
                     <Button className="!w-auto px-6" onClick={() => setIsEditing(true)}>Edit</Button>
                 )}
             </div>
 
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-900 dark:border-gray-800">
                 <Tabs tabs={PROFILE_TABS} active={activeTab} onChange={setActiveTab} className="px-6" />
 
                 <div className="p-6 space-y-8">
                     {activeTab === 'profile' && (
                         <>
                             <section>
-                                <h3 className="text-base font-semibold text-gray-900 mb-3">Basic Details</h3>
+                                <h3 className="text-base font-semibold text-gray-900 mb-3 dark:text-white">Basic Details</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
                                     <InputField label="Full Name *" placeholder="Enter full name" value={values.full_name} onChange={set('full_name')} error={errors.full_name} disabled={readOnly} />
                                     <InputField label="Email *" type="email" placeholder="Enter email" value={values.email} onChange={set('email')} error={errors.email} disabled={readOnly} />
@@ -384,7 +290,7 @@ export function FreelancerFormContent() {
                             </section>
 
                             <section>
-                                <h3 className="text-base font-semibold text-gray-900 mb-3">Professional Details</h3>
+                                <h3 className="text-base font-semibold text-gray-900 mb-3 dark:text-white">Professional Details</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
                                     <InputField label="Professional Title / Role" value={values.professional_title} onChange={set('professional_title')} disabled={readOnly} />
                                     <InputField label="Years of Experience" type="number" min={0} value={values.years_of_experience ?? ''} onChange={set('years_of_experience')} disabled={readOnly} />
@@ -401,9 +307,58 @@ export function FreelancerFormContent() {
                         </>
                     )}
 
+                    {activeTab === 'address' && (
+                        <>
+                            <section>
+                                <h3 className="text-base font-semibold text-gray-900 mb-3 dark:text-white">Permanent Address</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                                    <InputField label="Address Line 1" value={values.permanent_address_line1} onChange={set('permanent_address_line1')} disabled={readOnly} />
+                                    <InputField label="Address Line 2" value={values.permanent_address_line2} onChange={set('permanent_address_line2')} disabled={readOnly} />
+                                    <InputField label="City" value={values.permanent_city} onChange={set('permanent_city')} disabled={readOnly} />
+                                    <InputField label="State" value={values.permanent_state} onChange={set('permanent_state')} disabled={readOnly} />
+                                    <InputField label="Country" value={values.permanent_country} onChange={set('permanent_country')} disabled={readOnly} />
+                                    <InputField label="PIN / ZIP Code" value={values.permanent_pincode} onChange={set('permanent_pincode')} disabled={readOnly} />
+                                </div>
+                            </section>
+
+                            <section>
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="text-base font-semibold text-gray-900 dark:text-white">Temporary Address</h3>
+                                    <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!values.temp_same_as_permanent}
+                                            onChange={handleSameAsPermanent}
+                                            disabled={readOnly}
+                                            className="rounded border-gray-300 text-brand-800 focus:ring-brand-800 dark:border-gray-600 dark:bg-gray-800"
+                                        />
+                                        Same as Permanent Address
+                                    </label>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                                    <InputField label="Address Line 1" value={values.temp_address_line1} onChange={set('temp_address_line1')} disabled={readOnly || values.temp_same_as_permanent} />
+                                    <InputField label="Address Line 2" value={values.temp_address_line2} onChange={set('temp_address_line2')} disabled={readOnly || values.temp_same_as_permanent} />
+                                    <InputField label="City" value={values.temp_city} onChange={set('temp_city')} disabled={readOnly || values.temp_same_as_permanent} />
+                                    <InputField label="State" value={values.temp_state} onChange={set('temp_state')} disabled={readOnly || values.temp_same_as_permanent} />
+                                    <InputField label="Country" value={values.temp_country} onChange={set('temp_country')} disabled={readOnly || values.temp_same_as_permanent} />
+                                    <InputField label="PIN / ZIP Code" value={values.temp_pincode} onChange={set('temp_pincode')} disabled={readOnly || values.temp_same_as_permanent} />
+                                </div>
+                            </section>
+
+                            <section>
+                                <h3 className="text-base font-semibold text-gray-900 mb-3 dark:text-white">Emergency Contact</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4">
+                                    <InputField label="Name" value={values.emergency_contact_name} onChange={set('emergency_contact_name')} disabled={readOnly} />
+                                    <InputField label="Phone" value={values.emergency_contact_phone} onChange={set('emergency_contact_phone')} disabled={readOnly} />
+                                    <InputField label="Relationship" value={values.emergency_contact_relationship} onChange={set('emergency_contact_relationship')} disabled={readOnly} />
+                                </div>
+                            </section>
+                        </>
+                    )}
+
                     {activeTab === 'availability' && (
                         <section>
-                            <h3 className="text-base font-semibold text-gray-900 mb-3">Availability &amp; Capacity</h3>
+                            <h3 className="text-base font-semibold text-gray-900 mb-3 dark:text-white">Availability &amp; Capacity</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
                                 <SelectField
                                     label="Availability"
@@ -426,14 +381,27 @@ export function FreelancerFormContent() {
                         </section>
                     )}
 
+                    {activeTab === 'equipment' && (
+                        id ? (
+                            <FreelancerEquipmentTab
+                                freelancerId={id}
+                                ownerships={choices?.equipment_ownerships || []}
+                                conditions={choices?.equipment_conditions || []}
+                            />
+                        ) : (
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Save the freelancer first to add equipment details.</p>
+                        )
+                    )}
+
                     {activeTab === 'bank' && (
                         id ? (
                             <FreelancerBankDetailTab
                                 freelancerId={id}
                                 paymentMethods={choices?.bank_payment_methods || []}
+                                panVerificationStatuses={choices?.pan_verification_statuses || []}
                             />
                         ) : (
-                            <p className="text-sm text-gray-500">Save the freelancer first to add bank/KYC details.</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Save the freelancer first to add bank/KYC details.</p>
                         )
                     )}
 
@@ -445,7 +413,7 @@ export function FreelancerFormContent() {
                                 currencies={choices?.currencies || []}
                             />
                         ) : (
-                            <p className="text-sm text-gray-500">Save the freelancer first to add rate cards.</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Save the freelancer first to add rate cards.</p>
                         )
                     )}
 
@@ -457,7 +425,7 @@ export function FreelancerFormContent() {
                                 contractStatuses={choices?.contract_statuses || []}
                             />
                         ) : (
-                            <p className="text-sm text-gray-500">Save the freelancer first to add contracts.</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Save the freelancer first to add contracts.</p>
                         )
                     )}
 
@@ -469,7 +437,7 @@ export function FreelancerFormContent() {
                                 assignmentStatuses={choices?.assignment_statuses || []}
                             />
                         ) : (
-                            <p className="text-sm text-gray-500">Save the freelancer first to assign projects.</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Save the freelancer first to assign projects.</p>
                         )
                     )}
 
@@ -481,7 +449,7 @@ export function FreelancerFormContent() {
                                 timeEntryStatuses={choices?.time_entry_statuses || []}
                             />
                         ) : (
-                            <p className="text-sm text-gray-500">Save the freelancer first to assign tasks.</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Save the freelancer first to assign tasks.</p>
                         )
                     )}
 
@@ -505,19 +473,30 @@ export function FreelancerFormContent() {
                                 }}
                             />
                         ) : (
-                            <p className="text-sm text-gray-500">Save the freelancer first to attach documents.</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Save the freelancer first to attach documents.</p>
+                        )
+                    )}
+
+                    {activeTab === 'activity' && (
+                        id ? (
+                            <FreelancerActivityTab freelancerId={id} />
+                        ) : (
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Save the freelancer first to see activity.</p>
                         )
                     )}
                 </div>
             </div>
 
-            {isEditing && ['profile', 'availability'].includes(activeTab) && (
-                <div className="flex justify-center">
-                    <Button className="!w-auto px-8" onClick={handleSave} isLoading={isSaving}>
-                        Save Freelancer
-                    </Button>
-                </div>
-            )}
+            <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
+                {currentTabIndex > 0 ? (
+                    <Button variant="secondary" className="!w-auto px-6" onClick={handleBack}>Back</Button>
+                ) : <div />}
+                {currentTabIndex < PROFILE_TABS.length - 1 ? (
+                    <Button className="!w-auto px-6" onClick={handleNext} isLoading={isSaving}>Next</Button>
+                ) : isEditing ? (
+                    <Button className="!w-auto px-6" onClick={handleFinish} isLoading={isSaving}>Finish</Button>
+                ) : <div />}
+            </div>
         </div>
     );
 }

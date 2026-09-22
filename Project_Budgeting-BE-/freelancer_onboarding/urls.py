@@ -37,6 +37,13 @@ urlpatterns = [
     # --- Bank / KYC details (Phase 3 of Freelancer Management) ---
     path("freelancers/<int:pk>/bank-detail/", views.FreelancerBankDetailView.as_view(), name="freelancer-bank-detail"),
     path("freelancers/<int:pk>/bank-detail/unmasked/", views.FreelancerBankDetailUnmaskedView.as_view(), name="freelancer-bank-detail-unmasked"),
+    path("freelancers/<int:pk>/bank-detail/pan-unmasked/", views.FreelancerPANUnmaskedView.as_view(), name="freelancer-bank-detail-pan-unmasked"),
+
+    # --- Equipment / Laptop (Business Partner enhancement) ---
+    path("freelancers/<int:pk>/equipment/", views.FreelancerEquipmentView.as_view(), name="freelancer-equipment"),
+
+    # --- Audit trail / Activity tab (Business Partner enhancement) ---
+    path("freelancers/<int:pk>/audit-log/", views.FreelancerAuditLogListView.as_view(), name="freelancer-audit-log"),
 
     # --- Developer email template preview (DEBUG only, see views.freelancer_email_preview) ---
     path("emails/preview/", views.freelancer_email_preview, name="freelancer-onboarding-email-preview-index"),

@@ -14,8 +14,8 @@ interface Props {
 
 const SectionHeader: React.FC<{ title: string; step: number; onEdit: (s: number) => void }> = ({ title, step, onEdit }) => (
   <div className="flex items-center justify-between mb-3">
-    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">{title}</h3>
-    <button onClick={() => onEdit(step)} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700">
+    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">{title}</h3>
+    <button onClick={() => onEdit(step)} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
       <Edit2 className="w-3.5 h-3.5" /> Edit
     </button>
   </div>
@@ -23,8 +23,8 @@ const SectionHeader: React.FC<{ title: string; step: number; onEdit: (s: number)
 
 const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <div>
-    <p className="text-xs text-gray-500">{label}</p>
-    <p className="text-sm text-gray-900 font-medium">{value || '-'}</p>
+    <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+    <p className="text-sm text-gray-900 font-medium dark:text-gray-100">{value || '-'}</p>
   </div>
 );
 
@@ -34,18 +34,18 @@ export const Step6ReviewSubmit: React.FC<Props> = ({ documents, completionPercen
 
   return (
     <div className="space-y-8">
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 dark:bg-gray-800 dark:border-gray-700">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-sm font-semibold text-gray-900">Vendor Onboarding Completion: {completionPercent}%</p>
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">Vendor Onboarding Completion: {completionPercent}%</p>
         </div>
-        <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden dark:bg-gray-700">
           <div
             className={`h-full transition-all ${completionPercent === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
             style={{ width: `${completionPercent}%` }}
           />
         </div>
         {missingItems.length > 0 && (
-          <ul className="mt-3 text-xs text-red-600 list-disc list-inside space-y-0.5">
+          <ul className="mt-3 text-xs text-red-600 list-disc list-inside space-y-0.5 dark:text-red-400">
             {missingItems.map((item) => <li key={item}>{item}</li>)}
           </ul>
         )}
@@ -114,11 +114,11 @@ export const Step6ReviewSubmit: React.FC<Props> = ({ documents, completionPercen
       <section className="border-t pt-6">
         <SectionHeader title="Documents" step={5} onEdit={onEditStep} />
         {documents.length === 0 ? (
-          <p className="text-sm text-gray-500">No documents uploaded yet.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No documents uploaded yet.</p>
         ) : (
           <ul className="space-y-1">
             {documents.map((d) => (
-              <li key={d.id} className="text-sm text-gray-700">{d.file_name} <span className="text-xs text-gray-400">({d.category})</span></li>
+              <li key={d.id} className="text-sm text-gray-700 dark:text-gray-300">{d.file_name} <span className="text-xs text-gray-400 dark:text-gray-500">({d.category})</span></li>
             ))}
           </ul>
         )}

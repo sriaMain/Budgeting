@@ -386,11 +386,11 @@ export default function GenerateInvoicePage() {
                     <div className="flex items-center gap-4">
                         <button
                             onClick={handleBack}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-800"
                         >
-                            <ArrowLeft className="w-5 h-5 text-gray-600" />
+                            <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                         </button>
-                        <h1 className="text-xl md:text-2xl font-bold text-gray-900">
+                        <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
                             {isEditMode ? 'Edit Invoice' : 'Create Invoice'}
                         </h1>
                     </div>
@@ -404,7 +404,7 @@ export default function GenerateInvoicePage() {
                 ) : (
                     <div className="space-y-6">
                         {/* Basic Information */}
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 md:p-6">
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 md:p-6 dark:bg-gray-900 dark:border-gray-800">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                                 <InputField
                                     label="Reference Quote No"
@@ -444,34 +444,34 @@ export default function GenerateInvoicePage() {
                         </div>
 
                         {/* Product Groups Table */}
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden dark:bg-gray-900 dark:border-gray-800">
                             <div className="overflow-x-auto">
                                 <table className="w-full min-w-[800px]">
-                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                    <thead className="bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700">
                                         <tr>
-                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase w-10"></th>
-                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase w-10"></th>
-                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Group</th>
-                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Product | Description</th>
-                                            <th className="px-2 md:px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Quantity</th>
-                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Unit</th>
-                                            <th className="px-2 md:px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Unit Price</th>
-                                            <th className="px-2 md:px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Amount</th>
+                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase w-10 dark:text-gray-300"></th>
+                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase w-10 dark:text-gray-300"></th>
+                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase dark:text-gray-300">Group</th>
+                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase dark:text-gray-300">Product | Description</th>
+                                            <th className="px-2 md:px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase dark:text-gray-300">Quantity</th>
+                                            <th className="px-2 md:px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase dark:text-gray-300">Unit</th>
+                                            <th className="px-2 md:px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase dark:text-gray-300">Unit Price</th>
+                                            <th className="px-2 md:px-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase dark:text-gray-300">Amount</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-gray-100">
+                                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                                         {productRows.map((row) => (
-                                            <tr key={row.id} className="hover:bg-gray-50">
+                                            <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                                                 <td className="px-2 md:px-3 py-3">
                                                     <input
                                                         type="checkbox"
                                                         checked={row.selected}
                                                         onChange={() => handleCheckboxChange(row.id)}
-                                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
                                                     />
                                                 </td>
                                                 <td className="px-2 md:px-3 py-3">
-                                                    <GripVertical className="w-4 h-4 text-gray-400 cursor-move" />
+                                                    <GripVertical className="w-4 h-4 text-gray-400 cursor-move dark:text-gray-500" />
                                                 </td>
                                                 <td className="px-2 md:px-3 py-3">
                                                     <select
@@ -481,7 +481,7 @@ export default function GenerateInvoicePage() {
                                                                 rows.map(r => r.id === row.id ? { ...r, group: e.target.value } : r)
                                                             );
                                                         }}
-                                                        className="w-full px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="w-full px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                                     >
                                                         <option value="Service">Service</option>
                                                         <option value="Product">Product</option>
@@ -499,10 +499,10 @@ export default function GenerateInvoicePage() {
                                                                         rows.map(r => r.id === row.id ? { ...r, product: e.target.value } : r)
                                                                     );
                                                                 }}
-                                                                className="flex-1 px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                className="flex-1 px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                                             />
-                                                            <button className="p-2 hover:bg-gray-100 rounded">
-                                                                <Plus size={16} className="text-gray-600" />
+                                                            <button className="p-2 hover:bg-gray-100 rounded dark:hover:bg-gray-700">
+                                                                <Plus size={16} className="text-gray-600 dark:text-gray-400" />
                                                             </button>
                                                         </div>
                                                         <textarea
@@ -513,7 +513,7 @@ export default function GenerateInvoicePage() {
                                                                 );
                                                             }}
                                                             placeholder="Product or service description"
-                                                            className="w-full px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                                            className="w-full px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                                                             rows={2}
                                                         />
                                                     </div>
@@ -523,7 +523,7 @@ export default function GenerateInvoicePage() {
                                                         type="number"
                                                         value={row.quantity}
                                                         onChange={(e) => handleQuantityChange(row.id, e.target.value)}
-                                                        className="w-16 md:w-20 px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="w-16 md:w-20 px-2 md:px-3 py-2 border border-gray-300 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                                     />
                                                 </td>
                                                 <td className="px-2 md:px-3 py-3">
@@ -534,7 +534,7 @@ export default function GenerateInvoicePage() {
                                                                 rows.map(r => r.id === row.id ? { ...r, unit: e.target.value } : r)
                                                             );
                                                         }}
-                                                        className="w-16 md:w-20 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="w-16 md:w-20 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                                     >
                                                         <option value="hr">hr</option>
                                                         <option value="day">day</option>
@@ -542,15 +542,15 @@ export default function GenerateInvoicePage() {
                                                     </select>
                                                 </td>
                                                 <td className="px-2 md:px-3 py-3 text-right">
-                                                    <span className="text-sm font-medium text-gray-900">
+                                                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                                                         {row.unitPrice.toLocaleString('en-IN')}
                                                     </span>
                                                 </td>
                                                 <td className="px-2 md:px-3 py-3 text-right">
-                                                    <span className="text-sm font-medium text-gray-900">
+                                                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                                                         {row.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                     </span>
-                                                    <div className="text-xs text-gray-500 mt-1">0.00</div>
+                                                    <div className="text-xs text-gray-500 mt-1 dark:text-gray-400">0.00</div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -559,7 +559,7 @@ export default function GenerateInvoicePage() {
                             </div>
 
                             {/* Action Buttons */}
-                            <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex flex-wrap gap-3">
+                            <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex flex-wrap gap-3 dark:bg-gray-800 dark:border-gray-700">
                                 <button
                                     onClick={handleAddNewRow}
                                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
@@ -576,25 +576,25 @@ export default function GenerateInvoicePage() {
                         </div>
 
                         {/* Totals Section */}
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 md:p-6">
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 md:p-6 dark:bg-gray-900 dark:border-gray-800">
                             <div className="flex justify-end">
                                 <div className="w-full max-w-2xl space-y-3">
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
                                         <div className="space-y-2">
                                             <div className="flex justify-between text-sm">
-                                                <span className="text-gray-600">Sub Total</span>
-                                                <span className="font-medium text-gray-900">{totals.subTotal}</span>
+                                                <span className="text-gray-600 dark:text-gray-400">Sub Total</span>
+                                                <span className="font-medium text-gray-900 dark:text-gray-100">{totals.subTotal}</span>
                                             </div>
                                             <div className="flex justify-between text-sm">
-                                                <span className="text-gray-600">Some without tax</span>
-                                                <span className="font-medium text-gray-900">{totals.someWithoutTax}</span>
+                                                <span className="text-gray-600 dark:text-gray-400">Some without tax</span>
+                                                <span className="font-medium text-gray-900 dark:text-gray-100">{totals.someWithoutTax}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-sm">
-                                                <span className="text-gray-600">Tax</span>
+                                                <span className="text-gray-600 dark:text-gray-400">Tax</span>
                                                 <select
                                                     value={taxPercentage}
                                                     onChange={(e) => setTaxPercentage(e.target.value)}
-                                                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                                 >
                                                     {['0', '5', '12', '18', '28'].includes(taxPercentage) ? null : (
                                                         <option value={taxPercentage}>{taxPercentage} %</option>
@@ -607,27 +607,27 @@ export default function GenerateInvoicePage() {
                                                 </select>
                                             </div>
                                             <div className="flex justify-between text-sm">
-                                                <span className="text-gray-600"></span>
-                                                <span className="font-medium text-gray-900">{totals.tax}</span>
+                                                <span className="text-gray-600 dark:text-gray-400"></span>
+                                                <span className="font-medium text-gray-900 dark:text-gray-100">{totals.tax}</span>
                                             </div>
-                                            <div className="flex justify-between text-sm font-bold border-t pt-2">
-                                                <span className="text-gray-900">Total</span>
-                                                <span className="text-gray-900">{totals.total}</span>
+                                            <div className="flex justify-between text-sm font-bold border-t pt-2 dark:border-gray-700">
+                                                <span className="text-gray-900 dark:text-white">Total</span>
+                                                <span className="text-gray-900 dark:text-white">{totals.total}</span>
                                             </div>
                                         </div>
 
                                         <div className="space-y-2">
                                             <div className="flex justify-between text-sm font-bold">
-                                                <span className="text-gray-900">Total Cost</span>
-                                                <span className="text-gray-900">{totals.total}</span>
+                                                <span className="text-gray-900 dark:text-white">Total Cost</span>
+                                                <span className="text-gray-900 dark:text-white">{totals.total}</span>
                                             </div>
                                             <div className="flex justify-between text-sm">
-                                                <span className="text-gray-600">In-house</span>
-                                                <span className="font-medium text-gray-900">{totals.inHouse}</span>
+                                                <span className="text-gray-600 dark:text-gray-400">In-house</span>
+                                                <span className="font-medium text-gray-900 dark:text-gray-100">{totals.inHouse}</span>
                                             </div>
                                             <div className="flex justify-between text-sm">
-                                                <span className="text-gray-600">Outsourced</span>
-                                                <span className="font-medium text-gray-900">{totals.outsourced}</span>
+                                                <span className="text-gray-600 dark:text-gray-400">Outsourced</span>
+                                                <span className="font-medium text-gray-900 dark:text-gray-100">{totals.outsourced}</span>
                                             </div>
                                         </div>
                                     </div>

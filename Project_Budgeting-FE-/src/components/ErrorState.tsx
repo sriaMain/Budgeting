@@ -9,7 +9,7 @@ interface ErrorStateProps {
 
 export const ErrorState: React.FC<ErrorStateProps> = ({ message, onRetry, className = '' }) => (
   <div className={`flex flex-col items-center justify-center text-center py-12 px-6 ${className}`} role="alert">
-    <div className="w-12 h-12 rounded-full bg-risk-50 text-risk-600 flex items-center justify-center mb-4">
+    <div className="w-12 h-12 rounded-full bg-risk-50 text-risk-600 flex items-center justify-center mb-4 dark:bg-red-500/10 dark:text-red-400">
       <AlertTriangle size={22} />
     </div>
     <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Something went wrong</h3>

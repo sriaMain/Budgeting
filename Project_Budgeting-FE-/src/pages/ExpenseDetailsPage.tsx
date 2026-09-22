@@ -98,23 +98,23 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
         if (expense.is_fully_paid) {
             return {
                 label: 'Fully Paid',
-                color: 'bg-green-100 text-green-800',
+                color: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300',
                 icon: CheckCircle,
-                iconColor: 'text-green-600'
+                iconColor: 'text-green-600 dark:text-green-400'
             };
         } else if (expense.total_paid > 0) {
             return {
                 label: 'Partially Paid',
-                color: 'bg-yellow-100 text-yellow-800',
+                color: 'bg-yellow-100 text-yellow-800 dark:bg-amber-500/15 dark:text-amber-300',
                 icon: AlertCircle,
-                iconColor: 'text-yellow-600'
+                iconColor: 'text-yellow-600 dark:text-amber-400'
             };
         } else {
             return {
                 label: 'Unpaid',
-                color: 'bg-red-100 text-red-800',
+                color: 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300',
                 icon: XCircle,
-                iconColor: 'text-red-600'
+                iconColor: 'text-red-600 dark:text-red-400'
             };
         }
     };
@@ -151,7 +151,7 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
             );
 
             console.log('Payment recorded:', response.data);
-            
+
             toast.success(`Payment of ₹${paymentAmount} recorded successfully!`);
 
             // Close modal and reset form
@@ -187,8 +187,8 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
             <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
                 <div className="flex items-center justify-center h-screen">
                     <div className="text-center">
-                        <h2 className="text-2xl font-bold text-gray-900 mb-2">Expense Not Found</h2>
-                        <p className="text-gray-600 mb-4">The expense you are looking for does not exist.</p>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-2 dark:text-white">Expense Not Found</h2>
+                        <p className="text-gray-600 mb-4 dark:text-gray-300">The expense you are looking for does not exist.</p>
                         <button
                             onClick={() => navigate(-1)}
                             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -209,18 +209,18 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
         <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
             <div className="max-w-7xl mx-auto space-y-6">
                 {/* Header Section */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-4">
                             <button
                                 onClick={handleBack}
-                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-800"
                             >
-                                <ArrowLeft className="w-5 h-5 text-gray-600" />
+                                <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                             </button>
                             <div>
-                                <h1 className="text-2xl font-bold text-gray-900">{expenseDetails.expense_no}</h1>
-                                <p className="text-sm text-gray-600 mt-1">Expense Details</p>
+                                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{expenseDetails.expense_no}</h1>
+                                <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">Expense Details</p>
                             </div>
                         </div>
                         <div className={`flex items-center gap-2 px-4 py-2 rounded-lg ${paymentStatus.color}`}>
@@ -231,9 +231,9 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
 
                     {/* Category Badge */}
                     <div className="flex items-center gap-3 mt-4">
-                        <div className="flex items-center gap-2 px-3 py-2 bg-purple-50 rounded-lg">
-                            <Tag className="w-4 h-4 text-purple-600" />
-                            <span className="text-sm font-medium text-purple-900">{getCategoryLabel(expenseDetails.category)}</span>
+                        <div className="flex items-center gap-2 px-3 py-2 bg-purple-50 rounded-lg dark:bg-purple-500/10">
+                            <Tag className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                            <span className="text-sm font-medium text-purple-900 dark:text-purple-300">{getCategoryLabel(expenseDetails.category)}</span>
                         </div>
                     </div>
                 </div>
@@ -241,31 +241,31 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                 {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* Total Amount Card */}
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
                         <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                                <FileText className="w-5 h-5 text-blue-600" />
+                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center dark:bg-blue-500/15">
+                                <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                             </div>
-                            <p className="text-sm text-gray-600 font-medium">Total Amount</p>
+                            <p className="text-sm text-gray-600 font-medium dark:text-gray-400">Total Amount</p>
                         </div>
-                        <p className="text-2xl font-bold text-gray-900">{formatCurrency(expenseDetails.amount)}</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{formatCurrency(expenseDetails.amount)}</p>
                     </div>
 
                     {/* Paid Amount Card */}
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
                         <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                                <DollarSign className="w-5 h-5 text-green-600" />
+                            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center dark:bg-green-500/15">
+                                <DollarSign className="w-5 h-5 text-green-600 dark:text-green-400" />
                             </div>
-                            <p className="text-sm text-gray-600 font-medium">Paid Amount</p>
+                            <p className="text-sm text-gray-600 font-medium dark:text-gray-400">Paid Amount</p>
                         </div>
-                        <p className="text-2xl font-bold text-green-600">{formatCurrency(expenseDetails.total_paid)}</p>
+                        <p className="text-2xl font-bold text-green-600 dark:text-green-400">{formatCurrency(expenseDetails.total_paid)}</p>
                         <div className="mt-3">
-                            <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                            <div className="flex items-center justify-between text-xs text-gray-600 mb-1 dark:text-gray-400">
                                 <span>Payment Progress</span>
                                 <span>{paymentPercentage.toFixed(1)}%</span>
                             </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div className="w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700">
                                 <div
                                     className="bg-green-600 h-2 rounded-full transition-all duration-300"
                                     style={{ width: `${Math.min(paymentPercentage, 100)}%` }}
@@ -275,21 +275,21 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                     </div>
 
                     {/* Balance Amount Card */}
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
                         <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                                <DollarSign className="w-5 h-5 text-orange-600" />
+                            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center dark:bg-orange-500/15">
+                                <DollarSign className="w-5 h-5 text-orange-600 dark:text-orange-400" />
                             </div>
-                            <p className="text-sm text-gray-600 font-medium">Balance Amount</p>
+                            <p className="text-sm text-gray-600 font-medium dark:text-gray-400">Balance Amount</p>
                         </div>
-                        <p className="text-2xl font-bold text-orange-600">{formatCurrency(expenseDetails.balance_amount)}</p>
+                        <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{formatCurrency(expenseDetails.balance_amount)}</p>
                     </div>
                 </div>
 
                 {/* Expense Information */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                    <div className="px-6 py-4 border-b border-gray-200">
-                        <h2 className="text-lg font-semibold text-gray-900">Expense Information</h2>
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 dark:bg-gray-900 dark:border-gray-800">
+                    <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Expense Information</h2>
                     </div>
 
                     <div className="p-6">
@@ -297,10 +297,10 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                             {/* Description */}
                             <div className="md:col-span-2">
                                 <div className="flex items-start gap-2">
-                                    <FileText className="w-5 h-5 text-gray-400 mt-1" />
+                                    <FileText className="w-5 h-5 text-gray-400 mt-1 dark:text-gray-500" />
                                     <div className="flex-1">
-                                        <p className="text-sm text-gray-600 mb-1">Description</p>
-                                        <p className="text-base text-gray-900">{expenseDetails.description}</p>
+                                        <p className="text-sm text-gray-600 mb-1 dark:text-gray-400">Description</p>
+                                        <p className="text-base text-gray-900 dark:text-gray-100">{expenseDetails.description}</p>
                                     </div>
                                 </div>
                             </div>
@@ -308,10 +308,10 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                             {/* Expense Date */}
                             <div>
                                 <div className="flex items-start gap-2">
-                                    <Calendar className="w-5 h-5 text-gray-400 mt-1" />
+                                    <Calendar className="w-5 h-5 text-gray-400 mt-1 dark:text-gray-500" />
                                     <div>
-                                        <p className="text-sm text-gray-600 mb-1">Expense Date</p>
-                                        <p className="text-base font-medium text-gray-900">
+                                        <p className="text-sm text-gray-600 mb-1 dark:text-gray-400">Expense Date</p>
+                                        <p className="text-base font-medium text-gray-900 dark:text-gray-100">
                                             {formatDate(expenseDetails.expense_date)}
                                         </p>
                                     </div>
@@ -321,10 +321,10 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                             {/* Created Date */}
                             <div>
                                 <div className="flex items-start gap-2">
-                                    <Calendar className="w-5 h-5 text-gray-400 mt-1" />
+                                    <Calendar className="w-5 h-5 text-gray-400 mt-1 dark:text-gray-500" />
                                     <div>
-                                        <p className="text-sm text-gray-600 mb-1">Created On</p>
-                                        <p className="text-base font-medium text-gray-900">
+                                        <p className="text-sm text-gray-600 mb-1 dark:text-gray-400">Created On</p>
+                                        <p className="text-base font-medium text-gray-900 dark:text-gray-100">
                                             {formatDateTime(expenseDetails.created_at)}
                                         </p>
                                     </div>
@@ -335,10 +335,10 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                             {expenseDetails.vendor && (
                                 <div>
                                     <div className="flex items-start gap-2">
-                                        <User className="w-5 h-5 text-gray-400 mt-1" />
+                                        <User className="w-5 h-5 text-gray-400 mt-1 dark:text-gray-500" />
                                         <div>
-                                            <p className="text-sm text-gray-600 mb-1">Vendor</p>
-                                            <p className="text-base font-medium text-gray-900">{expenseDetails.vendor}</p>
+                                            <p className="text-sm text-gray-600 mb-1 dark:text-gray-400">Vendor</p>
+                                            <p className="text-base font-medium text-gray-900 dark:text-gray-100">{expenseDetails.vendor}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -347,10 +347,10 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                             {/* Project ID */}
                             <div>
                                 <div className="flex items-start gap-2">
-                                    <FileText className="w-5 h-5 text-gray-400 mt-1" />
+                                    <FileText className="w-5 h-5 text-gray-400 mt-1 dark:text-gray-500" />
                                     <div>
-                                        <p className="text-sm text-gray-600 mb-1">Project ID</p>
-                                        <p className="text-base font-medium text-gray-900">#{expenseDetails.project}</p>
+                                        <p className="text-sm text-gray-600 mb-1 dark:text-gray-400">Project ID</p>
+                                        <p className="text-base font-medium text-gray-900 dark:text-gray-100">#{expenseDetails.project}</p>
                                     </div>
                                 </div>
                             </div>
@@ -360,16 +360,19 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
 
                 {/* Payment Actions - Show only if not fully paid */}
                 {!expenseDetails.is_fully_paid && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 dark:bg-blue-500/10 dark:border-blue-900">
                         <div className="flex items-start justify-between">
                             <div>
-                                <h3 className="text-lg font-semibold text-blue-900 mb-2">Payment Required</h3>
-                                <p className="text-sm text-blue-700">
+                                <h3 className="text-lg font-semibold text-blue-900 mb-2 dark:text-blue-300">Payment Required</h3>
+                                <p className="text-sm text-blue-700 dark:text-blue-400">
                                     Outstanding balance: <span className="font-bold">{formatCurrency(expenseDetails.balance_amount)}</span>
                                 </p>
                             </div>
                             <button
-                                onClick={() => setIsRecordPaymentModalOpen(true)}
+                                onClick={() => {
+                                    setPaymentAmount(String(expenseDetails.balance_amount));
+                                    setIsRecordPaymentModalOpen(true);
+                                }}
                                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
                             >
                                 <DollarSign className="w-4 h-4" />
@@ -381,12 +384,12 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
 
                 {/* Record Payment Modal */}
                 {isRecordPaymentModalOpen && (
-                    <div className="fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+                    <div className="fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4 dark:bg-black/50">
+                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full dark:bg-gray-900">
                             {/* Modal Header */}
-                            <div className="px-6 py-4 border-b border-gray-200">
-                                <h3 className="text-lg font-semibold text-gray-900">Record Payment</h3>
-                                <p className="text-sm text-gray-600 mt-1">
+                            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Record Payment</h3>
+                                <p className="text-sm text-gray-600 mt-1 dark:text-gray-400">
                                     Expense: {expenseDetails.expense_no} | Balance: {formatCurrency(expenseDetails.balance_amount)}
                                 </p>
                             </div>
@@ -395,11 +398,11 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                             <div className="px-6 py-4 space-y-4">
                                 {/* Amount Input */}
                                 <div>
-                                    <label htmlFor="payment-amount" className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="payment-amount" className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                                         Payment Amount <span className="text-red-500">*</span>
                                     </label>
                                     <div className="relative">
-                                        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₹</span>
+                                        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 dark:text-gray-400">₹</span>
                                         <input
                                             id="payment-amount"
                                             type="number"
@@ -408,12 +411,12 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                                             value={paymentAmount}
                                             onChange={(e) => setPaymentAmount(e.target.value)}
                                             placeholder="0.00"
-                                            className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                                             disabled={isSubmittingPayment}
                                         />
                                     </div>
                                     {paymentAmount && parseFloat(paymentAmount) > expenseDetails.balance_amount && (
-                                        <p className="text-xs text-orange-600 mt-1">
+                                        <p className="text-xs text-orange-600 mt-1 dark:text-orange-400">
                                             Warning: Amount exceeds remaining balance
                                         </p>
                                     )}
@@ -421,14 +424,14 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
 
                                 {/* Payment Method Input */}
                                 <div>
-                                    <label htmlFor="payment-method" className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="payment-method" className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                                         Payment Method <span className="text-red-500">*</span>
                                     </label>
                                     <select
                                         id="payment-method"
                                         value={paymentMethod}
                                         onChange={(e) => setPaymentMethod(e.target.value)}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                         disabled={isSubmittingPayment}
                                     >
                                         <option value="">Select payment method</option>
@@ -443,7 +446,7 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
 
                                 {/* Reference Number Input */}
                                 <div>
-                                    <label htmlFor="reference-number" className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label htmlFor="reference-number" className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                                         Reference Number
                                     </label>
                                     <input
@@ -452,14 +455,14 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                                         value={referenceNumber}
                                         onChange={(e) => setReferenceNumber(e.target.value)}
                                         placeholder="Enter reference number (optional)"
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                                         disabled={isSubmittingPayment}
                                     />
                                 </div>
                             </div>
 
                             {/* Modal Footer */}
-                            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+                            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3 dark:border-gray-800">
                                 <button
                                     onClick={() => {
                                         setIsRecordPaymentModalOpen(false);
@@ -467,7 +470,7 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
                                         setPaymentMethod('');
                                         setReferenceNumber('');
                                     }}
-                                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+                                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors dark:text-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700"
                                     disabled={isSubmittingPayment}
                                 >
                                     Cancel

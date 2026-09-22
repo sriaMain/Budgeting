@@ -8,16 +8,16 @@ interface Props {
 
 const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <div>
-    <p className="text-xs text-gray-500">{label}</p>
-    <p className="text-sm text-gray-900 font-medium">{value || '-'}</p>
+    <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+    <p className="text-sm text-gray-900 font-medium dark:text-gray-100">{value || '-'}</p>
   </div>
 );
 
 export const Step3EmploymentDetails: React.FC<Props> = ({ detail }) => (
   <div className="space-y-4">
-    <div className="flex items-start gap-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
-      <Lock className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
-      <p className="text-xs text-gray-500">
+    <div className="flex items-start gap-2 bg-gray-50 border border-gray-200 rounded-lg p-3 dark:bg-gray-800 dark:border-gray-700">
+      <Lock className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 dark:text-gray-500" />
+      <p className="text-xs text-gray-500 dark:text-gray-400">
         These details were entered by HR when your onboarding was set up and cannot be changed here. If any of
         this looks incorrect, please contact HR directly.
       </p>

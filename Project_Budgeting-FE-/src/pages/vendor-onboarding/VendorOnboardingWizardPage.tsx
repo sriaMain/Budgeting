@@ -369,7 +369,7 @@ const VendorOnboardingWizardPage: React.FC = () => {
   if (loading || !choices) {
     return (
       <Layout userRole={layoutRole} currentPage="vendors" onNavigate={() => {}}>
-        <div className="text-center p-12 text-gray-500">Loading...</div>
+        <div className="text-center p-12 text-gray-500 dark:text-gray-400">Loading...</div>
       </Layout>
     );
   }
@@ -379,11 +379,11 @@ const VendorOnboardingWizardPage: React.FC = () => {
       <FormProvider {...methods}>
         <div className="space-y-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{vendorIdParam ? 'Edit Vendor' : 'Add Vendor'}</h1>
-            {vendorRefNo && <p className="text-sm text-gray-500 mt-1">Reference: {vendorRefNo}</p>}
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{vendorIdParam ? 'Edit Vendor' : 'Add Vendor'}</h1>
+            {vendorRefNo && <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Reference: {vendorRefNo}</p>}
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+          <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
             <VendorStepper
               steps={STEPS}
               currentStep={currentStep}
@@ -392,7 +392,7 @@ const VendorOnboardingWizardPage: React.FC = () => {
             />
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+          <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm dark:bg-gray-900 dark:border-gray-800">
             {currentStep === 1 && <Step1VendorDetails vendorTypeOptions={choices.vendor_types} />}
             {currentStep === 2 && <Step2KycCompliance />}
             {currentStep === 3 && <Step3BankDetails existingAccountNumberMasked={savedAccountNumberMasked} />}
@@ -425,7 +425,7 @@ const VendorOnboardingWizardPage: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
             {currentStep > 1 ? (
               <Button variant="secondary" className="!w-auto px-6" onClick={handleBack}>
                 Back

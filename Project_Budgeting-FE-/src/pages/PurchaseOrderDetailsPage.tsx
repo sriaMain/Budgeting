@@ -168,10 +168,10 @@ export default function PurchaseOrderDetailsPage() {
 
     const getStatusColor = (status: string) => {
         const s = status?.toLowerCase();
-        if (s === 'confirmed' || s === 'approved') return 'bg-green-100 text-green-700 border-green-200';
-        if (s === 'sent') return 'bg-blue-100 text-blue-700 border-blue-200';
-        if (s === 'draft') return 'bg-gray-100 text-gray-700 border-gray-200';
-        return 'bg-gray-100 text-gray-700 border-gray-200';
+        if (s === 'confirmed' || s === 'approved') return 'bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300 border-green-200 dark:border-green-500/30';
+        if (s === 'sent') return 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/30';
+        if (s === 'draft') return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800';
+        return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800';
     };
 
     if (isLoading) {
@@ -188,7 +188,7 @@ export default function PurchaseOrderDetailsPage() {
         return (
             <Layout userRole="admin" currentPage="pipeline" onNavigate={() => { }}>
                 <div className="flex items-center justify-center min-h-screen">
-                    <div className="text-gray-500">Purchase Order not found</div>
+                    <div className="text-gray-500 dark:text-gray-400">Purchase Order not found</div>
                 </div>
             </Layout>
         );
@@ -202,12 +202,12 @@ export default function PurchaseOrderDetailsPage() {
                     <div className="flex items-center gap-3">
                         <button
                             onClick={handleBack}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                             title="Go back"
                         >
-                            <ArrowLeft className="w-5 h-5 text-gray-600" />
+                            <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                         </button>
-                        <h1 className="text-2xl font-bold text-gray-900">Purchase Order Details</h1>
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Purchase Order Details</h1>
                     </div>
                     <div className="flex items-center gap-3">
                         <button 
@@ -225,24 +225,24 @@ export default function PurchaseOrderDetailsPage() {
                 </div>
 
                 {/* PO Information Card */}
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
+                <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm p-6 mb-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
                         {/* Left Column */}
                         <div>
                             <div className="mb-6">
-                                <label className="text-xs uppercase tracking-wider text-gray-500 font-semibold block mb-1">Purchase Order To</label>
-                                <p className="text-lg font-bold text-gray-900">{poData.vendor_name}</p>
-                                {poData.vendor_email && <p className="text-sm text-gray-600">{poData.vendor_email}</p>}
+                                <label className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold block mb-1">Purchase Order To</label>
+                                <p className="text-lg font-bold text-gray-900 dark:text-white">{poData.vendor_name}</p>
+                                {poData.vendor_email && <p className="text-sm text-gray-600 dark:text-gray-400">{poData.vendor_email}</p>}
                             </div>
 
                             <div className="grid grid-cols-2 gap-6">
                                 <div>
-                                    <label className="text-sm text-gray-500 block mb-1">PO Number</label>
-                                    <p className="font-medium text-gray-900">{poData.po_no}</p>
+                                    <label className="text-sm text-gray-500 dark:text-gray-400 block mb-1">PO Number</label>
+                                    <p className="font-medium text-gray-900 dark:text-white">{poData.po_no}</p>
                                 </div>
                                 <div>
-                                    <label className="text-sm text-gray-500 block mb-1">Date</label>
-                                    <p className="font-medium text-gray-900">
+                                    <label className="text-sm text-gray-500 dark:text-gray-400 block mb-1">Date</label>
+                                    <p className="font-medium text-gray-900 dark:text-white">
                                         {poData.issue_date ? new Date(poData.issue_date).toLocaleDateString() : 'N/A'}
                                     </p>
                                 </div>
@@ -252,19 +252,19 @@ export default function PurchaseOrderDetailsPage() {
                         {/* Right Column */}
                         <div>
                             <div className="mb-6">
-                                <label className="text-xs uppercase tracking-wider text-gray-500 font-semibold block mb-1">Details</label>
+                                <label className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold block mb-1">Details</label>
                                 <div className="space-y-3">
-                                    <div className="flex justify-between border-b border-gray-100 pb-2">
-                                        <span className="text-gray-600">Reference Quote</span>
-                                        <span className="font-medium text-gray-900">#{poData.quote}</span>
+                                    <div className="flex justify-between border-b border-gray-100 dark:border-gray-800 pb-2">
+                                        <span className="text-gray-600 dark:text-gray-400">Reference Quote</span>
+                                        <span className="font-medium text-gray-900 dark:text-white">#{poData.quote}</span>
                                     </div>
-                                    <div className="flex justify-between border-b border-gray-100 pb-2">
-                                        <span className="text-gray-600">Created By</span>
-                                        <span className="font-medium text-gray-900">{poData.employee_name}</span>
+                                    <div className="flex justify-between border-b border-gray-100 dark:border-gray-800 pb-2">
+                                        <span className="text-gray-600 dark:text-gray-400">Created By</span>
+                                        <span className="font-medium text-gray-900 dark:text-white">{poData.employee_name}</span>
                                     </div>
-                                    <div className="flex justify-between border-b border-gray-100 pb-2">
-                                        <span className="text-gray-600">Subtotal</span>
-                                        <span className="font-medium text-gray-900">₹{parseFloat(poData.sub_total).toLocaleString('en-IN')}</span>
+                                    <div className="flex justify-between border-b border-gray-100 dark:border-gray-800 pb-2">
+                                        <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
+                                        <span className="font-medium text-gray-900 dark:text-white">₹{parseFloat(poData.sub_total).toLocaleString('en-IN')}</span>
                                     </div>
                                 </div>
                             </div>
@@ -273,40 +273,40 @@ export default function PurchaseOrderDetailsPage() {
                 </div>
 
                 {/* Items Table */}
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+                <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden mb-6">
                     <div className="overflow-x-auto">
                         <table className="w-full">
-                            <thead className="bg-gray-50 border-b border-gray-200">
+                            <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-800">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Item Details</th>
-                                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Qty</th>
-                                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Unit Price</th>
-                                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Item Details</th>
+                                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Qty</th>
+                                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Unit Price</th>
+                                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Amount</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-100">
+                            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                                 {poData.items?.map((item, index) => (
-                                    <tr key={index} className="hover:bg-gray-50">
+                                    <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                                         <td className="px-6 py-4">
-                                            <p className="text-sm font-medium text-gray-900">{item.service_name}</p>
-                                            {item.description && <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>}
+                                            <p className="text-sm font-medium text-gray-900 dark:text-white">{item.service_name}</p>
+                                            {item.description && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{item.description}</p>}
                                         </td>
-                                        <td className="px-6 py-4 text-center text-sm text-gray-900">
+                                        <td className="px-6 py-4 text-center text-sm text-gray-900 dark:text-white">
                                             {parseFloat(item.quantity).toLocaleString('en-IN')}
                                         </td>
-                                        <td className="px-6 py-4 text-right text-sm text-gray-900">
+                                        <td className="px-6 py-4 text-right text-sm text-gray-900 dark:text-white">
                                             ₹{parseFloat(item.unit_rate).toLocaleString('en-IN')}
                                         </td>
-                                        <td className="px-6 py-4 text-right text-sm font-medium text-gray-900">
+                                        <td className="px-6 py-4 text-right text-sm font-medium text-gray-900 dark:text-white">
                                             ₹{parseFloat(item.amount).toLocaleString('en-IN')}
                                         </td>
                                     </tr>
                                 ))}
                             </tbody>
-                            <tfoot className="bg-gray-50">
+                            <tfoot className="bg-gray-50 dark:bg-gray-800">
                                 <tr>
-                                    <td colSpan={3} className="px-6 py-4 text-right text-sm font-semibold text-gray-900">Total Amount</td>
-                                    <td className="px-6 py-4 text-right text-sm font-bold text-blue-600">
+                                    <td colSpan={3} className="px-6 py-4 text-right text-sm font-semibold text-gray-900 dark:text-white">Total Amount</td>
+                                    <td className="px-6 py-4 text-right text-sm font-bold text-blue-600 dark:text-blue-400">
                                         ₹{parseFloat(poData.total_amount).toLocaleString('en-IN')}
                                     </td>
                                 </tr>
@@ -320,7 +320,7 @@ export default function PurchaseOrderDetailsPage() {
                     <button
                         onClick={handleDelete}
                         disabled={isActionLoading}
-                        className="flex items-center gap-2 px-5 py-2.5 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors font-medium mr-auto disabled:opacity-50"
+                        className="flex items-center gap-2 px-5 py-2.5 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors font-medium mr-auto disabled:opacity-50"
                     >
                         <Trash2 size={18} />
                         <span>Delete</span>
@@ -329,7 +329,7 @@ export default function PurchaseOrderDetailsPage() {
                     <button
                         onClick={handleDownloadPDF}
                         disabled={isActionLoading}
-                        className="flex items-center gap-2 px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium shadow-sm disabled:opacity-50"
+                        className="flex items-center gap-2 px-5 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300 font-medium shadow-sm disabled:opacity-50"
                     >
                         <FileText size={18} />
                         <span>Download PDF</span>

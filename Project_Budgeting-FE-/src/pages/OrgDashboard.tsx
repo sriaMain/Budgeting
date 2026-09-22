@@ -17,8 +17,9 @@ import { ApprovalDrawer } from '../components/ApprovalDrawer';
 import { RecordPaymentModal } from '../components/RecordPaymentModal';
 import { CreateProjectModal } from '../components/CreateProjectModal';
 import { formatCurrency, formatCurrencyCompact } from '../utils/format';
-import { CHART_CATEGORICAL, CHART_CHROME } from '../utils/chartTheme';
+import { CHART_CATEGORICAL, getChartChrome } from '../utils/chartTheme';
 import { useAppSelector } from '../hooks/useAppSelector';
+import { useTheme } from '../hooks/useTheme';
 import {
   getMetrics, getOrgOverview, getTaskStatusGrouped, getWeeklySummary, getAdminOverview,
 } from '../services/dashboard';
@@ -82,6 +83,8 @@ const PORTFOLIO_TILES: { key: keyof AdminOverview['portfolio']; label: string; s
 export const OrgDashboard: React.FC = () => {
   const navigate = useNavigate();
   const username = useAppSelector((state) => state.auth.username);
+  const { theme } = useTheme();
+  const chartChrome = getChartChrome(theme);
 
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [overview, setOverview] = useState<OrgOverview | null>(null);
@@ -181,9 +184,9 @@ export const OrgDashboard: React.FC = () => {
       {/* Compact dashboard header (Section 5) */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{dateRangeLabel}</p>
-          <h1 className="text-xl font-bold text-gray-900 mt-0.5">{greeting}, {username || 'there'}</h1>
-          <p className="text-sm text-gray-500">Project Budgeting Overview</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{dateRangeLabel}</p>
+          <h1 className="text-xl font-bold text-gray-900 mt-0.5 dark:text-white">{greeting}, {username || 'there'}</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Project Budgeting Overview</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -196,7 +199,7 @@ export const OrgDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/reports')}
-            className="px-4 py-2 bg-white border border-gray-200 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            className="px-4 py-2 bg-white border border-gray-200 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition-colors dark:bg-gray-900 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             Export
           </button>
@@ -209,7 +212,7 @@ export const OrgDashboard: React.FC = () => {
           <button
             key={path}
             onClick={() => navigate(path)}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm dark:bg-gray-900 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:border-gray-700"
           >
             <Icon size={16} className="text-teal-700" />
             {label}
@@ -285,17 +288,21 @@ export const OrgDashboard: React.FC = () => {
         >
           <ResponsiveContainer width="100%" height={260}>
             <AreaChart data={overview?.revenue_trend ?? []} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-              <CartesianGrid stroke={CHART_CHROME.grid} vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: CHART_CHROME.axis, fontSize: 12 }} axisLine={{ stroke: CHART_CHROME.grid }} tickLine={false} />
+              <CartesianGrid stroke={chartChrome.grid} vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: chartChrome.axis, fontSize: 12 }} axisLine={{ stroke: chartChrome.grid }} tickLine={false} />
               <YAxis
-                tick={{ fill: CHART_CHROME.axis, fontSize: 12 }}
+                tick={{ fill: chartChrome.axis, fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
                 width={48}
                 tickFormatter={(v: number) => formatCurrencyCompact(v)}
               />
-              <Tooltip formatter={(v) => formatCurrency(v as number)} contentStyle={{ borderRadius: 8, borderColor: CHART_CHROME.grid }} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Tooltip
+                formatter={(v) => formatCurrency(v as number)}
+                contentStyle={{ borderRadius: 8, borderColor: chartChrome.tooltipBorder, backgroundColor: chartChrome.tooltipBg, color: chartChrome.tooltipText }}
+                labelStyle={{ color: chartChrome.tooltipText }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, color: chartChrome.textSecondary }} />
               <Area type="monotone" dataKey="invoiced" name="Revenue" stroke={CHART_CATEGORICAL[0]} fill={CHART_CATEGORICAL[0]} fillOpacity={0.1} strokeWidth={2} />
               <Area type="monotone" dataKey="received" name="Received" stroke={CHART_CATEGORICAL[1]} fill={CHART_CATEGORICAL[1]} fillOpacity={0.1} strokeWidth={2} />
               <Area type="monotone" dataKey="expenses" name="Cost" stroke={CHART_CATEGORICAL[2]} fill={CHART_CATEGORICAL[2]} fillOpacity={0.1} strokeWidth={2} />
@@ -306,39 +313,39 @@ export const OrgDashboard: React.FC = () => {
         <ChartCard title="Profitability Summary" loading={loading}>
           <div className="space-y-2.5">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-500">Revenue</span>
-              <span className="font-semibold text-gray-900">{admin ? formatCurrency(admin.kpis.total_revenue) : '—'}</span>
+              <span className="text-gray-500 dark:text-gray-400">Revenue</span>
+              <span className="font-semibold text-gray-900 dark:text-white">{admin ? formatCurrency(admin.kpis.total_revenue) : '—'}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-500">Cost</span>
-              <span className="font-semibold text-gray-900">{admin ? formatCurrency(admin.kpis.total_cost) : '—'}</span>
+              <span className="text-gray-500 dark:text-gray-400">Cost</span>
+              <span className="font-semibold text-gray-900 dark:text-white">{admin ? formatCurrency(admin.kpis.total_cost) : '—'}</span>
             </div>
-            <div className="flex items-center justify-between text-sm border-t border-gray-100 pt-2.5">
-              <span className="text-gray-500">Gross Profit</span>
-              <span className={`font-semibold ${admin && admin.kpis.gross_profit < 0 ? 'text-risk-600' : 'text-teal-700'}`}>
+            <div className="flex items-center justify-between text-sm border-t border-gray-100 pt-2.5 dark:border-gray-800">
+              <span className="text-gray-500 dark:text-gray-400">Gross Profit</span>
+              <span className={`font-semibold ${admin && admin.kpis.gross_profit < 0 ? 'text-risk-600 dark:text-red-400' : 'text-teal-700'}`}>
                 {admin ? formatCurrency(admin.kpis.gross_profit) : '—'}
               </span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-500">Margin %</span>
-              <span className="font-semibold text-gray-900">
+              <span className="text-gray-500 dark:text-gray-400">Margin %</span>
+              <span className="font-semibold text-gray-900 dark:text-white">
                 {admin?.kpis.margin_percent != null ? `${admin.kpis.margin_percent}%` : '—'}
               </span>
             </div>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-3 gap-2 text-sm">
+          <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-3 gap-2 text-sm dark:border-gray-800">
             <div>
-              <p className="text-xs text-gray-500">Budget</p>
-              <p className="font-semibold text-gray-900">{admin ? formatCurrencyCompact(admin.kpis.budget) : '—'}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Budget</p>
+              <p className="font-semibold text-gray-900 dark:text-white">{admin ? formatCurrencyCompact(admin.kpis.budget) : '—'}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Actual</p>
-              <p className="font-semibold text-gray-900">{admin ? formatCurrencyCompact(admin.kpis.actual_spend) : '—'}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Actual</p>
+              <p className="font-semibold text-gray-900 dark:text-white">{admin ? formatCurrencyCompact(admin.kpis.actual_spend) : '—'}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Variance</p>
-              <p className={`font-semibold ${budgetVariance < 0 ? 'text-risk-600' : 'text-teal-700'}`}>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Variance</p>
+              <p className={`font-semibold ${budgetVariance < 0 ? 'text-risk-600 dark:text-red-400' : 'text-teal-700'}`}>
                 {admin ? formatCurrencyCompact(budgetVariance) : '—'}
               </p>
             </div>
@@ -370,7 +377,7 @@ export const OrgDashboard: React.FC = () => {
             {
               header: 'Margin',
               accessor: (p) => (
-                <span className={p.margin < 0 ? 'text-risk-600 font-medium' : ''}>{formatCurrencyCompact(p.margin)}</span>
+                <span className={p.margin < 0 ? 'text-risk-600 font-medium dark:text-red-400' : ''}>{formatCurrencyCompact(p.margin)}</span>
               ),
               className: 'text-right',
             },
@@ -394,12 +401,65 @@ export const OrgDashboard: React.FC = () => {
               key={tile.key}
               type="button"
               onClick={() => navigate(tile.statusFilter ? `/projects?status=${tile.statusFilter}` : '/projects')}
-              className="rounded-lg border border-gray-200 p-3 text-center hover:bg-gray-50 hover:border-gray-300 transition-colors"
+              className="rounded-lg border border-gray-200 p-3 text-center hover:bg-gray-50 hover:border-gray-300 transition-colors dark:border-gray-800 dark:hover:bg-gray-800 dark:hover:border-gray-700"
             >
-              <p className="text-xl font-bold text-gray-900">{admin ? admin.portfolio[tile.key] : '—'}</p>
-              <p className="text-xs text-gray-500 mt-1">{tile.label}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white">{admin ? admin.portfolio[tile.key] : '—'}</p>
+              <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{tile.label}</p>
             </button>
           ))}
+        </div>
+      </ChartCard>
+
+      {/* Freelancer Overview (Business Partner enhancement, Section 20) - counts
+          only, never PAN/bank data. */}
+      <ChartCard title="Freelancers" loading={loading}>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+          <button
+            type="button"
+            onClick={() => navigate('/contacts')}
+            className="rounded-lg border border-gray-200 p-3 text-center hover:bg-gray-50 hover:border-gray-300 transition-colors dark:border-gray-800 dark:hover:bg-gray-800 dark:hover:border-gray-700"
+          >
+            <p className="text-xl font-bold text-gray-900 dark:text-white">{admin ? admin.freelancers.total : '—'}</p>
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Total</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/contacts')}
+            className="rounded-lg border border-gray-200 p-3 text-center hover:bg-gray-50 hover:border-gray-300 transition-colors dark:border-gray-800 dark:hover:bg-gray-800 dark:hover:border-gray-700"
+          >
+            <p className="text-xl font-bold text-gray-900 dark:text-white">{admin ? admin.freelancers.active : '—'}</p>
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Active</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/contacts')}
+            className="rounded-lg border border-gray-200 p-3 text-center hover:bg-gray-50 hover:border-gray-300 transition-colors dark:border-gray-800 dark:hover:bg-gray-800 dark:hover:border-gray-700"
+          >
+            <p className="text-xl font-bold text-gray-900 dark:text-white">{admin ? admin.freelancers.available : '—'}</p>
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Available</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/contacts')}
+            className="rounded-lg border border-gray-200 p-3 text-center hover:bg-gray-50 hover:border-gray-300 transition-colors dark:border-gray-800 dark:hover:bg-gray-800 dark:hover:border-gray-700"
+          >
+            <p className="text-xl font-bold text-gray-900 dark:text-white">{admin ? admin.freelancers.assigned : '—'}</p>
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Assigned</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/contacts')}
+            className="rounded-lg border border-gray-200 p-3 text-center hover:bg-gray-50 hover:border-gray-300 transition-colors dark:border-gray-800 dark:hover:bg-gray-800 dark:hover:border-gray-700"
+          >
+            <p className="text-xl font-bold text-gray-900 dark:text-white">{admin ? admin.freelancers.pending_onboarding : '—'}</p>
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Pending Onboarding</p>
+          </button>
+          <div className="rounded-lg border border-gray-200 p-3 text-center dark:border-gray-800">
+            <p className="text-xl font-bold text-gray-900 dark:text-white">
+              {admin ? formatCurrencyCompact(admin.freelancers.cost_this_month) : '—'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">Cost This Month</p>
+          </div>
         </div>
       </ChartCard>
 
@@ -412,19 +472,19 @@ export const OrgDashboard: React.FC = () => {
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
           <div>
-            <p className="text-xs text-gray-500">Total Outstanding</p>
-            <p className="text-lg font-bold text-gray-900">{admin ? formatCurrencyCompact(admin.receivables.summary.total_outstanding) : '—'}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Total Outstanding</p>
+            <p className="text-lg font-bold text-gray-900 dark:text-white">{admin ? formatCurrencyCompact(admin.receivables.summary.total_outstanding) : '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Due This Week</p>
-            <p className="text-lg font-bold text-amber-600">{admin ? formatCurrencyCompact(admin.receivables.summary.due_this_week) : '—'}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Due This Week</p>
+            <p className="text-lg font-bold text-amber-600 dark:text-amber-400">{admin ? formatCurrencyCompact(admin.receivables.summary.due_this_week) : '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Overdue</p>
-            <p className="text-lg font-bold text-risk-600">{admin ? formatCurrencyCompact(admin.receivables.summary.overdue) : '—'}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Overdue</p>
+            <p className="text-lg font-bold text-risk-600 dark:text-red-400">{admin ? formatCurrencyCompact(admin.receivables.summary.overdue) : '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Paid This Month</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Paid This Month</p>
             <p className="text-lg font-bold text-teal-700">{admin ? formatCurrencyCompact(admin.receivables.summary.paid_this_month) : '—'}</p>
           </div>
         </div>
@@ -441,7 +501,7 @@ export const OrgDashboard: React.FC = () => {
             { header: 'Amount', accessor: (i) => formatCurrencyCompact(i.amount), className: 'text-right' },
             {
               header: 'Outstanding',
-              accessor: (i) => <span className="font-medium text-risk-600">{formatCurrencyCompact(i.outstanding)}</span>,
+              accessor: (i) => <span className="font-medium text-risk-600 dark:text-red-400">{formatCurrencyCompact(i.outstanding)}</span>,
               className: 'text-right',
             },
             {
@@ -486,7 +546,7 @@ export const OrgDashboard: React.FC = () => {
             {
               header: 'Variance',
               accessor: (r) => (
-                <span className={`font-semibold ${r.variance < 0 ? 'text-risk-600' : 'text-teal-700'}`}>
+                <span className={`font-semibold ${r.variance < 0 ? 'text-risk-600 dark:text-red-400' : 'text-teal-700'}`}>
                   {formatCurrencyCompact(r.variance)}
                 </span>
               ),
@@ -509,12 +569,12 @@ export const OrgDashboard: React.FC = () => {
             {admin?.resource_utilization.map((r) => (
               <button key={r.name} type="button" onClick={() => navigate('/task-management')} className="w-full text-left group">
                 <div className="flex items-center justify-between text-sm mb-1">
-                  <span className="text-gray-700 group-hover:text-gray-900">{r.name}</span>
-                  <span className="font-medium text-gray-900">{r.allocation_percent}%</span>
+                  <span className="text-gray-700 group-hover:text-gray-900 dark:text-gray-300 dark:group-hover:text-white">{r.name}</span>
+                  <span className="font-medium text-gray-900 dark:text-white">{r.allocation_percent}%</span>
                 </div>
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden dark:bg-gray-800">
                   <div
-                    className={`h-full rounded-full ${r.allocation_percent > 100 ? 'bg-risk-600' : r.allocation_percent > 85 ? 'bg-amber-500' : 'bg-teal-600'}`}
+                    className={`h-full rounded-full ${r.allocation_percent > 100 ? 'bg-risk-600 dark:bg-red-500' : r.allocation_percent > 85 ? 'bg-amber-500' : 'bg-teal-600'}`}
                     style={{ width: `${Math.min(100, r.allocation_percent)}%` }}
                   />
                 </div>
@@ -530,16 +590,16 @@ export const OrgDashboard: React.FC = () => {
           isEmpty={!loading && !(admin?.action_center.length)}
           emptyMessage="Nothing needs attention right now."
         >
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
             {admin?.action_center.map((item) => (
               <button
                 key={item.type}
                 type="button"
                 onClick={() => navigate(item.link)}
-                className="w-full flex items-center justify-between py-3 px-2 -mx-2 rounded-lg text-left hover:bg-gray-50 transition-colors"
+                className="w-full flex items-center justify-between py-3 px-2 -mx-2 rounded-lg text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
               >
-                <span className="text-sm text-gray-900">{item.label}</span>
-                <ChevronRight size={16} className="text-gray-400" />
+                <span className="text-sm text-gray-900 dark:text-gray-100">{item.label}</span>
+                <ChevronRight size={16} className="text-gray-400 dark:text-gray-500" />
               </button>
             ))}
           </div>
@@ -561,11 +621,11 @@ export const OrgDashboard: React.FC = () => {
               <div key={index} className="flex items-start gap-3 text-sm">
                 <div className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-1.5 shrink-0" aria-hidden="true" />
                 <div className="min-w-0">
-                  <p className="text-gray-900">
+                  <p className="text-gray-900 dark:text-gray-100">
                     <span className="font-medium">{event.user}</span> {event.action}{' '}
                     <span className="font-medium">{event.object}</span>
                   </p>
-                  <p className="text-xs text-gray-500">{timeSince(event.time)}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{timeSince(event.time)}</p>
                 </div>
               </div>
             ))}
@@ -579,17 +639,17 @@ export const OrgDashboard: React.FC = () => {
           isEmpty={!loading && queue.length === 0}
           emptyMessage="Nothing needs your decision right now."
         >
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
             {queue.slice(0, 5).map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => openApproval(item)}
-                className="w-full flex items-center justify-between gap-3 py-3 px-2 -mx-2 rounded-lg text-left hover:bg-gray-50 transition-colors"
+                className="w-full flex items-center justify-between gap-3 py-3 px-2 -mx-2 rounded-lg text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5 truncate">
+                  <p className="text-sm font-medium text-gray-900 truncate dark:text-gray-100">{item.name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate dark:text-gray-400">
                     {item.vendor_type_display}
                     {item.vendor_reference_no ? ` · ${item.vendor_reference_no}` : ''}
                   </p>
@@ -626,11 +686,11 @@ export const OrgDashboard: React.FC = () => {
                 cursor="pointer"
               >
                 {projectStatusData.map((_, i) => (
-                  <Cell key={i} fill={CHART_CATEGORICAL[i % CHART_CATEGORICAL.length]} stroke="#fff" strokeWidth={2} />
+                  <Cell key={i} fill={CHART_CATEGORICAL[i % CHART_CATEGORICAL.length]} stroke={chartChrome.sliceStroke} strokeWidth={2} />
                 ))}
               </Pie>
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Tooltip contentStyle={{ borderRadius: 8, borderColor: chartChrome.tooltipBorder, backgroundColor: chartChrome.tooltipBg, color: chartChrome.tooltipText }} labelStyle={{ color: chartChrome.tooltipText }} />
+              <Legend wrapperStyle={{ fontSize: 12, color: chartChrome.textSecondary }} />
             </PieChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -638,10 +698,10 @@ export const OrgDashboard: React.FC = () => {
         <ChartCard title="Tasks by Status" loading={loading} isEmpty={!loading && !taskStatusData.some((d) => d.count > 0)}>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={taskStatusData} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-              <CartesianGrid stroke={CHART_CHROME.grid} vertical={false} />
-              <XAxis dataKey="status" tick={{ fill: CHART_CHROME.axis, fontSize: 11 }} axisLine={{ stroke: CHART_CHROME.grid }} tickLine={false} />
-              <YAxis allowDecimals={false} tick={{ fill: CHART_CHROME.axis, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
-              <Tooltip contentStyle={{ borderRadius: 8, borderColor: CHART_CHROME.grid }} />
+              <CartesianGrid stroke={chartChrome.grid} vertical={false} />
+              <XAxis dataKey="status" tick={{ fill: chartChrome.axis, fontSize: 11 }} axisLine={{ stroke: chartChrome.grid }} tickLine={false} />
+              <YAxis allowDecimals={false} tick={{ fill: chartChrome.axis, fontSize: 12 }} axisLine={false} tickLine={false} width={32} />
+              <Tooltip contentStyle={{ borderRadius: 8, borderColor: chartChrome.tooltipBorder, backgroundColor: chartChrome.tooltipBg, color: chartChrome.tooltipText }} labelStyle={{ color: chartChrome.tooltipText }} />
               <Bar
                 dataKey="count"
                 fill={CHART_CATEGORICAL[0]}
@@ -660,16 +720,16 @@ export const OrgDashboard: React.FC = () => {
           loading={loading}
           isEmpty={!loading && !(overview?.top_projects.length)}
         >
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
             {overview?.top_projects.map((p) => (
               <div
                 key={p.project_no}
                 onClick={() => navigate(`/projects/${p.project_no}`)}
-                className="flex items-center justify-between py-3 px-2 -mx-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                className="flex items-center justify-between py-3 px-2 -mx-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
               >
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{p.project_name}</p>
-                  <p className="text-xs text-gray-500">Budget {formatCurrencyCompact(p.total_budget)}</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{p.project_name}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Budget {formatCurrencyCompact(p.total_budget)}</p>
                 </div>
                 <span className="text-sm font-semibold text-teal-700">{formatCurrencyCompact(p.forecasted_profit)}</span>
               </div>
@@ -689,19 +749,19 @@ export const OrgDashboard: React.FC = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-gray-500 border-b border-gray-100">
+              <tr className="text-left text-gray-500 border-b border-gray-100 dark:text-gray-400 dark:border-gray-800">
                 <th className="py-2 font-medium">Employee</th>
                 <th className="py-2 font-medium text-right">Hours logged</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
               {weekly?.data
                 .slice()
                 .sort((a, b) => b.total_hours - a.total_hours)
                 .map((row) => (
                   <tr key={row.employee.id}>
-                    <td className="py-2 text-gray-900">{row.employee.name || row.employee.username}</td>
-                    <td className="py-2 text-right text-gray-700 tabular-nums">{row.total_formatted}</td>
+                    <td className="py-2 text-gray-900 dark:text-gray-100">{row.employee.name || row.employee.username}</td>
+                    <td className="py-2 text-right text-gray-700 tabular-nums dark:text-gray-300">{row.total_formatted}</td>
                   </tr>
                 ))}
             </tbody>

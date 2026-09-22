@@ -31,36 +31,36 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({ quote, index, onClick }) =
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           onClick={() => onClick?.(quote)}
-          className={`bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer ${snapshot.isDragging ? 'shadow-lg ring-2 ring-blue-500 ring-opacity-50' : ''
+          className={`bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer dark:bg-gray-900 dark:border-gray-800 ${snapshot.isDragging ? 'shadow-lg ring-2 ring-blue-500 ring-opacity-50 dark:ring-violet-500' : ''
             }`}
         >
           {/* Header */}
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-gray-400" />
-              <span className="font-semibold text-gray-900 text-sm">{quote.client_name}</span>
+              <Building2 className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+              <span className="font-semibold text-gray-900 text-sm dark:text-white">{quote.client_name}</span>
             </div>
-            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">
+            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium dark:bg-blue-500/15 dark:text-blue-300">
               #{quote.quote_no}
             </span>
           </div>
 
           {/* Quote Name */}
           <div className="mb-3">
-            <p className="text-sm font-medium text-gray-700 truncate" title={quote.quote_name}>
+            <p className="text-sm font-medium text-gray-700 truncate dark:text-gray-300" title={quote.quote_name}>
               {quote.quote_name}
             </p>
           </div>
 
           {/* Date */}
-          <div className="text-xs text-gray-500 mb-3">
+          <div className="text-xs text-gray-500 mb-3 dark:text-gray-400">
             <span>Issue Date: {formatDate(quote.date_of_issue)}</span>
           </div>
 
           {/* Value */}
-          <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
-            <span className="text-xs text-gray-500 font-medium">Quote Value</span>
-            <span className="font-bold text-gray-900">
+          <div className="pt-3 border-t border-gray-100 flex items-center justify-between dark:border-gray-800">
+            <span className="text-xs text-gray-500 font-medium dark:text-gray-400">Quote Value</span>
+            <span className="font-bold text-gray-900 dark:text-white">
               ₹{quoteValue.toLocaleString('en-IN', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2

@@ -82,8 +82,8 @@ const VendorApprovalQueuePage: React.FC = () => {
       header: 'Request',
       accessor: (v) => (
         <div>
-          <p className="font-medium text-gray-900">{v.name}</p>
-          <p className="text-xs text-gray-500">{v.vendor_reference_no ?? '—'}</p>
+          <p className="font-medium text-gray-900 dark:text-gray-100">{v.name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{v.vendor_reference_no ?? '—'}</p>
         </div>
       ),
     },
@@ -101,7 +101,7 @@ const VendorApprovalQueuePage: React.FC = () => {
           <button
             type="button"
             onClick={() => setRequestTarget(v)}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium border border-amber-600 text-amber-700 hover:bg-amber-50 transition-colors"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium border border-amber-600 text-amber-700 hover:bg-amber-50 transition-colors dark:text-amber-400 dark:hover:bg-amber-500/10"
           >
             Request changes
           </button>
@@ -121,7 +121,7 @@ const VendorApprovalQueuePage: React.FC = () => {
   return (
     <AppShell breadcrumb="Administration" title="Approval workbench">
       <div className="space-y-6">
-        <p className="text-sm text-gray-600">Vendor onboarding requests currently awaiting your approval.</p>
+        <p className="text-sm text-gray-600 dark:text-gray-300">Vendor onboarding requests currently awaiting your approval.</p>
 
         <DataTable
           data={vendors}

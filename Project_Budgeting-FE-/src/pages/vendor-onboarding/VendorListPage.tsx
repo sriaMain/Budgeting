@@ -176,7 +176,7 @@ export function VendorListContent() {
     <div className="space-y-4 sm:space-y-6 animate-fade-in-down">
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
-        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Vendor Requests</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Vendor Requests</h2>
 
         <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto flex-wrap">
           <div className="relative flex-1 sm:flex-initial">
@@ -185,14 +185,14 @@ export function VendorListContent() {
               placeholder="Search vendor requests..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-64 text-sm sm:text-base"
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-64 text-sm sm:text-base dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
             />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 dark:text-gray-500" />
           </div>
 
           <button
             onClick={() => setShowFilters((s) => !s)}
-            className="flex items-center gap-2 px-3 sm:px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 font-semibold transition-colors whitespace-nowrap text-sm sm:text-base"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 font-semibold transition-colors whitespace-nowrap text-sm sm:text-base dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             <Filter size={18} className="sm:w-5 sm:h-5" />
             <span className="hidden sm:inline">Filters</span>
@@ -200,7 +200,7 @@ export function VendorListContent() {
 
           <button
             onClick={() => navigate('/vendors/add')}
-            className="flex items-center gap-2 border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 sm:px-5 py-2 rounded-md font-semibold transition-colors whitespace-nowrap text-sm sm:text-base"
+            className="flex items-center gap-2 border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 sm:px-5 py-2 rounded-md font-semibold transition-colors whitespace-nowrap text-sm sm:text-base dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             <Plus size={18} className="sm:w-5 sm:h-5" />
             <span className="hidden sm:inline">Add Vendor</span>
@@ -261,24 +261,24 @@ export function VendorListContent() {
         onChange={handleTabOrCardClick}
       />
 
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-500 dark:text-gray-400">
         Search matches vendor name, email, phone, PAN or GSTIN.
       </p>
 
       {showFilters && choices && (
-        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <select
               value={filters.status || ''}
               onChange={(e) => setFilters({ ...filters, status: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500"
             >
               {ADVANCED_STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
             <select
               value={filters.vendor_type || ''}
               onChange={(e) => setFilters({ ...filters, vendor_type: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500"
             >
               <option value="">All Vendor Types</option>
               {choices.vendor_types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -287,18 +287,18 @@ export function VendorListContent() {
               placeholder="Company Code"
               value={filters.company_code || ''}
               onChange={(e) => setFilters({ ...filters, company_code: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500"
             />
             <input
               placeholder="Plant"
               value={filters.plant || ''}
               onChange={(e) => setFilters({ ...filters, plant: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500"
             />
             <select
               value={filters.gst_registered ?? ''}
               onChange={(e) => setFilters({ ...filters, gst_registered: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500"
             >
               <option value="">GST Registered - Any</option>
               <option value="true">GST Registered - Yes</option>
@@ -307,35 +307,35 @@ export function VendorListContent() {
             <select
               value={filters.msme_registered ?? ''}
               onChange={(e) => setFilters({ ...filters, msme_registered: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500"
             >
               <option value="">MSME Registered - Any</option>
               <option value="true">MSME Registered - Yes</option>
               <option value="false">MSME Registered - No</option>
             </select>
-            <label className="flex items-center gap-2 text-xs text-gray-500">
+            <label className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               From
               <input
                 type="date"
                 value={filters.date_from || ''}
                 onChange={(e) => setFilters({ ...filters, date_from: e.target.value || undefined })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
               />
             </label>
-            <label className="flex items-center gap-2 text-xs text-gray-500">
+            <label className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               To
               <input
                 type="date"
                 value={filters.date_to || ''}
                 onChange={(e) => setFilters({ ...filters, date_to: e.target.value || undefined })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
               />
             </label>
             <div className="flex gap-2 col-span-1 sm:col-span-2 lg:col-span-2">
               <button onClick={handleApplyFilters} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
                 Apply Filters
               </button>
-              <button onClick={handleClearFilters} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 flex items-center justify-center gap-1">
+              <button onClick={handleClearFilters} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 flex items-center justify-center gap-1 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
                 <X className="w-3.5 h-3.5" /> Clear
               </button>
             </div>
@@ -344,20 +344,20 @@ export function VendorListContent() {
       )}
 
       {loading ? (
-        <div className="text-center p-12 text-gray-500">Loading vendor requests...</div>
+        <div className="text-center p-12 text-gray-500 dark:text-gray-400">Loading vendor requests...</div>
       ) : vendors.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center shadow-sm">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Users className="w-8 h-8 text-gray-400" />
+        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center shadow-sm dark:bg-gray-900 dark:border-gray-800">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 dark:bg-gray-800">
+            <Users className="w-8 h-8 text-gray-400 dark:text-gray-500" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No vendor requests found</h3>
-          <p className="text-gray-600">Get started by raising your first vendor request</p>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">No vendor requests found</h3>
+          <p className="text-gray-600 dark:text-gray-300">Get started by raising your first vendor request</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-x-auto">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-x-auto dark:bg-gray-900 dark:border-gray-800">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              <tr className="border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide dark:border-gray-700 dark:text-gray-400">
                 <th className="px-4 py-3">Reference</th>
                 <th className="px-4 py-3">Vendor Name</th>
                 <th className="px-4 py-3">Email</th>
@@ -371,24 +371,24 @@ export function VendorListContent() {
             </thead>
             <tbody>
               {vendors.map((vendor) => (
-                <tr key={vendor.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{vendor.vendor_reference_no || '—'}</td>
-                  <td className="px-4 py-3 text-gray-900">{vendor.name || 'Untitled'}</td>
-                  <td className="px-4 py-3 text-gray-600">{vendor.email || '-'}</td>
-                  <td className="px-4 py-3 text-gray-600">{vendor.vendor_type_display}</td>
+                <tr key={vendor.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800">
+                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{vendor.vendor_reference_no || '—'}</td>
+                  <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{vendor.name || 'Untitled'}</td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{vendor.email || '-'}</td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{vendor.vendor_type_display}</td>
                   <td className="px-4 py-3"><StatusBadge status={vendor.status} /></td>
-                  <td className="px-4 py-3 text-gray-600">{vendor.current_stage}</td>
-                  <td className="px-4 py-3 text-gray-500">{vendor.submitted_at ? new Date(vendor.submitted_at).toLocaleDateString() : '-'}</td>
-                  <td className="px-4 py-3 text-gray-500">{new Date(vendor.updated_at).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{vendor.current_stage}</td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{vendor.submitted_at ? new Date(vendor.submitted_at).toLocaleDateString() : '-'}</td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{new Date(vendor.updated_at).toLocaleDateString()}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
-                      <button onClick={() => handleRowClick(vendor)} className="text-blue-600 hover:text-blue-800 font-medium text-xs">
+                      <button onClick={() => handleRowClick(vendor)} className="text-blue-600 hover:text-blue-800 font-medium text-xs dark:text-blue-400 dark:hover:text-blue-300">
                         View
                       </button>
                       {vendor.is_archived ? (
                         <button
                           onClick={() => handleUnarchive(vendor)}
-                          className="flex items-center gap-1 text-gray-600 hover:text-gray-900 font-medium text-xs"
+                          className="flex items-center gap-1 text-gray-600 hover:text-gray-900 font-medium text-xs dark:text-gray-400 dark:hover:text-gray-200"
                           title="Restore to main list"
                         >
                           <ArchiveRestore className="w-3.5 h-3.5" /> Restore
@@ -396,7 +396,7 @@ export function VendorListContent() {
                       ) : (
                         <button
                           onClick={() => handleArchive(vendor)}
-                          className="flex items-center gap-1 text-gray-600 hover:text-gray-900 font-medium text-xs"
+                          className="flex items-center gap-1 text-gray-600 hover:text-gray-900 font-medium text-xs dark:text-gray-400 dark:hover:text-gray-200"
                           title="Hide from the main list"
                         >
                           <Archive className="w-3.5 h-3.5" /> Archive

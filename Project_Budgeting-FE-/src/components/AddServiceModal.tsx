@@ -112,23 +112,23 @@ export function AddServiceModal({ isOpen, onClose, onServiceAdded }: AddServiceM
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all"
+        className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50"
         onClick={handleClose}
       />
 
       {/* Modal */}
       <div className="flex min-h-full items-center justify-center p-4">
         <div
-          className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform transition-all"
+          className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform transition-all dark:bg-gray-900"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-            <h3 className="text-xl font-bold text-gray-900">Add New Service/Product</h3>
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 dark:bg-gray-900 dark:border-gray-800">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white">Add New Service/Product</h3>
             <button
               onClick={handleClose}
               disabled={isSaving}
-              className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+              className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-300"
             >
               <X size={24} />
             </button>
@@ -137,7 +137,7 @@ export function AddServiceModal({ isOpen, onClose, onServiceAdded }: AddServiceM
           {/* Content */}
           <div className="p-6">
             {errors.general && (
-              <div className="mb-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center">
+              <div className="mb-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center dark:bg-red-500/10 dark:border-red-900 dark:text-red-400">
                 <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path>
                 </svg>
@@ -148,7 +148,7 @@ export function AddServiceModal({ isOpen, onClose, onServiceAdded }: AddServiceM
             <form onSubmit={handleSubmit} className="space-y-5">
               {/* Service Name */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   <span className="text-red-500 mr-1">*</span>Service/Product Name
                 </label>
                 <input
@@ -156,25 +156,25 @@ export function AddServiceModal({ isOpen, onClose, onServiceAdded }: AddServiceM
                   name="product_service_name"
                   value={formData.product_service_name}
                   onChange={handleChange}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                   placeholder="Enter service or product name"
                 />
               </div>
 
               {/* Product Group */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   <span className="text-red-500 mr-1">*</span>Product Group
                 </label>
                 {loadingGroups ? (
-                  <p className="text-sm text-gray-500">Loading groups...</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Loading groups...</p>
                 ) : (
                   <select
                     required
                     name="product_group"
                     value={formData.product_group}
                     onChange={handleChange}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                   >
                     <option value="">Select Product Group</option>
                     {productGroups.map(group => (
@@ -188,24 +188,24 @@ export function AddServiceModal({ isOpen, onClose, onServiceAdded }: AddServiceM
 
               {/* Description */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
                 <textarea
                   name="description"
                   value={formData.description}
                   onChange={handleChange}
                   rows={4}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm resize-none"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm resize-none dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                   placeholder="Enter description (optional)"
                 />
               </div>
 
               {/* Footer */}
-              <div className="flex justify-end gap-3 pt-4 border-t">
+              <div className="flex justify-end gap-3 pt-4 border-t dark:border-gray-800">
                 <button
                   type="button"
                   onClick={handleClose}
                   disabled={isSaving}
-                  className="px-6 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  className="px-6 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                 >
                   Cancel
                 </button>

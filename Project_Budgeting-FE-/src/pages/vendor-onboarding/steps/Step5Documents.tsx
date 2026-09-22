@@ -42,7 +42,7 @@ export const Step5Documents: React.FC<Props> = ({ documents, onUpload, onDelete,
   return (
     <div className="space-y-4">
       {!hasBankProof && (
-        <p className="text-xs text-orange-600 bg-orange-50 border border-orange-100 rounded-md px-3 py-2">
+        <p className="text-xs text-orange-600 bg-orange-50 border border-orange-100 rounded-md px-3 py-2 dark:text-amber-400 dark:bg-amber-500/10 dark:border-amber-500/20">
           At least one bank proof document (cancelled cheque, bank statement, or bank certificate) is required.
         </p>
       )}

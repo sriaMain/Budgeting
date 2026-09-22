@@ -61,6 +61,7 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
     const [values, setValues] = useState<FreelancerManualPayload | null>(null);
     const [bankValues, setBankValues] = useState<FreelancerBankDetailPayload>(EMPTY_BANK_VALUES);
     const [accountNumberMasked, setAccountNumberMasked] = useState<string | null>(null);
+    const [panMasked, setPanMasked] = useState<string | null>(null);
     const [currentStep, setCurrentStep] = useState(1);
     const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
     const [loading, setLoading] = useState(true);
@@ -92,11 +93,12 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
                 if (bankDetail) {
                     setBankValues({
                         payment_method: bankDetail.payment_method, payment_terms: bankDetail.payment_terms,
-                        tax_number: bankDetail.tax_number,
+                        tax_number: '',
                         account_holder_name: bankDetail.account_holder_name, bank_name: bankDetail.bank_name,
                         account_number: '', ifsc_code: bankDetail.ifsc_code,
                     });
                     setAccountNumberMasked(bankDetail.account_number_masked || null);
+                    setPanMasked(bankDetail.tax_number_masked || null);
                 }
             } catch {
                 // Bank detail is optional to preload - don't block the rest of the onboarding page.
@@ -145,13 +147,14 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
         try {
             if (currentStep === 4) {
                 const bankErrors: Record<string, string> = {};
-                if (!bankValues.tax_number) bankErrors.tax_number = 'PAN is required';
+                // PAN/account number are only re-required when there's nothing
+                // on file yet - once saved both are write-only, so they always
+                // reload blank and a blank resubmission means "keep the
+                // existing value".
+                if (!bankValues.tax_number && !panMasked) bankErrors.tax_number = 'PAN is required';
                 if (!bankValues.account_holder_name) bankErrors.account_holder_name = 'Account holder name is required';
                 if (!bankValues.bank_name) bankErrors.bank_name = 'Bank name is required';
                 if (!bankValues.ifsc_code) bankErrors.ifsc_code = 'IFSC code is required';
-                // Account number is only re-required when there's nothing on
-                // file yet - once saved it's write-only, so it always reloads
-                // blank and a blank resubmission means "keep the existing one".
                 if (!bankValues.account_number && !accountNumberMasked) bankErrors.account_number = 'Account number is required';
 
                 if (Object.keys(bankErrors).length > 0) {
@@ -162,6 +165,7 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
 
                 const bankPayload: FreelancerBankDetailPayload = { ...bankValues };
                 if (!bankPayload.account_number) delete bankPayload.account_number;
+                if (!bankPayload.tax_number) delete bankPayload.tax_number;
                 await api.updateBankDetailByToken(token, bankPayload);
                 if (advanceTo) {
                     const updated = await api.updateByToken(token, { last_saved_step: advanceTo });
@@ -224,14 +228,14 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
     };
 
     if (loading) {
-        return <div className="max-w-3xl mx-auto py-16 text-center text-gray-500">Loading...</div>;
+        return <div className="max-w-3xl mx-auto py-16 text-center text-gray-500 dark:text-gray-400">Loading...</div>;
     }
 
     if (loadError || !freelancer || !values) {
         return (
             <div className="max-w-lg mx-auto py-16 text-center">
-                <p className="text-lg font-semibold text-gray-900 mb-2">Link not available</p>
-                <p className="text-sm text-gray-600">{loadError}</p>
+                <p className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Link not available</p>
+                <p className="text-sm text-gray-600 dark:text-gray-300">{loadError}</p>
             </div>
         );
     }
@@ -239,10 +243,10 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
     if (freelancer.status === 'completed' || freelancer.status === 'active') {
         return (
             <div className="max-w-2xl mx-auto py-16 px-4">
-                <div className="bg-white rounded-lg border border-gray-200 p-8 text-center shadow-sm">
-                    <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-3" />
-                    <h2 className="text-lg font-bold text-gray-900 mb-1">You're all set!</h2>
-                    <p className="text-sm text-gray-600">
+                <div className="bg-white rounded-lg border border-gray-200 p-8 text-center shadow-sm dark:bg-gray-900 dark:border-gray-800">
+                    <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-3 dark:text-green-400" />
+                    <h2 className="text-lg font-bold text-gray-900 mb-1 dark:text-white">You're all set!</h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
                         Thank you for completing your freelancer onboarding, {freelancer.full_name}. We'll be in touch.
                     </p>
                 </div>
@@ -252,16 +256,16 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
 
     return (
         <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
-            <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Freelancer Onboarding</p>
-                <h1 className="text-2xl font-bold text-gray-900">{freelancer.full_name || 'Complete your profile'}</h1>
+            <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm dark:bg-gray-900 dark:border-gray-800">
+                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1 dark:text-blue-400">Freelancer Onboarding</p>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{freelancer.full_name || 'Complete your profile'}</h1>
             </div>
 
-            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
                 <VendorStepper steps={STEPS} currentStep={currentStep} completedSteps={completedSteps} onStepClick={handleStepClick} />
             </div>
 
-            <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+            <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm dark:bg-gray-900 dark:border-gray-800">
                 {currentStep === 1 && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
                         <InputField label="Full Name *" placeholder="Enter your full name" value={values.full_name} onChange={set('full_name')} error={fieldErrors.full_name} />
@@ -312,7 +316,13 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
                                 onChange={setBankField('payment_method')}
                             />
                             <InputField label="Payment Terms" placeholder="e.g. Net 15" value={bankValues.payment_terms} onChange={setBankField('payment_terms')} />
-                            <InputField label="PAN *" placeholder="e.g. ABCDE1234F" value={bankValues.tax_number} onChange={setBankField('tax_number')} error={fieldErrors.tax_number} />
+                            <InputField
+                                label={panMasked ? `PAN * (on file: ${panMasked})` : 'PAN *'}
+                                placeholder={panMasked ? 'Leave blank to keep the PAN on file' : 'e.g. ABCDE1234F'}
+                                value={bankValues.tax_number}
+                                onChange={setBankField('tax_number')}
+                                error={fieldErrors.tax_number}
+                            />
                             <InputField label="Account Holder Name *" value={bankValues.account_holder_name} onChange={setBankField('account_holder_name')} error={fieldErrors.account_holder_name} />
                             <InputField label="Bank Name *" value={bankValues.bank_name} onChange={setBankField('bank_name')} error={fieldErrors.bank_name} />
                             <InputField
@@ -349,7 +359,7 @@ const FreelancerOnboardingPortalPage: React.FC = () => {
                 )}
             </div>
 
-            <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+            <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
                 {currentStep > 1 ? (
                     <Button variant="secondary" className="!w-auto px-6" onClick={handleBack}>Back</Button>
                 ) : <div />}

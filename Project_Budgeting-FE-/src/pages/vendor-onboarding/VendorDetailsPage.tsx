@@ -17,8 +17,8 @@ import type {
 
 const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <div>
-    <p className="text-xs text-gray-500">{label}</p>
-    <p className="text-sm text-gray-900 font-medium">{value || '-'}</p>
+    <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+    <p className="text-sm text-gray-900 font-medium dark:text-gray-100">{value || '-'}</p>
   </div>
 );
 
@@ -101,7 +101,7 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
   };
 
   if (loading || !vendor) {
-    return <div className="text-center p-12 text-gray-500">Loading...</div>;
+    return <div className="text-center p-12 text-gray-500 dark:text-gray-400">Loading...</div>;
   }
 
   const openChangeRequest = vendor.change_requests.find((c) => c.status === 'open');
@@ -116,28 +116,28 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
     <div className="space-y-6 animate-fade-in-down">
       {/* Breadcrumb / Back */}
       <div className="mb-2 flex items-center gap-2 text-sm">
-        <button onClick={onBack} className="text-blue-600 hover:text-blue-800 font-semibold transition-colors">
+        <button onClick={onBack} className="text-blue-600 hover:text-blue-800 font-semibold transition-colors dark:text-blue-400 dark:hover:text-blue-300">
           {backLabel}
         </button>
-        <span className="text-gray-400">/</span>
-        <span className="text-gray-700 font-medium">{vendor.name}</span>
+        <span className="text-gray-400 dark:text-gray-500">/</span>
+        <span className="text-gray-700 font-medium dark:text-gray-300">{vendor.name}</span>
       </div>
 
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-3xl font-bold text-gray-900">{vendor.name}</h2>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{vendor.name}</h2>
           <StatusBadge status={vendor.status} />
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             {vendor.vendor_reference_no} &middot; {vendor.vendor_type_display}
             {isUnderReview && ` · ${vendor.current_stage}`}
           </p>
           {isEditable && (
             <button
               onClick={() => onEdit(vendor.id)}
-              className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
+              className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg dark:bg-blue-600 dark:hover:bg-blue-500"
             >
               <Edit2 className="w-4 h-4" />
               {vendor.status === 'draft' ? 'Continue Draft' : 'Edit & Resubmit'}
@@ -155,19 +155,19 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
       </div>
 
       {vendor.status === 'action_required' && openChangeRequest && (
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-          <p className="text-sm font-semibold text-orange-800">Action Required — {openChangeRequest.section_display}</p>
-          <p className="text-sm text-orange-700 mt-1">
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 dark:bg-amber-500/10 dark:border-amber-500/30">
+          <p className="text-sm font-semibold text-orange-800 dark:text-amber-300">Action Required — {openChangeRequest.section_display}</p>
+          <p className="text-sm text-orange-700 mt-1 dark:text-amber-400">
             Requested by {openChangeRequest.requested_by_name || 'an approver'}: {openChangeRequest.required_changes}
           </p>
-          {openChangeRequest.comments && <p className="text-sm text-orange-600 mt-1">{openChangeRequest.comments}</p>}
+          {openChangeRequest.comments && <p className="text-sm text-orange-600 mt-1 dark:text-amber-400">{openChangeRequest.comments}</p>}
         </div>
       )}
 
       {vendor.status === 'approved' && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-2">
-          <Send className="w-4 h-4 text-green-700" />
-          <p className="text-sm font-semibold text-green-800">
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-2 dark:bg-green-500/10 dark:border-green-500/30">
+          <Send className="w-4 h-4 text-green-700 dark:text-green-400" />
+          <p className="text-sm font-semibold text-green-800 dark:text-green-300">
             This vendor request has been fully approved and is now an active vendor.
           </p>
         </div>
@@ -177,8 +177,8 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
 
       {activeTab === 'vendor_details' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
-            <h3 className="font-bold text-gray-900 text-sm">Vendor Details</h3>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4 dark:bg-gray-900 dark:border-gray-800">
+            <h3 className="font-bold text-gray-900 text-sm dark:text-white">Vendor Details</h3>
             <Field label="Company Code" value={p?.company_code} />
             <Field label="Plant" value={p?.plant} />
             <Field label="Contact Person" value={p?.contact_person_name} />
@@ -187,8 +187,8 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
             <Field label="Phone" value={vendor.phone} />
             <Field label="Vendor Introduction" value={p?.vendor_introduction} />
           </div>
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
-            <h3 className="font-bold text-gray-900 text-sm">Address</h3>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4 dark:bg-gray-900 dark:border-gray-800">
+            <h3 className="font-bold text-gray-900 text-sm dark:text-white">Address</h3>
             <Field label="Address Line 1" value={p?.address_line1} />
             <Field label="Address Line 2" value={p?.address_line2} />
             <Field label="City" value={p?.city} />
@@ -201,7 +201,7 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
       )}
 
       {activeTab === 'kyv_compliance' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 dark:bg-gray-900 dark:border-gray-800">
           <Field label="PAN" value={k?.pan} />
           <Field label="Country of Tax Residence" value={k?.country_of_tax_residence} />
           <Field label="CIN" value={k?.cin} />
@@ -217,16 +217,16 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
       )}
 
       {activeTab === 'bank_details' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 dark:bg-gray-900 dark:border-gray-800">
           <Field label="Bank Name" value={b?.bank_name} />
           <Field label="Account Holder" value={b?.account_holder_name} />
           <div>
-            <p className="text-xs text-gray-500">Account Number</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Account Number</p>
             <div className="flex items-center gap-2">
-              <p className="text-sm text-gray-900 font-medium">
+              <p className="text-sm text-gray-900 font-medium dark:text-gray-100">
                 {showFullAccount && unmaskedAccount ? unmaskedAccount : b?.account_number_masked || '-'}
               </p>
-              <button onClick={handleRevealAccount} className="text-gray-400 hover:text-gray-600">
+              <button onClick={handleRevealAccount} className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
                 {showFullAccount ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
@@ -240,7 +240,7 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
       )}
 
       {activeTab === 'business_procurement' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 dark:bg-gray-900 dark:border-gray-800">
           <Field label="Account Group" value={proc?.account_group} />
           <Field label="Purchasing Org" value={proc?.purchasing_org} />
           <Field label="Payment Terms" value={proc?.payment_terms} />
@@ -254,18 +254,18 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
       )}
 
       {activeTab === 'documents' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
           {vendor.documents.length === 0 ? (
-            <p className="text-sm text-gray-500">No documents uploaded.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">No documents uploaded.</p>
           ) : (
             <ul className="space-y-2">
               {vendor.documents.map((d) => (
-                <li key={d.id} className="flex items-center justify-between gap-2 py-2 border-b border-gray-100 last:border-0">
+                <li key={d.id} className="flex items-center justify-between gap-2 py-2 border-b border-gray-100 last:border-0 dark:border-gray-800">
                   <div className="flex items-center gap-2 min-w-0">
-                    <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 dark:text-gray-500" />
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{d.file_name}</p>
-                      <p className="text-xs text-gray-500">{d.category.replace(/_/g, ' ')} &middot; Uploaded by {d.uploaded_by_role}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate dark:text-gray-100">{d.file_name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{d.category.replace(/_/g, ' ')} &middot; Uploaded by {d.uploaded_by_role}</p>
                     </div>
                   </div>
                   <button
@@ -273,7 +273,7 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
                       const { download_url } = await api.downloadDocument(vendor.id, d.id);
                       window.open(download_url, '_blank');
                     }}
-                    className="text-gray-400 hover:text-blue-600 flex-shrink-0"
+                    className="text-gray-400 hover:text-blue-600 flex-shrink-0 dark:text-gray-500 dark:hover:text-blue-400"
                     title="Download"
                   >
                     <Download className="w-4 h-4" />
@@ -287,13 +287,13 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
 
       {activeTab === 'approval_history' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h3 className="font-bold text-gray-900 text-sm mb-4">Timeline</h3>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
+            <h3 className="font-bold text-gray-900 text-sm mb-4 dark:text-white">Timeline</h3>
             <ApprovalTimeline events={history} />
           </div>
           {versions.length > 1 && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="font-bold text-gray-900 text-sm mb-4">Submission Versions</h3>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
+              <h3 className="font-bold text-gray-900 text-sm mb-4 dark:text-white">Submission Versions</h3>
               <VersionDiffPanel versions={versions} />
             </div>
           )}

@@ -464,6 +464,17 @@ class OutgoingPayment(models.Model):
         # Ensure Decimal
         self.amount = Decimal(self.amount)
 
+        if self.amount <= 0:
+            raise ValidationError("Payment amount must be greater than zero")
+
+        if self.amount > self.vendor_bill.balance_amount:
+            raise ValidationError("Payment cannot exceed the bill's outstanding balance")
+
+        if self.reference_no and OutgoingPayment.objects.filter(
+            vendor_bill=self.vendor_bill, reference_no=self.reference_no
+        ).exclude(pk=self.pk).exists():
+            raise ValidationError("A payment with this reference number already exists for this bill")
+
         super().save(*args, **kwargs)
 
         # Update paid amount atomically
@@ -548,7 +559,17 @@ class Expense(models.Model):
         ('electricity', 'Electricity'),
         ('software', 'Software'),
         ('maintenance', 'Maintenance'),
+        ('equipment', 'Equipment'),
+        ('vendor', 'Vendor'),
+        ('employee_cost', 'Employee Cost'),
+        ('freelancer', 'Freelancer Cost'),
         ('other', 'Other'),
+    ]
+
+    STATUS_CHOICES = [
+        ('unpaid', 'Unpaid'),
+        ('partially_paid', 'Partially Paid'),
+        ('paid', 'Paid'),
     ]
 
     expense_no = models.CharField(
@@ -573,6 +594,29 @@ class Expense(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True
+    )
+
+    # Mirrors `vendor` above, for expenses paid to a freelancer_onboarding.
+    # Freelancer instead of an accounts.Vendor - a separate FK rather than
+    # overloading `vendor`, since the two are distinct models in this
+    # codebase (see freelancer_onboarding.Freelancer's own docstring).
+    freelancer = models.ForeignKey(
+        'freelancer_onboarding.Freelancer',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='expenses'
+    )
+
+    # Mirrors `vendor`/`freelancer` above, for an internal employee's
+    # project-related expense (e.g. reimbursed travel) - accounts.Account is
+    # this codebase's employee/user record (see charges_per_hour on it).
+    employee = models.ForeignKey(
+        'accounts.Account',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='expenses_as_employee'
     )
 
     # GL Account this expense should count as "actual" spend against, so
@@ -608,6 +652,14 @@ class Expense(models.Model):
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.01'))]
     )
+
+    notes = models.TextField(blank=True)
+
+    # Recomputed by update_payment_status() whenever a payment is recorded -
+    # mirrors VendorBill.status, kept as a real stored field (not purely
+    # derived) so it can be filtered/displayed the same way Invoice/VendorBill
+    # status already are.
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='unpaid')
 
     created_by = models.ForeignKey(
         'accounts.Account',
@@ -653,6 +705,18 @@ class Expense(models.Model):
     def is_fully_paid(self):
         return self.balance_amount() == Decimal('0.00')
 
+    def update_payment_status(self):
+        """Recomputes `status` from total_paid()/amount - same pattern as
+        VendorBill.update_status(). Called from ExpensePayment.save()."""
+        paid = self.total_paid()
+        if paid <= Decimal('0.00'):
+            self.status = 'unpaid'
+        elif paid >= self.amount:
+            self.status = 'paid'
+        else:
+            self.status = 'partially_paid'
+        self.save(update_fields=['status'])
+
 
 class ExpensePayment(models.Model):
 
@@ -690,4 +754,55 @@ class ExpensePayment(models.Model):
         if self.amount > self.expense.balance_amount():
             raise ValidationError("Payment exceeds expense balance")
 
+        if self.reference_no and ExpensePayment.objects.filter(
+            expense=self.expense, reference_no=self.reference_no
+        ).exclude(pk=self.pk).exists():
+            raise ValidationError("A payment with this reference number already exists for this expense")
+
         super().save(*args, **kwargs)
+        self.expense.update_payment_status()
+
+
+class FinancialAuditLog(models.Model):
+    """Tracks financial actions (expense/invoice/payment) for the audit
+    trail. Same scoped-model approach as freelancer_onboarding.
+    FreelancerAuditLog - no generic audit framework exists elsewhere in this
+    codebase to extend. Never store a raw sensitive value (e.g. full bank
+    details) in old_value/new_value; callers pass only what's safe to show
+    broadly (amounts, statuses, references)."""
+
+    ENTITY_CHOICES = [
+        ('expense', 'Expense'),
+        ('invoice', 'Invoice'),
+        ('payment', 'Payment'),
+    ]
+    ACTION_CHOICES = [
+        ('created', 'Created'),
+        ('updated', 'Updated'),
+        ('payment_recorded', 'Payment Recorded'),
+        ('status_changed', 'Status Changed'),
+        ('archived', 'Archived'),
+    ]
+
+    entity_type = models.CharField(max_length=20, choices=ENTITY_CHOICES)
+    entity_id = models.PositiveIntegerField()
+    project = models.ForeignKey(
+        'Project.Project', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='financial_audit_logs',
+    )
+    action = models.CharField(max_length=30, choices=ACTION_CHOICES)
+    field_name = models.CharField(max_length=100, blank=True)
+    old_value = models.CharField(max_length=255, blank=True)
+    new_value = models.CharField(max_length=255, blank=True)
+
+    performed_by = models.ForeignKey(
+        'accounts.Account', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='financial_audit_logs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.entity_type}#{self.entity_id} {self.action}"

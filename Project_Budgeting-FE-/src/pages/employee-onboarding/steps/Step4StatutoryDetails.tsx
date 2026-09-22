@@ -13,7 +13,7 @@ export const Step4StatutoryDetails: React.FC<Props> = ({ pfApplicable }) => {
   return (
     <div className="space-y-8">
       <section>
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Statutory Details</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Statutory Details</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InputField label="PAN Number *" {...register('step4.pan')} error={errors.step4?.pan?.message} placeholder="AAAAA9999A" />
           <InputField label="Aadhaar Number *" {...register('step4.aadhaar_number')} error={errors.step4?.aadhaar_number?.message} placeholder="12-digit number" />
@@ -26,7 +26,7 @@ export const Step4StatutoryDetails: React.FC<Props> = ({ pfApplicable }) => {
           <InputField label="ESIC Number" {...register('step4.esic_number')} />
         </div>
         {!pfApplicable && (
-          <p className="text-xs text-gray-500 mt-1">UAN is optional since PF is not marked as applicable for this employee.</p>
+          <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">UAN is optional since PF is not marked as applicable for this employee.</p>
         )}
       </section>
     </div>

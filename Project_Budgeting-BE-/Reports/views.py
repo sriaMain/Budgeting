@@ -14,7 +14,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from Project.models import Project, ProjectBudget, Task, BudgetLine
 from finances.models import Invoice, InvoicePayment, OutgoingPayment, Expense
 from accounts.models import Account, Vendor
-from freelancer_onboarding.models import Freelancer
+from freelancer_onboarding.models import Freelancer, FreelancerProjectAssignment
 
 from .serializers import DashboardMetricsSerializer
 from rest_framework.views import APIView
@@ -319,6 +319,7 @@ class AdminDashboardOverviewAPIView(APIView):
             "resource_utilization": self._resource_utilization(),
             "action_center": self._action_center(project_health_rows),
             "recent_activity": self._recent_activity(),
+            "freelancers": self._freelancer_stats(),
         }
 
         try:
@@ -386,6 +387,35 @@ class AdminDashboardOverviewAPIView(APIView):
                 status__in=ACTIVE_PROJECT_STATUSES, end_date__lt=timezone.now().date()
             ).count(),
             "completed": qs.filter(status="deployed").count(),
+        }
+
+    # ---------------------------------------------------------------
+    # Freelancer stats (Business Partner enhancement, Section 20) - counts
+    # only, no cost breakdown by individual freelancer and no PAN/bank data
+    # anywhere near this payload.
+    # ---------------------------------------------------------------
+    def _freelancer_stats(self):
+        qs = Freelancer.objects.filter(is_archived=False)
+        now = timezone.now()
+
+        freelancer_cost_this_month = _money_sum(
+            Expense.objects.filter(
+                freelancer__isnull=False,
+                expense_date__year=now.year,
+                expense_date__month=now.month,
+            ),
+            "amount",
+        )
+
+        return {
+            "total": qs.count(),
+            "active": qs.filter(status="active").count(),
+            "available": qs.filter(availability="available").count(),
+            "assigned": qs.filter(
+                id__in=FreelancerProjectAssignment.objects.filter(status="active").values("freelancer_id")
+            ).distinct().count(),
+            "pending_onboarding": qs.filter(status="onboarding").count(),
+            "cost_this_month": freelancer_cost_this_month,
         }
 
     # ---------------------------------------------------------------

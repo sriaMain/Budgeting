@@ -860,6 +860,14 @@ class ProjectFinancialSummaryAPIView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
+    # Expense categories that represent a resource's cost (freelancer or
+    # employee) rather than a miscellaneous project cost. Their amount is
+    # already counted once via the resource-cost figure below (from active
+    # FreelancerProjectAssignment/ResourceAssignment rows), so they're
+    # excluded from the "expenses" side of the total to avoid double-counting
+    # the same person's cost twice (Section 11).
+    RESOURCE_COST_CATEGORIES = {'freelancer', 'employee_cost'}
+
     def get(self, request, project_no):
         project = get_object_or_404(Project, project_no=project_no)
 
@@ -867,36 +875,115 @@ class ProjectFinancialSummaryAPIView(APIView):
             return Response(self._tm_summary(project), status=status.HTTP_200_OK)
         return Response(self._fixed_summary(project), status=status.HTTP_200_OK)
 
+    def _cost_budget_for_project(self, project):
+        """Tax AND profit excluded - see ProjectBudget.cost_budget."""
+        pb = getattr(project, 'budget', None)
+        return pb.cost_budget if pb else Decimal("0.00")
+
+    def _freelancer_assignment_cost(self, project):
+        """Freelancer resource cost (Section 3): Cost Rate x Planned Units,
+        summed across the project's active freelancer_onboarding assignments
+        - not from Expense rows, so it's counted once even if the same
+        freelancer's actual payment is *also* logged as an Expense
+        (category='freelancer') for GL/budget tracking."""
+        assignments = project.freelancer_assignments.filter(status='active')
+        return sum(
+            (a.planned_freelancer_cost or Decimal("0.00") for a in assignments),
+            Decimal("0.00"),
+        )
+
+    def _outgoing_payments(self, project):
+        """Actual money paid out for this project so far - vendor bill
+        payments plus expense payments (Section 5/13). Distinct from
+        actual_cost/total_cost, which is obligation-based, not cash-based."""
+        from finances.models import ExpensePayment, OutgoingPayment
+        expense_paid = ExpensePayment.objects.filter(expense__project=project) \
+            .aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
+        vendor_paid = OutgoingPayment.objects.filter(vendor_bill__purchase_order__project=project) \
+            .aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
+        return expense_paid + vendor_paid
+
+    def _cost_breakdown(self, expense_queryset, resource_cost, employee_cost, freelancer_cost):
+        """Section 15's Cost Breakdown: resource cost split by type, plus
+        non-resource ("miscellaneous") expenses, both in total and by GL
+        Account. Returns the non-resource expense total too, so callers don't
+        need to recompute it separately."""
+        non_resource = expense_queryset.exclude(category__in=self.RESOURCE_COST_CATEGORIES)
+        miscellaneous = non_resource.aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
+        by_gl = non_resource.exclude(gl_account__isnull=True) \
+            .values('gl_account__code', 'gl_account__name') \
+            .annotate(total=Sum('amount')) \
+            .order_by('gl_account__code')
+
+        return {
+            "resource_cost": resource_cost,
+            "employee_cost": employee_cost,
+            "freelancer_cost": freelancer_cost,
+            "miscellaneous": miscellaneous,
+            "by_gl_account": [
+                {"gl_account": f"{row['gl_account__code']} - {row['gl_account__name']}", "amount": row['total']}
+                for row in by_gl
+            ],
+        }, miscellaneous
+
+    def _invoice_breakdown(self, project):
+        invoices = project.invoice_set.exclude(status='Cancelled')
+        return [
+            {
+                "invoice_no": inv.invoice_no,
+                "amount": inv.total_amount,
+                "paid": inv.paid_amount,
+                "outstanding": inv.balance_amount,
+            }
+            for inv in invoices
+        ]
+
     def _fixed_summary(self, project):
         milestones = project.milestones.filter(is_active=True)
 
-        contract_value = project.contract_value or Decimal("0.00")
+        # Tax and profit excluded, same as the "budget"/remaining/variance
+        # figures below - see _cost_budget_for_project().
+        contract_value = self._cost_budget_for_project(project)
+
+        # Fixed Budget projects had no resource-cost figure at all before -
+        # this is additive (freelancer cost via active assignments; there is
+        # no employee-resource-cost channel available for Fixed Budget
+        # projects yet, same as before this change).
+        resource_cost = self._freelancer_assignment_cost(project)
+        employee_cost = Decimal("0.00")
+        freelancer_cost = resource_cost
 
         if milestones.exists():
             budget = milestones.aggregate(total=Sum('budget_amount'))['total'] or Decimal("0.00")
-            actual_cost = sum((m.actual_cost for m in milestones), Decimal("0.00"))
+            expense_qs = project.expenses.filter(milestone__in=milestones)
             billed_amount = sum((m.billed_amount for m in milestones), Decimal("0.00"))
             received_amount = sum((m.received_amount for m in milestones), Decimal("0.00"))
         else:
             # No milestones yet - fall back to the project's overall budget
             # and invoices/expenses linked straight to the project.
-            pb = getattr(project, 'budget', None)
-            budget = (pb.total_budget if pb and pb.total_budget else Decimal("0.00"))
-            actual_cost = project.expenses.aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
+            budget = self._cost_budget_for_project(project)
+            expense_qs = project.expenses.all()
             direct_invoices = project.invoice_set.exclude(status='Cancelled')
             billed_amount = direct_invoices.aggregate(total=Sum('total_amount'))['total'] or Decimal("0.00")
             received_amount = direct_invoices.aggregate(total=Sum('paid_amount'))['total'] or Decimal("0.00")
+
+        cost_breakdown, expense_cost = self._cost_breakdown(
+            expense_qs, resource_cost, employee_cost, freelancer_cost
+        )
+        actual_cost = resource_cost + expense_cost
 
         outstanding_amount = billed_amount - received_amount
         remaining_budget = budget - actual_cost
         variance = budget - actual_cost
         gross_margin = billed_amount - actual_cost
         margin_percent = float(gross_margin / billed_amount * 100) if billed_amount else None
+        outgoing_payments = self._outgoing_payments(project)
 
         return {
             "engagement_type": "fixed",
             "contract_value": contract_value,
             "budget": budget,
+            "resource_cost": resource_cost,
             "actual_cost": actual_cost,
             "billed_amount": billed_amount,
             "received_amount": received_amount,
@@ -906,6 +993,10 @@ class ProjectFinancialSummaryAPIView(APIView):
             "gross_margin": gross_margin,
             "margin_percent": margin_percent,
             "is_over_budget": actual_cost > budget,
+            "outgoing_payments": outgoing_payments,
+            "net_cash_position": received_amount - outgoing_payments,
+            "cost_breakdown": cost_breakdown,
+            "invoice_breakdown": self._invoice_breakdown(project),
         }
 
     def _tm_summary(self, project):
@@ -913,7 +1004,15 @@ class ProjectFinancialSummaryAPIView(APIView):
 
         monthly_revenue = project.monthly_billing_amount or Decimal("0.00")
         resource_cost = sum((ra.monthly_cost for ra in assignments), Decimal("0.00"))
-        misc_expenses = project.expenses.aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
+        employee_cost = sum(
+            (ra.monthly_cost for ra in assignments if ra.resource_type == 'employee'),
+            Decimal("0.00"),
+        )
+        freelancer_cost = resource_cost - employee_cost
+
+        cost_breakdown, misc_expenses = self._cost_breakdown(
+            project.expenses.all(), resource_cost, employee_cost, freelancer_cost
+        )
         total_cost = resource_cost + misc_expenses
         gross_margin = monthly_revenue - resource_cost
         net_profit = monthly_revenue - total_cost
@@ -923,6 +1022,7 @@ class ProjectFinancialSummaryAPIView(APIView):
         billed_amount = invoices.aggregate(total=Sum('total_amount'))['total'] or Decimal("0.00")
         received_amount = invoices.aggregate(total=Sum('paid_amount'))['total'] or Decimal("0.00")
         outstanding_amount = billed_amount - received_amount
+        outgoing_payments = self._outgoing_payments(project)
 
         return {
             "engagement_type": "time_and_material",
@@ -936,6 +1036,10 @@ class ProjectFinancialSummaryAPIView(APIView):
             "billed_amount": billed_amount,
             "received_amount": received_amount,
             "outstanding_amount": outstanding_amount,
+            "outgoing_payments": outgoing_payments,
+            "net_cash_position": received_amount - outgoing_payments,
+            "cost_breakdown": cost_breakdown,
+            "invoice_breakdown": self._invoice_breakdown(project),
         }
 
 

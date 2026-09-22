@@ -299,7 +299,7 @@ const ManageUsersTab: React.FC = () => {
       header: 'Name',
       accessor: (user) => (
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm overflow-hidden flex-shrink-0">
+          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm overflow-hidden flex-shrink-0 dark:bg-blue-500/15 dark:text-blue-300">
             {user.profile_picture ? (
               <img
                 src={user.profile_picture}
@@ -318,7 +318,7 @@ const ManageUsersTab: React.FC = () => {
               `${user.first_name?.[0] || ''}${user.last_name?.[0] || ''}`
             )}
           </div>
-          <span className="font-medium text-gray-900">{user.first_name} {user.last_name}</span>
+          <span className="font-medium text-gray-900 dark:text-gray-100">{user.first_name} {user.last_name}</span>
         </div>
       )
     },
@@ -340,13 +340,13 @@ const ManageUsersTab: React.FC = () => {
             return found ? found.role_name : `Role #${firstRole}`;
           }
         }
-        return <span className="text-gray-400 italic">No Role</span>;
+        return <span className="text-gray-400 italic dark:text-gray-500">No Role</span>;
       }
     },
     {
       header: 'Status',
       accessor: (user) => (
-        <span className={`px-2 py-1 text-xs rounded-full ${user.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+        <span className={`px-2 py-1 text-xs rounded-full ${user.is_active ? 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300' : 'bg-red-100 text-red-600 dark:bg-red-500/15 dark:text-red-300'}`}>
           {user.is_active ? 'Active' : 'Inactive'}
         </span>
       )
@@ -361,20 +361,20 @@ const ManageUsersTab: React.FC = () => {
         <div className="space-y-6">
           {/* Header */}
           <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-            <h2 className="text-2xl font-bold text-gray-800 whitespace-nowrap">Manage Users</h2>
+            <h2 className="text-2xl font-bold text-gray-800 whitespace-nowrap dark:text-white">Manage Users</h2>
             <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
               {/* Status Filter */}
               <div className="relative">
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white text-sm"
+                  className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                 >
                   <option value="all">All Statuses</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none dark:text-gray-500" />
               </div>
 
               {/* Module Filter */}
@@ -382,7 +382,7 @@ const ManageUsersTab: React.FC = () => {
                 <select
                   value={moduleFilter}
                   onChange={(e) => setModuleFilter(e.target.value)}
-                  className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white text-sm max-w-[200px]"
+                  className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white text-sm max-w-[200px] dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                 >
                   <option value="all">All Modules</option>
                   {modules.map((mod) => (
@@ -391,7 +391,7 @@ const ManageUsersTab: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none dark:text-gray-500" />
               </div>
 
               {/* Search */}
@@ -401,9 +401,9 @@ const ManageUsersTab: React.FC = () => {
                   placeholder="Search users..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full xl:w-64"
+                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full xl:w-64 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                 />
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 dark:text-gray-500" />
               </div>
               
               <button
@@ -427,26 +427,26 @@ const ManageUsersTab: React.FC = () => {
         </div>
       ) : (
         // --- Form View ---
-        <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
+        <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative dark:bg-gray-900 dark:border-gray-800">
           {/* Blur overlay when navigating */}
           {isNavigating && (
-            <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto rounded-xl" />
+            <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto rounded-xl dark:bg-gray-900/60" />
           )}
 
           {/* Form Header */}
-          <div className="px-8 py-4 border-b border-gray-100 flex items-center justify-between bg-white">
+          <div className="px-8 py-4 border-b border-gray-100 flex items-center justify-between bg-white dark:bg-gray-900 dark:border-gray-800">
             <div className="flex items-center gap-2 text-sm">
-              <span className="font-bold text-gray-900 text-lg">Users and groups</span>
-              <span className="text-gray-400 text-lg">›</span>
-              <span className="text-gray-500">{formData.id ? 'Edit User' : 'New User'}</span>
+              <span className="font-bold text-gray-900 text-lg dark:text-white">Users and groups</span>
+              <span className="text-gray-400 text-lg dark:text-gray-500">›</span>
+              <span className="text-gray-500 dark:text-gray-400">{formData.id ? 'Edit User' : 'New User'}</span>
             </div>
-            <button onClick={() => { setErrors({}); setView('list'); }} className="text-gray-400 hover:text-gray-600">
+            <button onClick={() => { setErrors({}); setView('list'); }} className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
               <ArrowLeft size={20} />
             </button>
           </div>
 
           {errors.general && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center">
+            <div className="mt-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400">
               <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path>
               </svg>
@@ -456,9 +456,9 @@ const ManageUsersTab: React.FC = () => {
 
           <div className="min-h-[600px]">
             {/* Main Content Area */}
-            <div className="p-8 bg-white max-w-5xl mx-auto">
+            <div className="p-8 bg-white max-w-5xl mx-auto dark:bg-gray-900">
               <form onSubmit={handleSave}>
-                <h3 className="text-blue-600 font-bold text-lg mb-6 pb-4 border-b border-gray-100">User details</h3>
+                <h3 className="text-blue-600 font-bold text-lg mb-6 pb-4 border-b border-gray-100 dark:text-blue-400 dark:border-gray-800">User details</h3>
 
                 <div className="flex flex-col lg:flex-row gap-8 items-start">
 
@@ -472,7 +472,7 @@ const ManageUsersTab: React.FC = () => {
                         type="text"
                         value={formData.first_name}
                         onChange={(e) => { setFormData({ ...formData, first_name: e.target.value }); setErrors({}); }}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder-gray-300"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500"
                         placeholder="First Name"
                       />
                     </FormRow>
@@ -484,7 +484,7 @@ const ManageUsersTab: React.FC = () => {
                         type="text"
                         value={formData.last_name}
                         onChange={(e) => { setFormData({ ...formData, last_name: e.target.value }); setErrors({}); }}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder-gray-300"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500"
                         placeholder="Last Name"
                       />
                     </FormRow>
@@ -496,7 +496,7 @@ const ManageUsersTab: React.FC = () => {
                         type="email"
                         value={formData.email}
                         onChange={(e) => { setFormData({ ...formData, email: e.target.value }); setErrors({}); }}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder-gray-300"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500"
                         placeholder="E-mail"
                       />
                     </FormRow>
@@ -508,7 +508,7 @@ const ManageUsersTab: React.FC = () => {
                         type="text"
                         value={formData.position}
                         onChange={(e) => { setFormData({ ...formData, position: e.target.value }); setErrors({}); }}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder-gray-300"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500"
                         placeholder="Position"
                       />
                     </FormRow>
@@ -520,7 +520,7 @@ const ManageUsersTab: React.FC = () => {
                           required
                           value={formData.selectedRoleId}
                           onChange={(e) => { setFormData({ ...formData, selectedRoleId: e.target.value }); setErrors({}); }}
-                          className={`w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm bg-white cursor-pointer appearance-none ${!formData.selectedRoleId ? 'text-gray-400' : 'text-gray-900'}`}
+                          className={`w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm bg-white cursor-pointer appearance-none dark:bg-gray-800 dark:border-gray-700 dark:focus:ring-violet-500 ${!formData.selectedRoleId ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}
                         >
                           <option value="" disabled>Select Role</option>
                           {roles.map((role) => (
@@ -529,7 +529,7 @@ const ManageUsersTab: React.FC = () => {
                             </option>
                           ))}
                         </select>
-                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500">
+                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500 dark:text-gray-400">
                           <ChevronDown size={14} />
                         </div>
                       </div>
@@ -542,7 +542,7 @@ const ManageUsersTab: React.FC = () => {
                           required
                           value={formData.module}
                           onChange={(e) => { setFormData({ ...formData, module: e.target.value }); setErrors({}); }}
-                          className={`w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm bg-white cursor-pointer appearance-none ${!formData.module ? 'text-gray-400' : 'text-gray-900'}`}
+                          className={`w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm bg-white cursor-pointer appearance-none dark:bg-gray-800 dark:border-gray-700 dark:focus:ring-violet-500 ${!formData.module ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}
                         >
                           <option value="" disabled>Select Module</option>
                           {modules.map((mod) => (
@@ -551,7 +551,7 @@ const ManageUsersTab: React.FC = () => {
                             </option>
                           ))}
                         </select>
-                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500">
+                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500 dark:text-gray-400">
                           <ChevronDown size={14} />
                         </div>
                       </div>
@@ -560,7 +560,7 @@ const ManageUsersTab: React.FC = () => {
                     {/* Charges */}
                     <FormRow label="Charges per hr" required>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">₹</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm dark:text-gray-400">₹</span>
                         <input
                           required
                           type="number"
@@ -576,7 +576,7 @@ const ManageUsersTab: React.FC = () => {
                             }
                             setErrors({});
                           }}
-                          className="w-full pl-7 pr-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder-gray-300"
+                          className="w-full pl-7 pr-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500"
                           placeholder="0.00"
                         />
                       </div>
@@ -597,17 +597,17 @@ const ManageUsersTab: React.FC = () => {
                           type="checkbox"
                           checked={!!formData.is_active}
                           onChange={(e) => { setFormData({ ...formData, is_active: e.target.checked }); setErrors({}); }}
-                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
                         />
-                        <label htmlFor="is_active" className="text-sm text-gray-600">User is active</label>
+                        <label htmlFor="is_active" className="text-sm text-gray-600 dark:text-gray-400">User is active</label>
                       </div>
                     </FormRow>
 
                     {/* Language Checkboxes */}
                     <div className="pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div className="text-sm font-bold text-gray-700">User tags</div>
+                      <div className="text-sm font-bold text-gray-700 dark:text-gray-300">User tags</div>
                       <div className="sm:col-span-2">
-                        <div className="text-sm font-bold text-gray-700 mb-2">Language</div>
+                        <div className="text-sm font-bold text-gray-700 mb-2 dark:text-gray-300">Language</div>
                         <div className="flex gap-6">
                           {['English', 'German', 'Spanish'].map((lang) => (
                             <label key={lang} className="flex items-center gap-2 cursor-pointer">
@@ -615,9 +615,9 @@ const ManageUsersTab: React.FC = () => {
                                 type="checkbox"
                                 checked={formData.languages.includes(lang.toLowerCase())}
                                 onChange={() => handleLanguageChange(lang.toLowerCase())}
-                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
                               />
-                              <span className="text-sm text-gray-600">{lang}</span>
+                              <span className="text-sm text-gray-600 dark:text-gray-400">{lang}</span>
                             </label>
                           ))}
                         </div>
@@ -630,7 +630,7 @@ const ManageUsersTab: React.FC = () => {
                   <div className="w-full lg:w-64 flex flex-col items-center">
                     <div
                       onClick={() => fileInputRef.current?.click()}
-                      className="w-64 h-64 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 hover:border-blue-400 transition-all group overflow-hidden"
+                      className="w-64 h-64 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 hover:border-blue-400 transition-all group overflow-hidden dark:border-gray-700 dark:hover:bg-gray-800"
                     >
                       {formData.profile_picture ? (
                         <div className="relative w-full h-full">

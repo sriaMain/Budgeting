@@ -205,7 +205,7 @@ export default function QuoteDetailsPage({
         return (
             <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
                 <div className="text-center py-12">
-                    <p className="text-gray-500">Quote not found</p>
+                    <p className="text-gray-500 dark:text-gray-400">Quote not found</p>
                     <button onClick={() => navigate('/pipeline')} className="mt-4 text-blue-600 hover:underline">
                         Back to Pipeline
                     </button>
@@ -225,26 +225,26 @@ export default function QuoteDetailsPage({
                     <div className="flex items-center gap-3">
                         <button
                             onClick={handleBack}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-800"
                             title="Go back"
                         >
-                            <ArrowLeft className="w-5 h-5 text-gray-600" />
+                            <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                         </button>
-                        <h1 className="text-2xl font-bold text-gray-900">Quote Details</h1>
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Quote Details</h1>
                     </div>
                     <div className="flex gap-3">
                         <button
                             onClick={handleEdit}
-                            className="p-2 rounded-lg transition-colors hover:bg-gray-100"
+                            className="p-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
                             title="Edit quote"
                         >
-                            <Edit className="w-5 h-5 text-gray-600" />
+                            <Edit className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                         </button>
                     </div>
                 </div>
 
                 {/* Quote Information Card */}
-                <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-6">
+                <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                         <InfoDisplay label="Quote No" value={quoteData.quote_no} />
                         <InfoDisplay label="Author" value={quoteData.author} />
@@ -254,7 +254,7 @@ export default function QuoteDetailsPage({
                         <InfoDisplay
                             label="Status"
                             value={
-                                <span className="inline-flex items-center bg-purple-100 text-purple-700 px-3 py-1 rounded text-sm font-medium">
+                                <span className="inline-flex items-center bg-purple-100 text-purple-700 px-3 py-1 rounded text-sm font-medium dark:bg-purple-500/15 dark:text-purple-300">
                                     {quoteData.status}
                                 </span>
                             }
@@ -264,8 +264,8 @@ export default function QuoteDetailsPage({
                                 label="Client"
                                 value={
                                     <div>
-                                        <span className="font-semibold">{quoteData.client.company_name}</span>
-                                        <span className="text-sm text-gray-500 ml-2">
+                                        <span className="font-semibold dark:text-gray-100">{quoteData.client.company_name}</span>
+                                        <span className="text-sm text-gray-500 ml-2 dark:text-gray-400">
                                             {quoteData.client.city}, {quoteData.client.state}, {quoteData.client.country}
                                         </span>
                                     </div>
@@ -314,7 +314,7 @@ export default function QuoteDetailsPage({
                                             }
                                         }}
                                         disabled={!quoteData.project?.project_id}
-                                        className="px-4 py-2 font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-gray-100"
+                                        className="px-4 py-2 font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:disabled:hover:bg-gray-800"
                                     >
                                         {quoteData.project?.project_name
                                             ? `View Project: ${quoteData.project.project_name}`
@@ -328,7 +328,7 @@ export default function QuoteDetailsPage({
                             <div className="mt-4">
                                 <button
                                     onClick={() => setIsCreateProjectModalOpen(true)}
-                                    className="px-4 py-2 font-medium rounded-lg bg-purple-200 text-black hover:bg-purple-300 transition-colors duration-200"
+                                    className="px-4 py-2 font-medium rounded-lg bg-purple-200 text-black hover:bg-purple-300 transition-colors duration-200 dark:bg-purple-500/20 dark:text-purple-200 dark:hover:bg-purple-500/30"
                                 >
                                     Create Project
                                 </button>
@@ -339,7 +339,7 @@ export default function QuoteDetailsPage({
 
                 {/* Products Table */}
                 <div>
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4">Products</h2>
+                    <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">Products</h2>
                     <ReusableTable
                         data={quoteData.items.map((item, idx) => ({ ...item, id: idx.toString() }))}
                         columns={productColumns}
@@ -351,16 +351,16 @@ export default function QuoteDetailsPage({
                     <div className="mt-6 flex justify-end">
                         <div className="w-full max-w-xs space-y-2">
                             <div className="flex justify-between text-sm">
-                                <span className="text-gray-500">Sub Total:</span>
-                                <span className="font-medium">₹{parseFloat(quoteData.sub_total).toLocaleString('en-IN')}</span>
+                                <span className="text-gray-500 dark:text-gray-400">Sub Total:</span>
+                                <span className="font-medium dark:text-gray-100">₹{parseFloat(quoteData.sub_total).toLocaleString('en-IN')}</span>
                             </div>
                             <div className="flex justify-between text-sm">
-                                <span className="text-gray-500">Tax ({quoteData.tax_percentage}%):</span>
-                                <span className="font-medium">₹{(parseFloat(quoteData.total_amount) - parseFloat(quoteData.sub_total)).toLocaleString('en-IN')}</span>
+                                <span className="text-gray-500 dark:text-gray-400">Tax ({quoteData.tax_percentage}%):</span>
+                                <span className="font-medium dark:text-gray-100">₹{(parseFloat(quoteData.total_amount) - parseFloat(quoteData.sub_total)).toLocaleString('en-IN')}</span>
                             </div>
-                            <div className="flex justify-between text-lg font-bold border-t pt-2">
+                            <div className="flex justify-between text-lg font-bold border-t pt-2 dark:border-gray-800 dark:text-gray-100">
                                 <span>Total:</span>
-                                <span className="text-blue-600">₹{parseFloat(quoteData.total_amount).toLocaleString('en-IN')}</span>
+                                <span className="text-blue-600 dark:text-blue-400">₹{parseFloat(quoteData.total_amount).toLocaleString('en-IN')}</span>
                             </div>
                         </div>
                     </div>
@@ -371,7 +371,7 @@ export default function QuoteDetailsPage({
                     <button
                         onClick={handleDownloadPDF}
                         disabled={isActionLoading}
-                        className="flex items-center gap-2 px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium shadow-sm disabled:opacity-50"
+                        className="flex items-center gap-2 px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium shadow-sm disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-300"
                     >
                         {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText size={18} />}
                         <span>PDF</span>
@@ -379,7 +379,7 @@ export default function QuoteDetailsPage({
                     <button
                         onClick={handleShare}
                         disabled={isActionLoading}
-                        className="flex items-center gap-2 px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium shadow-sm disabled:opacity-50"
+                        className="flex items-center gap-2 px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium shadow-sm disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-300"
                     >
                         {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 size={18} />}
                         <span>Share via link</span>

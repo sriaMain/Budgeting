@@ -21,18 +21,18 @@ export const Step1PersonalDetails: React.FC<Props> = ({ genderOptions, identityR
   return (
     <div className="space-y-8">
       <section>
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Name</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Name</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6">
           {identityReadOnly ? (
             <>
               <div>
-                <p className="block text-base font-medium text-gray-900 mb-2">First Name</p>
-                <p className="px-4 py-3.5 bg-gray-50 rounded-lg text-gray-700 text-sm">{identityReadOnly.firstName || '-'}</p>
+                <p className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">First Name</p>
+                <p className="px-4 py-3.5 bg-gray-50 rounded-lg text-gray-700 text-sm dark:bg-gray-800 dark:text-gray-300">{identityReadOnly.firstName || '-'}</p>
               </div>
               <InputField label="Middle Name" {...register('step1.middle_name')} />
               <div>
-                <p className="block text-base font-medium text-gray-900 mb-2">Last Name</p>
-                <p className="px-4 py-3.5 bg-gray-50 rounded-lg text-gray-700 text-sm">{identityReadOnly.lastName || '-'}</p>
+                <p className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">Last Name</p>
+                <p className="px-4 py-3.5 bg-gray-50 rounded-lg text-gray-700 text-sm dark:bg-gray-800 dark:text-gray-300">{identityReadOnly.lastName || '-'}</p>
               </div>
             </>
           ) : (
@@ -45,8 +45,8 @@ export const Step1PersonalDetails: React.FC<Props> = ({ genderOptions, identityR
         </div>
       </section>
 
-      <section className="border-t pt-6">
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Contact</h3>
+      <section className="border-t pt-6 dark:border-gray-800">
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Contact</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InputField label="Personal Email *" type="email" {...register('step1.personal_email')} error={errors.step1?.personal_email?.message} />
           <InputField label="Alternate Email" type="email" {...register('step1.alternate_email')} />
@@ -55,8 +55,8 @@ export const Step1PersonalDetails: React.FC<Props> = ({ genderOptions, identityR
         </div>
       </section>
 
-      <section className="border-t pt-6">
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Personal Information</h3>
+      <section className="border-t pt-6 dark:border-gray-800">
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Personal Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InputField label="Date of Birth *" type="date" {...register('step1.date_of_birth')} error={errors.step1?.date_of_birth?.message} />
           <SelectField

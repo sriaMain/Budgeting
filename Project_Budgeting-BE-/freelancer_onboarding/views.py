@@ -25,7 +25,7 @@ from roles.permission import HasPermissionCode
 from .models import (
     Freelancer, FreelancerDocument, FreelancerRateCard, FreelancerContract,
     FreelancerProjectAssignment, FreelancerTaskAssignment, FreelancerTimeEntry,
-    FreelancerBankDetail,
+    FreelancerBankDetail, FreelancerEquipment, FreelancerAuditLog,
 )
 from .serializers import (
     FreelancerInviteSerializer, FreelancerSerializer, FreelancerManualCreateSerializer,
@@ -33,7 +33,8 @@ from .serializers import (
     FreelancerRateCardSerializer, FreelancerContractSerializer, FreelancerProjectAssignmentSerializer,
     FreelancerTaskAssignmentSerializer, FreelancerTimeEntrySerializer,
     FreelancerBankDetailSerializer, FreelancerBankDetailUnmaskedSerializer,
-    FreelancerBankDetailPublicSerializer,
+    FreelancerBankDetailPublicSerializer, FreelancerPANUnmaskedSerializer,
+    FreelancerEquipmentSerializer, FreelancerAuditLogSerializer,
 )
 from .services import (
     invite_freelancer, generate_access_token, validate_public_token,
@@ -63,7 +64,27 @@ def _choices_payload():
         "time_entry_statuses": [{"value": k, "label": v} for k, v in FreelancerTimeEntry.STATUS_CHOICES],
         "bank_payment_methods": [{"value": k, "label": v} for k, v in FreelancerBankDetail.PAYMENT_METHOD_CHOICES],
         "bank_payment_statuses": [{"value": k, "label": v} for k, v in FreelancerBankDetail.PAYMENT_STATUS_CHOICES],
+        "pan_verification_statuses": [
+            {"value": k, "label": v} for k, v in FreelancerBankDetail.PAN_VERIFICATION_STATUS_CHOICES
+        ],
+        "equipment_ownerships": [{"value": k, "label": v} for k, v in FreelancerEquipment.OWNERSHIP_CHOICES],
+        "equipment_conditions": [{"value": k, "label": v} for k, v in FreelancerEquipment.CONDITION_CHOICES],
     }
+
+
+def _log_freelancer_audit(freelancer, action, request, field_name="", old_value="", new_value=""):
+    """Section 22 audit trail - scoped to Freelancer alone (see
+    FreelancerAuditLog's docstring). Never pass a raw sensitive value in
+    old_value/new_value; callers must mask first."""
+    user = getattr(request, "user", None)
+    FreelancerAuditLog.objects.create(
+        freelancer=freelancer,
+        action=action,
+        field_name=field_name,
+        old_value=str(old_value) if old_value is not None else "",
+        new_value=str(new_value) if new_value is not None else "",
+        performed_by=user if user and user.is_authenticated else None,
+    )
 
 
 # ===========================================================================
@@ -81,6 +102,8 @@ class FreelancerListCreateView(APIView):
         status_filter = request.GET.get("status")
         search = request.GET.get("search")
         archived = request.GET.get("archived")
+        location = request.GET.get("location")
+        availability = request.GET.get("availability")
 
         # Archived freelancers are hidden from the default list/tabs - pass
         # archived=true to see only archived ones, or archived=all for both.
@@ -94,6 +117,10 @@ class FreelancerListCreateView(APIView):
             qs = qs.filter(status__in=statuses)
         if search:
             qs = qs.filter(Q(full_name__icontains=search) | Q(email__icontains=search))
+        if location:
+            qs = qs.filter(location__icontains=location)
+        if availability:
+            qs = qs.filter(availability=availability)
 
         return Response(FreelancerSerializer(qs, many=True).data)
 
@@ -139,9 +166,15 @@ class FreelancerDetailView(APIView):
 
     def patch(self, request, pk):
         freelancer = get_object_or_404(Freelancer, pk=pk)
+        previous_status = freelancer.status
         serializer = FreelancerAdminUpdateSerializer(freelancer, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        if freelancer.status != previous_status:
+            _log_freelancer_audit(
+                freelancer, "status_changed", request,
+                field_name="status", old_value=previous_status, new_value=freelancer.status,
+            )
         return Response(FreelancerSerializer(freelancer).data)
 
 
@@ -272,7 +305,11 @@ class FreelancerRateCardListCreateView(APIView):
         data["freelancer"] = freelancer.id
         serializer = FreelancerRateCardSerializer(data=data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(created_by=request.user)
+        rate_card = serializer.save(created_by=request.user)
+        _log_freelancer_audit(
+            freelancer, "rate_changed", request, field_name="rate_card",
+            new_value=f"{rate_card.get_pricing_model_display()} {rate_card.currency} {rate_card.cost_rate}/{rate_card.billing_rate}",
+        )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -287,9 +324,14 @@ class FreelancerRateCardDetailView(APIView):
     def patch(self, request, pk, rate_id):
         freelancer = get_object_or_404(Freelancer, pk=pk)
         card = get_object_or_404(FreelancerRateCard, pk=rate_id, freelancer=freelancer)
+        old_summary = f"{card.currency} {card.cost_rate}/{card.billing_rate}"
         serializer = FreelancerRateCardSerializer(card, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        _log_freelancer_audit(
+            freelancer, "rate_changed", request, field_name="rate_card",
+            old_value=old_summary, new_value=f"{card.currency} {card.cost_rate}/{card.billing_rate}",
+        )
         return Response(serializer.data)
 
     def delete(self, request, pk, rate_id):
@@ -407,6 +449,10 @@ class FreelancerProjectAssignmentListCreateView(APIView):
         serializer = FreelancerProjectAssignmentSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         assignment = serializer.save()
+        _log_freelancer_audit(
+            assignment.freelancer, "project_assigned", request,
+            field_name="project", new_value=assignment.project.project_name,
+        )
 
         warning = check_freelancer_capacity(
             assignment.freelancer, assignment.start_date, assignment.end_date,
@@ -436,7 +482,11 @@ class FreelancerProjectAssignmentDetailView(APIView):
 
     def delete(self, request, pk):
         assignment = get_object_or_404(FreelancerProjectAssignment, pk=pk)
+        freelancer, project_name = assignment.freelancer, assignment.project.project_name
         assignment.delete()
+        _log_freelancer_audit(
+            freelancer, "project_removed", request, field_name="project", old_value=project_name,
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -616,9 +666,16 @@ class FreelancerBankDetailView(APIView):
     def patch(self, request, pk):
         freelancer = get_object_or_404(Freelancer, pk=pk)
         instance = getattr(freelancer, "bank_detail", None)
+        previous_pan_status = instance.pan_verification_status if instance else None
         serializer = FreelancerBankDetailSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save(freelancer=freelancer)
+        bank = serializer.save(freelancer=freelancer)
+        _log_freelancer_audit(freelancer, "bank_detail_updated", request)
+        if previous_pan_status is not None and bank.pan_verification_status != previous_pan_status:
+            _log_freelancer_audit(
+                freelancer, "pan_verification_changed", request, field_name="pan_verification_status",
+                old_value=previous_pan_status, new_value=bank.pan_verification_status,
+            )
         return Response(serializer.data)
 
 
@@ -638,6 +695,65 @@ class FreelancerBankDetailUnmaskedView(APIView):
         if not bank:
             return Response({"detail": "No bank details on file."}, status=404)
         return Response(FreelancerBankDetailUnmaskedSerializer(bank).data)
+
+
+class FreelancerPANUnmaskedView(APIView):
+    """Reveals the raw PAN (tax_number) - gated behind its own permission
+    code, independent of bank_detail.view_unmasked (Section 7: PAN and bank
+    account access are separately restricted)."""
+
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    authentication_classes = [JWTAuthentication]
+    permission_code = "freelancer_onboarding.bank_detail.view_pan_unmasked"
+
+    def get(self, request, pk):
+        freelancer = get_object_or_404(Freelancer, pk=pk)
+        bank = getattr(freelancer, "bank_detail", None)
+        if not bank:
+            return Response({"detail": "No PAN on file."}, status=404)
+        return Response(FreelancerPANUnmaskedSerializer(bank).data)
+
+
+class FreelancerEquipmentView(APIView):
+    """A single admin-editable equipment/laptop record per freelancer
+    (create-or-update via PATCH) - same shape as FreelancerBankDetailView.
+    Nothing sensitive here, so no masked/unmasked split is needed."""
+
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    authentication_classes = [JWTAuthentication]
+    permission_map = {
+        "GET": "freelancer_onboarding.equipment.view",
+        "PATCH": "freelancer_onboarding.equipment.edit",
+    }
+
+    def get(self, request, pk):
+        freelancer = get_object_or_404(Freelancer, pk=pk)
+        equipment = getattr(freelancer, "equipment", None)
+        if not equipment:
+            return Response(None)
+        return Response(FreelancerEquipmentSerializer(equipment).data)
+
+    def patch(self, request, pk):
+        freelancer = get_object_or_404(Freelancer, pk=pk)
+        instance = getattr(freelancer, "equipment", None)
+        serializer = FreelancerEquipmentSerializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(freelancer=freelancer)
+        return Response(serializer.data)
+
+
+class FreelancerAuditLogListView(APIView):
+    """Section 22's Activity tab data - read-only, entries are written
+    internally by _log_freelancer_audit() at each mutation point above."""
+
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    authentication_classes = [JWTAuthentication]
+    permission_code = "freelancer_onboarding.audit_log.view"
+
+    def get(self, request, pk):
+        freelancer = get_object_or_404(Freelancer, pk=pk)
+        logs = freelancer.audit_logs.select_related("performed_by")
+        return Response(FreelancerAuditLogSerializer(logs, many=True).data)
 
 
 # ===========================================================================

@@ -429,23 +429,23 @@ export function AddTaskModal({
         <div className="fixed inset-0 z-50 overflow-y-auto">
             {/* Backdrop */}
             <div
-                className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all"
+                className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50"
                 onClick={handleClose}
             />
 
             {/* Modal */}
             <div className="flex min-h-full items-center justify-center p-4">
                 <div
-                    className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl transform transition-all"
+                    className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl transform transition-all dark:bg-gray-900 dark:shadow-black/40"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {/* Header */}
-                    <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 rounded-t-xl">
-                        <h4 className="text-lg font-bold text-gray-900">{editingTask ? 'Edit Task' : 'Add Task'}</h4>
+                    <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 rounded-t-xl dark:bg-gray-900 dark:border-gray-800">
+                        <h4 className="text-lg font-bold text-gray-900 dark:text-white">{editingTask ? 'Edit Task' : 'Add Task'}</h4>
                         <button
                             onClick={handleClose}
                             disabled={isSaving}
-                            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-300"
                             aria-label="Close modal"
                         >
                             <X size={24} />
@@ -455,7 +455,7 @@ export function AddTaskModal({
                     {/* Content */}
                     <div className="p-6 max-h-[80vh] overflow-y-auto">
                         {errors.general && (
-                            <div className="mb-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center">
+                            <div className="mb-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400">
                                 <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path>
                                 </svg>
@@ -466,7 +466,7 @@ export function AddTaskModal({
                         <form onSubmit={handleSubmit} className="space-y-5">
                             {/* Task Title */}
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     <span className="text-red-500 mr-1">*</span>Task Title
                                 </label>
                                 <input
@@ -476,7 +476,7 @@ export function AddTaskModal({
                                         setFormData({ ...formData, title: e.target.value });
                                         setErrors(prev => ({ ...prev, title: '' }));
                                     }}
-                                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm ${errors.title ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 ${errors.title ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'
                                         }`}
                                     placeholder="Enter task title"
                                 />
@@ -487,11 +487,11 @@ export function AddTaskModal({
 
                             {/* Assignee selector: service type -> user */}
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">Assign to</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Assign to</label>
 
                                 <div className="space-y-3">
                                     <div>
-                                        <label className="block text-xs font-medium text-gray-700">Select Type</label>
+                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select Type</label>
                                         <div className="relative">
                                             <select
                                                 value={selectedService || ''}
@@ -503,7 +503,7 @@ export function AddTaskModal({
                                                     setSelectedUserId(null);
                                                     setErrors(prev => ({ ...prev, assignee_id: '' }));
                                                 }}
-                                                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white ${errors.assignee_id ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                                                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.assignee_id ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'}`}
                                                 disabled={services.length === 0}
                                             >
                                                 <option value="">{services.length === 0 ? (isLoadingUsers ? 'Loading...' : 'No types') : 'Select type'}</option>
@@ -511,12 +511,12 @@ export function AddTaskModal({
                                                     <option key={s.name} value={s.name}>{s.name}</option>
                                                 ))}
                                             </select>
-                                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
                                         </div>
                                     </div>
 
                                     <div>
-                                        <label className="block text-xs font-medium text-gray-700">Select User</label>
+                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select User</label>
                                         <div className="relative">
                                             <select
                                                 value={selectedUserId || ''}
@@ -525,7 +525,7 @@ export function AddTaskModal({
                                                     setSelectedUserId(value);
                                                     setErrors(prev => ({ ...prev, assignee_id: '' }));
                                                 }}
-                                                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white ${errors.assignee_id ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                                                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.assignee_id ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'}`}
                                                 disabled={!selectedService}
                                             >
                                                 <option value="">{!selectedService ? 'Select type first' : serviceUsers.length === 0 ? 'No users available' : 'Select user'}</option>
@@ -533,7 +533,7 @@ export function AddTaskModal({
                                                     <option key={user.id} value={user.id}>{user.username || user.name || user.email}</option>
                                                 ))}
                                             </select>
-                                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
                                         </div>
                                         {errors.assignee_id && (
                                             <p className="text-xs text-red-600 mt-1">{errors.assignee_id}</p>
@@ -544,11 +544,11 @@ export function AddTaskModal({
 
                             {/* Project - Prefilled (read-only) or Searchable Dropdown */}
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     Project
                                 </label>
                                 {isProjectReadOnly ? (
-                                    <div className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 font-medium">
+                                    <div className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 dark:text-gray-300 font-medium dark:bg-gray-800 dark:border-gray-700">
                                         {prefilledProjectName}
                                     </div>
                                 ) : (
@@ -559,24 +559,24 @@ export function AddTaskModal({
                                                 value={projectSearch}
                                                 onChange={(e) => setProjectSearch(e.target.value)}
                                                 onFocus={() => setShowProjectDropdown(true)}
-                                                className={`w-full px-3 py-2.5 pr-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm ${errors.project ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                                                className={`w-full px-3 py-2.5 pr-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 ${errors.project ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'
                                                     }`}
                                                 placeholder={isLoadingProjects ? "Loading projects..." : "Search project..."}
                                                 disabled={isLoadingProjects}
                                             />
-                                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
                                         </div>
 
                                         {showProjectDropdown && !isLoadingProjects && filteredProjects.length > 0 && (
-                                            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
                                                 {filteredProjects.map(project => (
                                                     <div
                                                         key={project.project_no}
                                                         onClick={() => handleProjectSelect(project)}
-                                                        className="px-3 py-2 hover:bg-blue-50 cursor-pointer transition-colors"
+                                                        className="px-3 py-2 hover:bg-blue-50 cursor-pointer transition-colors dark:hover:bg-blue-500/10"
                                                     >
-                                                        <p className="text-sm font-medium text-gray-900">{project.project_name}</p>
-                                                        <p className="text-xs text-gray-500">#{project.project_no}</p>
+                                                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{project.project_name}</p>
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400">#{project.project_no}</p>
                                                     </div>
                                                 ))}
                                             </div>
@@ -590,7 +590,7 @@ export function AddTaskModal({
 
                             {/* Status (Optional) */}
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     Status
                                 </label>
                                 <div className="relative">
@@ -600,7 +600,7 @@ export function AddTaskModal({
                                             setFormData({ ...formData, status: e.target.value });
                                             setErrors(prev => ({ ...prev, status: '' }));
                                         }}
-                                        className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white ${errors.status ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                                        className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.status ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'
                                             }`}
                                         disabled={isLoadingStatus}
                                     >
@@ -611,7 +611,7 @@ export function AddTaskModal({
                                             </option>
                                         ))}
                                     </select>
-                                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
                                 </div>
                                 {errors.status && (
                                     <p className="text-xs text-red-600 mt-1">{errors.status}</p>
@@ -620,7 +620,7 @@ export function AddTaskModal({
 
                             {/* Due Date (Optional) */}
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     Due Date (Optional)
                                 </label>
                                 <input
@@ -629,13 +629,13 @@ export function AddTaskModal({
                                     onChange={(e) => {
                                         setFormData({ ...formData, due_date: e.target.value });
                                     }}
-                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm"
+                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                 />
                             </div>
 
                             {/* Allocated Hours */}
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     <span className="text-red-500 mr-1">*</span>Allocated Hours
                                 </label>
                                 <input
@@ -645,7 +645,7 @@ export function AddTaskModal({
                                         setFormData({ ...formData, allocated_hours: e.target.value });
                                         setErrors(prev => ({ ...prev, allocated_hours: '' }));
                                     }}
-                                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm font-mono ${errors.allocated_hours ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm font-mono dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 ${errors.allocated_hours ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'
                                         }`}
                                     placeholder="HH:MM (e.g., 08:30)"
                                     pattern="[0-9]{1,2}:[0-5][0-9]"
@@ -656,12 +656,12 @@ export function AddTaskModal({
                             </div>
 
                             {/* Footer */}
-                            <div className="flex justify-end gap-3 pt-4 border-t">
+                            <div className="flex justify-end gap-3 pt-4 border-t dark:border-gray-800">
                                 <button
                                     type="button"
                                     onClick={handleClose}
                                     disabled={isSaving}
-                                    className="px-6 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+                                    className="px-6 py-2 rounded-lg border border-gray-300 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
                                 >
                                     Cancel
                                 </button>

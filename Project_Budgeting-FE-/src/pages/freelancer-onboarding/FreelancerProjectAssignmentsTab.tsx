@@ -30,6 +30,10 @@ const EMPTY = (freelancerId: number): FreelancerProjectAssignmentPayload => ({
     end_date: '',
     estimated_hours: '',
     allocated_hours: '',
+    allocation_percent: 100,
+    planned_units: '',
+    cost_rate_override: '',
+    billing_rate_override: '',
     status: 'planned' as AssignmentStatus,
 });
 
@@ -124,6 +128,9 @@ export const FreelancerProjectAssignmentsTab: React.FC<Props> = ({ freelancerId,
             if (!payload.rate_card) delete payload.rate_card;
             if (!payload.end_date) delete payload.end_date;
             if (!payload.estimated_hours && payload.estimated_hours !== 0) delete payload.estimated_hours;
+            if (!payload.planned_units && payload.planned_units !== 0) delete payload.planned_units;
+            if (!payload.cost_rate_override && payload.cost_rate_override !== 0) delete payload.cost_rate_override;
+            if (!payload.billing_rate_override && payload.billing_rate_override !== 0) delete payload.billing_rate_override;
 
             const created = await api.createAssignment(payload);
             toast.success('Freelancer assigned to project');
@@ -156,18 +163,21 @@ export const FreelancerProjectAssignmentsTab: React.FC<Props> = ({ freelancerId,
 
     const columns: Column<FreelancerProjectAssignment>[] = [
         { header: 'Project', accessor: 'project_name' },
+        { header: 'Client', accessor: (a) => a.client_name || '-' },
+        { header: 'Type', accessor: (a) => a.project_type || '-' },
         { header: 'Role', accessor: (a) => a.role || '-' },
         { header: 'Dates', accessor: (a) => `${a.start_date} - ${a.end_date || 'ongoing'}` },
-        { header: 'Allocated Hrs', accessor: 'allocated_hours' },
+        { header: 'Allocation %', accessor: (a) => `${a.allocation_percent}%` },
         { header: 'Cost Rate', accessor: (a) => a.cost_rate_snapshot ? `${a.currency_snapshot} ${a.cost_rate_snapshot}` : '-' },
         { header: 'Billing Rate', accessor: (a) => a.billing_rate_snapshot ? `${a.currency_snapshot} ${a.billing_rate_snapshot}` : '-' },
+        { header: 'Planned Cost', accessor: (a) => a.planned_freelancer_cost != null ? `${a.currency_snapshot} ${a.planned_freelancer_cost}` : '-' },
         { header: 'Status', accessor: (a) => assignmentStatuses.find((s) => s.value === a.status)?.label || a.status },
     ];
 
     return (
         <div className="space-y-4">
             {hoursPerWeek != null && (
-                <p className="text-sm text-gray-500">Freelancer capacity: {hoursPerWeek} hrs/week</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Freelancer capacity: {hoursPerWeek} hrs/week</p>
             )}
             <div className="flex justify-end">
                 <Button className="!w-auto px-6" onClick={openAdd}>Assign to Project</Button>
@@ -203,6 +213,14 @@ export const FreelancerProjectAssignmentsTab: React.FC<Props> = ({ freelancerId,
                     <InputField label="End Date" type="date" value={values.end_date ?? ''} onChange={handleFieldChange('end_date')} />
                     <InputField label="Estimated Hours" type="number" min={0} value={values.estimated_hours ?? ''} onChange={set('estimated_hours')} />
                     <InputField label="Allocated Hours" type="number" min={0} value={values.allocated_hours} onChange={handleFieldChange('allocated_hours')} />
+                    <InputField label="Allocation %" type="number" min={0} max={100} value={values.allocation_percent ?? 100} onChange={set('allocation_percent')} />
+                    <InputField
+                        label="Planned Units (days/hours/months)"
+                        placeholder="For the Planned Cost = Rate x Units formula"
+                        type="number" min={0}
+                        value={values.planned_units ?? ''}
+                        onChange={set('planned_units')}
+                    />
                     <SelectField
                         label="Rate Card (optional - defaults to current active rate)"
                         placeholder="Use current active rate" options={rateCards.map((c) => ({
@@ -212,11 +230,28 @@ export const FreelancerProjectAssignmentsTab: React.FC<Props> = ({ freelancerId,
                         onChange={set('rate_card')}
                     />
                     <SelectField label="Status" options={assignmentStatuses} value={values.status ?? 'planned'} onChange={set('status')} />
+                    <InputField
+                        label="Cost Rate Override (optional)"
+                        placeholder="Defaults to the rate card's cost rate"
+                        type="number" min={0}
+                        value={values.cost_rate_override ?? ''}
+                        onChange={set('cost_rate_override')}
+                    />
+                    <InputField
+                        label="Billing Rate Override (optional)"
+                        placeholder="Defaults to the rate card's billing rate"
+                        type="number" min={0}
+                        value={values.billing_rate_override ?? ''}
+                        onChange={set('billing_rate_override')}
+                    />
                 </div>
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                    A rate override applies to this project assignment only - the freelancer's master rate card is never changed.
+                </p>
 
-                {checkingCapacity && <p className="text-xs text-gray-400">Checking capacity...</p>}
+                {checkingCapacity && <p className="text-xs text-gray-400 dark:text-gray-500">Checking capacity...</p>}
                 {capacityWarning && (
-                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300">
                         <AlertTriangle size={18} className="shrink-0 mt-0.5" />
                         <span>
                             Freelancer is over allocated by <strong>{capacityWarning.over_allocated_by} hrs/week</strong> in

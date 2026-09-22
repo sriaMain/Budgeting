@@ -45,23 +45,23 @@ export const SkillsInput: React.FC<SkillsInputProps> = ({
 
   return (
     <div className="w-full mb-5">
-      {label && <label className="block text-base font-medium text-gray-900 mb-2">{label}</label>}
+      {label && <label className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">{label}</label>}
       <div
-        className={`w-full min-h-[3.25rem] px-3 py-2 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] flex flex-wrap items-center gap-2 transition-all ${
-          disabled ? 'opacity-50' : 'focus-within:ring-2 focus-within:ring-brand-800 focus-within:bg-white'
+        className={`w-full min-h-[3.25rem] px-3 py-2 bg-input-bg dark:bg-gray-800 rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] dark:shadow-none flex flex-wrap items-center gap-2 transition-all ${
+          disabled ? 'opacity-50' : 'focus-within:ring-2 focus-within:ring-brand-800 focus-within:bg-white dark:focus-within:bg-gray-800 dark:focus-within:ring-violet-500'
         }`}
       >
         {skills.map((skill) => (
           <span
             key={skill}
-            className="flex items-center gap-1 bg-blue-100 text-blue-700 text-sm font-medium pl-2.5 pr-1.5 py-1 rounded-full"
+            className="flex items-center gap-1 bg-blue-100 text-blue-700 text-sm font-medium pl-2.5 pr-1.5 py-1 rounded-full dark:bg-blue-500/15 dark:text-blue-300"
           >
             {skill}
             {!disabled && (
               <button
                 type="button"
                 onClick={() => removeSkill(skill)}
-                className="hover:text-red-600 rounded-full"
+                className="hover:text-red-600 rounded-full dark:hover:text-red-400"
                 aria-label={`Remove ${skill}`}
               >
                 <X size={13} />
@@ -77,7 +77,7 @@ export const SkillsInput: React.FC<SkillsInputProps> = ({
             onKeyDown={handleKeyDown}
             onBlur={commitDraft}
             placeholder={skills.length === 0 ? placeholder : ''}
-            className="flex-1 min-w-[8rem] bg-transparent outline-none text-gray-900 placeholder-gray-400 py-1"
+            className="flex-1 min-w-[8rem] bg-transparent outline-none text-gray-900 placeholder-gray-400 py-1 dark:text-gray-100 dark:placeholder-gray-500"
           />
         )}
       </div>

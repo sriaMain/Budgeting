@@ -104,46 +104,46 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
   };
 
   return (
-    <div className={`border rounded-lg p-4 ${error ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white'}`}>
+    <div className={`border rounded-lg p-4 ${error ? 'border-red-300 bg-red-50 dark:border-red-900/40 dark:bg-red-500/10' : 'border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-            <FileText className="w-5 h-5 text-blue-600" />
+          <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 dark:bg-blue-500/15">
+            <FileText className="w-5 h-5 text-blue-600 dark:text-blue-300" />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">
               {label} {required && <span className="text-red-500">*</span>}
-              {!required && <span className="text-xs font-normal text-gray-400 ml-1">(Optional)</span>}
+              {!required && <span className="text-xs font-normal text-gray-400 ml-1 dark:text-gray-500">(Optional)</span>}
             </p>
             {existingDoc ? (
-              <p className="text-xs text-gray-500 truncate">
+              <p className="text-xs text-gray-500 truncate dark:text-gray-400">
                 {existingDoc.fileName} &middot; {formatFileSize(existingDoc.sizeBytes)}
               </p>
             ) : (
-              <p className="text-xs text-gray-400">{allowedTypesText}, up to {maxSizeMb}MB</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">{allowedTypesText}, up to {maxSizeMb}MB</p>
             )}
-            {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+            {error && <p className="text-xs text-red-600 mt-1 dark:text-red-400">{error}</p>}
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
           {existingDoc && (
-            <span className="inline-flex items-center gap-1 text-xs text-green-700">
+            <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400">
               <CheckCircle2 className="w-4 h-4" /> Uploaded
             </span>
           )}
           {!existingDoc && !isUploading && error && (
-            <span className="inline-flex items-center gap-1 text-xs text-red-600">
+            <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
               <XCircle className="w-4 h-4" /> Upload failed
             </span>
           )}
           {existingDoc && onDownload && (
-            <button type="button" onClick={onDownload} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500" title="Download">
+            <button type="button" onClick={onDownload} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 dark:hover:bg-gray-800 dark:text-gray-400" title="Download">
               <Download className="w-4 h-4" />
             </button>
           )}
           {existingDoc && onDelete && !disabled && (
-            <button type="button" onClick={handleDelete} disabled={isDeleting} className="p-1.5 rounded-md hover:bg-red-50 text-red-500" title="Delete">
+            <button type="button" onClick={handleDelete} disabled={isDeleting} className="p-1.5 rounded-md hover:bg-red-50 text-red-500 dark:hover:bg-red-500/10 dark:text-red-400" title="Delete">
               {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
             </button>
           )}
@@ -154,7 +154,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
               >
                 {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                 {isUploading ? 'Uploading...' : existingDoc ? 'Replace' : 'Upload'}

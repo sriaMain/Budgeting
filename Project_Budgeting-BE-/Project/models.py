@@ -230,13 +230,40 @@ class ProjectBudget(models.Model):
         return self.bills_and_expenses or 0
 
     @property
+    def cost_budget(self):
+        """Tax AND profit excluded - the single source of truth for "budget"
+        everywhere it's shown (Financials tab, Budget > Profit sub-tab,
+        Reports). For Fixed Budget projects, the Project Contract fields
+        entered on Create Project (Contract Value minus Profit Margin =
+        Project.remaining_amount, or Contract Value alone if no Profit
+        Margin was entered) already give exactly this - Contract Value
+        itself excludes GST (Project.save() sets it from the quote's
+        sub_total, not total_amount). Falls back to total_budget (still
+        tax/profit-inclusive) for T&M projects or ones with neither set."""
+        project = self.project
+        if project and project.engagement_type == 'fixed':
+            if project.remaining_amount is not None:
+                return project.remaining_amount
+            if project.contract_value is not None:
+                return project.contract_value
+        return self.total_budget or Decimal("0.00")
+
+    @property
     def forecasted_profit(self):
-            """
-            Expected profit based on current budget and expenses
-            """
-            if self.total_budget is None:
-                return None
-            return self.total_budget - self.actual_expenses
+        """Expected total profit: Contract Value (revenue, tax excluded)
+        minus actual cost so far - NOT cost_budget minus actual cost. Using
+        Contract Value here (rather than the profit-already-excluded
+        cost_budget) means the Profit Margin set aside at project creation,
+        plus whatever of the execution budget ends up unspent, both
+        correctly flow into this figure - Contract Value is exactly Profit
+        Margin + cost_budget by construction, so this is equivalent to
+        "profit already secured" + "remaining execution budget"."""
+        project = self.project
+        if project and project.engagement_type == 'fixed' and project.contract_value is not None:
+            revenue = project.contract_value
+        else:
+            revenue = self.total_budget or Decimal("0.00")
+        return revenue - self.actual_expenses
 
 
 class BudgetLine(models.Model):
@@ -534,9 +561,11 @@ class ResourceAssignment(models.Model):
             from accounts.models import Account
             account = Account.objects.filter(pk=self.resource_id).first()
             return account.display_name if account else None
-        from accounts.models import Vendor
-        vendor = Vendor.objects.filter(pk=self.resource_id).first()
-        return vendor.name if vendor else None
+        # Freelancers are their own model (freelancer_onboarding.Freelancer),
+        # not an accounts.Vendor row - see ResourceAssignmentSerializer.validate().
+        from freelancer_onboarding.models import Freelancer
+        freelancer = Freelancer.objects.filter(pk=self.resource_id).first()
+        return freelancer.full_name if freelancer else None
 
     @property
     def monthly_cost(self):

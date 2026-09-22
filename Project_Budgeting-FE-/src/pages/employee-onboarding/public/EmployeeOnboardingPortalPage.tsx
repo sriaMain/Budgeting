@@ -76,21 +76,21 @@ const EDITABLE_STATUSES = new Set(['invited', 'draft', 'action_required']);
 const UNDER_REVIEW_STATUSES = new Set(['submitted', 'resubmitted']);
 
 const PortalHeader: React.FC<{ detail: EmployeePublicDetail }> = ({ detail }) => (
-  <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-    <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Employee Onboarding</p>
+  <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm dark:bg-gray-900 dark:border-gray-800">
+    <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1 dark:text-blue-400">Employee Onboarding</p>
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">{detail.account.display_name}</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Employee ID: {detail.employee_code}</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{detail.account.display_name}</h1>
+        <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">Employee ID: {detail.employee_code}</p>
       </div>
       <StatusBadge status={detail.status} />
     </div>
     <div className="mt-4">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-medium text-gray-500">Progress</span>
-        <span className="text-xs font-semibold text-gray-700">{detail.progress_percentage}%</span>
+        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Progress</span>
+        <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{detail.progress_percentage}%</span>
       </div>
-      <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+      <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden dark:bg-gray-800">
         <div
           className={`h-full transition-all ${detail.progress_percentage === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
           style={{ width: `${detail.progress_percentage}%` }}
@@ -354,14 +354,14 @@ const EmployeeOnboardingPortalPage: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="max-w-4xl mx-auto py-16 text-center text-gray-500">Loading...</div>;
+    return <div className="max-w-4xl mx-auto py-16 text-center text-gray-500 dark:text-gray-400">Loading...</div>;
   }
 
   if (loadError || !detail) {
     return (
       <div className="max-w-lg mx-auto py-16 text-center">
-        <p className="text-lg font-semibold text-gray-900 mb-2">Link not available</p>
-        <p className="text-sm text-gray-600">{loadError}</p>
+        <p className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Link not available</p>
+        <p className="text-sm text-gray-600 dark:text-gray-300">{loadError}</p>
       </div>
     );
   }
@@ -379,10 +379,10 @@ const EmployeeOnboardingPortalPage: React.FC = () => {
       )}
 
       {UNDER_REVIEW_STATUSES.has(detail.status) && (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center shadow-sm">
-          <Clock className="w-10 h-10 text-blue-500 mx-auto mb-3" />
-          <h2 className="text-lg font-bold text-gray-900 mb-1">Employee Onboarding Submitted Successfully</h2>
-          <p className="text-sm text-gray-600">
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center shadow-sm dark:bg-gray-900 dark:border-gray-800">
+          <Clock className="w-10 h-10 text-blue-500 mx-auto mb-3 dark:text-blue-400" />
+          <h2 className="text-lg font-bold text-gray-900 mb-1 dark:text-white">Employee Onboarding Submitted Successfully</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
             Your employee information has been successfully submitted and is now under review. Our HR team will
             contact you if anything else is needed.
           </p>
@@ -390,10 +390,10 @@ const EmployeeOnboardingPortalPage: React.FC = () => {
       )}
 
       {detail.status === 'approved' && (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center shadow-sm">
-          <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-3" />
-          <h2 className="text-lg font-bold text-gray-900 mb-1">Employee Onboarding Approved</h2>
-          <p className="text-sm text-gray-600">
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center shadow-sm dark:bg-gray-900 dark:border-gray-800">
+          <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-3 dark:text-green-400" />
+          <h2 className="text-lg font-bold text-gray-900 mb-1 dark:text-white">Employee Onboarding Approved</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
             Your employee onboarding process is now complete. No further action is required from you at this time.
           </p>
         </div>
@@ -401,7 +401,7 @@ const EmployeeOnboardingPortalPage: React.FC = () => {
 
       {EDITABLE_STATUSES.has(detail.status) && choices && (
         <FormProvider {...methods}>
-          <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+          <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
             <VendorStepper
               steps={STEPS}
               currentStep={currentStep}
@@ -411,7 +411,7 @@ const EmployeeOnboardingPortalPage: React.FC = () => {
             />
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+          <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm dark:bg-gray-900 dark:border-gray-800">
             {currentStep === 1 && <Step1PersonalDetails genderOptions={choices.genders} />}
             {currentStep === 2 && <Step2Address />}
             {currentStep === 3 && <Step3EmploymentDetails detail={detail} />}
@@ -452,7 +452,7 @@ const EmployeeOnboardingPortalPage: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
             {currentStep > 1 ? (
               <Button variant="secondary" className="!w-auto px-6" onClick={handleBack}>
                 Back

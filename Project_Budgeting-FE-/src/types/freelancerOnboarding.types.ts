@@ -1,11 +1,40 @@
-export type FreelancerStatus = 'draft' | 'invited' | 'onboarding' | 'completed' | 'active' | 'inactive' | 'blocked';
+export type FreelancerStatus =
+    | 'draft' | 'invited' | 'onboarding' | 'completed' | 'active' | 'inactive' | 'blocked'
+    | 'available' | 'assigned' | 'on_hold' | 'offboarded';
 export type FreelancerAvailability = 'available' | 'partially_available' | 'not_available' | '';
 
-export interface Freelancer {
+interface FreelancerAddressFields {
+    permanent_address_line1?: string;
+    permanent_address_line2?: string;
+    permanent_city?: string;
+    permanent_state?: string;
+    permanent_country?: string;
+    permanent_pincode?: string;
+    temp_same_as_permanent?: boolean;
+    temp_address_line1?: string;
+    temp_address_line2?: string;
+    temp_city?: string;
+    temp_state?: string;
+    temp_country?: string;
+    temp_pincode?: string;
+}
+
+interface FreelancerEmergencyContactFields {
+    emergency_contact_name?: string;
+    emergency_contact_phone?: string;
+    emergency_contact_relationship?: string;
+}
+
+export interface Freelancer extends FreelancerAddressFields, FreelancerEmergencyContactFields {
     id: number;
+    freelancer_code: string | null;
     full_name: string;
     email: string;
     phone: string;
+    alternate_phone: string;
+    date_of_birth: string | null;
+    gender: string;
+    profile_photo: string | null;
     location: string;
     professional_title: string;
     skills: string;
@@ -22,17 +51,26 @@ export interface Freelancer {
     payment_method: string;
     currency: string;
     rate: string | number | null;
+    notes: string;
+    internal_remarks: string;
     status: FreelancerStatus;
     last_saved_step: number;
     is_archived: boolean;
+    /** Convenience masked PAN (e.g. "ABCDE****F") - never the full number. */
+    pan_masked: string | null;
+    assigned_projects_count: number;
     created_at: string;
     updated_at: string;
 }
 
-export interface FreelancerManualPayload {
+export interface FreelancerManualPayload extends FreelancerAddressFields, FreelancerEmergencyContactFields {
     full_name: string;
     email: string;
     phone?: string;
+    alternate_phone?: string;
+    date_of_birth?: string | null;
+    gender?: string;
+    profile_photo?: File | null;
     location?: string;
     professional_title?: string;
     skills?: string;
@@ -49,6 +87,10 @@ export interface FreelancerManualPayload {
     payment_method?: string;
     currency?: string;
     rate?: string | number | null;
+    notes?: string;
+    internal_remarks?: string;
+    /** Admin-only update path also allows setting status directly. */
+    status?: FreelancerStatus;
 }
 
 export type PricingModel = 'hourly' | 'daily' | 'fixed' | 'milestone' | 'retainer';
@@ -127,12 +169,19 @@ export interface FreelancerProjectAssignment {
     freelancer_name: string;
     project: number;
     project_name: string;
+    /** Joined from the assigned project - null if it has no client set. */
+    client_name: string | null;
+    project_type: string;
     rate_card: number | null;
     role: string;
     start_date: string;
     end_date: string | null;
     estimated_hours: string | number | null;
     allocated_hours: string | number;
+    allocation_percent: number;
+    planned_units: string | number | null;
+    /** cost_rate_snapshot x planned_units - null until both are set. */
+    planned_freelancer_cost: string | number | null;
     pricing_model_snapshot: string;
     cost_rate_snapshot: string | number | null;
     billing_rate_snapshot: string | number | null;
@@ -153,7 +202,13 @@ export interface FreelancerProjectAssignmentPayload {
     end_date?: string | null;
     estimated_hours?: string | number | null;
     allocated_hours: string | number;
+    allocation_percent?: number;
+    planned_units?: string | number | null;
     status?: AssignmentStatus;
+    /** Overrides the freelancer's active rate card for THIS assignment only
+     * (Section 12) - never written back to the freelancer's master rate. */
+    cost_rate_override?: string | number | null;
+    billing_rate_override?: string | number | null;
 }
 
 export interface CapacityCheckResult {
@@ -240,6 +295,7 @@ export interface SimpleTask {
 
 export type BankPaymentMethod = 'bank_transfer' | 'upi' | 'paypal' | 'wise' | 'other';
 export type BankPaymentStatus = 'pending' | 'verified' | 'on_hold';
+export type PanVerificationStatus = 'pending' | 'verified' | 'rejected';
 
 export interface FreelancerBankDetail {
     id: number;
@@ -248,7 +304,9 @@ export interface FreelancerBankDetail {
     payment_terms: string;
     payment_status: BankPaymentStatus;
     tax_type: string;
-    tax_number: string;
+    /** PAN is write-only server-side (Section 7) - only the masked form is ever read here. */
+    tax_number_masked: string | null;
+    pan_verification_status: PanVerificationStatus;
     account_holder_name: string;
     bank_name: string;
     account_number_masked: string;
@@ -263,16 +321,89 @@ export interface FreelancerBankDetailPayload {
     payment_status?: BankPaymentStatus;
     tax_type?: string;
     tax_number?: string;
+    pan_verification_status?: PanVerificationStatus;
     account_holder_name?: string;
     bank_name?: string;
     account_number?: string;
     ifsc_code?: string;
 }
 
-export interface FreelancerBankDetailUnmasked extends FreelancerBankDetailPayload {
+export interface FreelancerBankDetailUnmasked {
     id: number;
     freelancer: number;
+    payment_method: BankPaymentMethod | '';
+    payment_terms: string;
+    payment_status: BankPaymentStatus;
+    account_holder_name: string;
+    bank_name: string;
     account_number: string;
+    ifsc_code: string;
+}
+
+/** Returned only by the dedicated PAN-reveal endpoint (its own permission,
+ * independent of the bank-account reveal above). */
+export interface FreelancerPANUnmasked {
+    id: number;
+    freelancer: number;
+    tax_type: string;
+    tax_number: string;
+    pan_verification_status: PanVerificationStatus;
+}
+
+export type EquipmentOwnership = 'freelancer_owned' | 'company_provided' | 'client_provided' | 'other' | '';
+export type EquipmentCondition = 'new' | 'good' | 'fair' | 'poor' | 'damaged' | '';
+
+export interface FreelancerEquipment {
+    id: number;
+    freelancer: number;
+    ownership: EquipmentOwnership;
+    brand: string;
+    model: string;
+    serial_number: string;
+    processor: string;
+    ram: string;
+    storage: string;
+    operating_system: string;
+    asset_id: string;
+    issue_date: string | null;
+    return_date: string | null;
+    condition: EquipmentCondition;
+    remarks: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export type AuditLogAction =
+    | 'rate_changed' | 'bank_detail_updated' | 'pan_verification_changed'
+    | 'status_changed' | 'project_assigned' | 'project_removed';
+
+export interface FreelancerAuditLog {
+    id: number;
+    freelancer: number;
+    action: AuditLogAction;
+    action_display: string;
+    field_name: string;
+    /** Already masked/sanitized server-side when the field is sensitive. */
+    old_value: string;
+    new_value: string;
+    performed_by_name: string;
+    created_at: string;
+}
+
+export interface FreelancerEquipmentPayload {
+    ownership?: EquipmentOwnership;
+    brand?: string;
+    model?: string;
+    serial_number?: string;
+    processor?: string;
+    ram?: string;
+    storage?: string;
+    operating_system?: string;
+    asset_id?: string;
+    issue_date?: string | null;
+    return_date?: string | null;
+    condition?: EquipmentCondition;
+    remarks?: string;
 }
 
 export interface InviteFreelancerPayload {
@@ -284,6 +415,8 @@ export interface FreelancerListFilters {
     status?: string;
     search?: string;
     archived?: string;
+    location?: string;
+    availability?: string;
 }
 
 export interface FreelancerDocument {
@@ -310,10 +443,14 @@ export interface FreelancerChoices {
     time_entry_statuses: { value: string; label: string }[];
     bank_payment_methods: { value: string; label: string }[];
     bank_payment_statuses: { value: string; label: string }[];
+    pan_verification_statuses: { value: string; label: string }[];
+    equipment_ownerships: { value: string; label: string }[];
+    equipment_conditions: { value: string; label: string }[];
 }
 
 export type FreelancerPublicChoices = Omit<
     FreelancerChoices,
     | 'statuses' | 'pricing_models' | 'contract_types' | 'contract_statuses' | 'assignment_statuses'
     | 'task_assignment_statuses' | 'time_entry_statuses' | 'bank_payment_methods' | 'bank_payment_statuses'
+    | 'pan_verification_statuses'
 >;

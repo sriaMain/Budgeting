@@ -20,8 +20,8 @@ interface Props {
 
 const SectionHeader: React.FC<{ title: string; step: number; onEdit: (s: number) => void }> = ({ title, step, onEdit }) => (
   <div className="flex items-center justify-between mb-3">
-    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">{title}</h3>
-    <button onClick={() => onEdit(step)} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700">
+    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">{title}</h3>
+    <button onClick={() => onEdit(step)} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
       <Edit2 className="w-3.5 h-3.5" /> Edit
     </button>
   </div>
@@ -29,8 +29,8 @@ const SectionHeader: React.FC<{ title: string; step: number; onEdit: (s: number)
 
 const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <div>
-    <p className="text-xs text-gray-500">{label}</p>
-    <p className="text-sm text-gray-900 font-medium">{value || '-'}</p>
+    <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+    <p className="text-sm text-gray-900 font-medium dark:text-gray-100">{value || '-'}</p>
   </div>
 );
 
@@ -48,24 +48,24 @@ export const Step8ReviewSubmit: React.FC<Props> = ({
 
   return (
     <div className="space-y-8">
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 dark:bg-gray-800 dark:border-gray-700">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-sm font-semibold text-gray-900">Onboarding Completion: {completionPercent}%</p>
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">Onboarding Completion: {completionPercent}%</p>
         </div>
-        <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden dark:bg-gray-700">
           <div
             className={`h-full transition-all ${completionPercent === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
             style={{ width: `${completionPercent}%` }}
           />
         </div>
         {missingItems.length > 0 && (
-          <ul className="mt-3 text-xs text-red-600 list-disc list-inside space-y-0.5">
+          <ul className="mt-3 text-xs text-red-600 list-disc list-inside space-y-0.5 dark:text-red-400">
             {missingItems.map((item) => <li key={item}>{item}</li>)}
           </ul>
         )}
       </div>
 
-      <section className="border-t pt-6">
+      <section className="border-t pt-6 dark:border-gray-800">
         <SectionHeader title="Personal Details" step={1} onEdit={onEditStep} />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="First Name" value={values.step1.first_name} />
@@ -77,7 +77,7 @@ export const Step8ReviewSubmit: React.FC<Props> = ({
         </div>
       </section>
 
-      <section className="border-t pt-6">
+      <section className="border-t pt-6 dark:border-gray-800">
         <SectionHeader title="Address" step={2} onEdit={onEditStep} />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Current Address" value={values.step2.current_address} />
@@ -88,7 +88,7 @@ export const Step8ReviewSubmit: React.FC<Props> = ({
         </div>
       </section>
 
-      <section className="border-t pt-6">
+      <section className="border-t pt-6 dark:border-gray-800">
         <SectionHeader title="Employment Details" step={3} onEdit={onEditStep} />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Employee ID" value={detail.employee_code} />
@@ -101,7 +101,7 @@ export const Step8ReviewSubmit: React.FC<Props> = ({
         </div>
       </section>
 
-      <section className="border-t pt-6">
+      <section className="border-t pt-6 dark:border-gray-800">
         <SectionHeader title="Statutory Details" step={4} onEdit={onEditStep} />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="PAN Number" value={values.step4.pan} />
@@ -110,7 +110,7 @@ export const Step8ReviewSubmit: React.FC<Props> = ({
         </div>
       </section>
 
-      <section className="border-t pt-6">
+      <section className="border-t pt-6 dark:border-gray-800">
         <SectionHeader title="Bank Details" step={5} onEdit={onEditStep} />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Account Holder" value={values.step5.account_holder_name} />
@@ -127,7 +127,7 @@ export const Step8ReviewSubmit: React.FC<Props> = ({
         </div>
       </section>
 
-      <section className="border-t pt-6">
+      <section className="border-t pt-6 dark:border-gray-800">
         <SectionHeader title="Emergency Contact" step={6} onEdit={onEditStep} />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Name" value={values.step6.contact_name} />
@@ -136,20 +136,20 @@ export const Step8ReviewSubmit: React.FC<Props> = ({
         </div>
       </section>
 
-      <section className="border-t pt-6">
+      <section className="border-t pt-6 dark:border-gray-800">
         <SectionHeader title="Documents" step={7} onEdit={onEditStep} />
         {documents.length === 0 ? (
-          <p className="text-sm text-gray-500">No documents uploaded yet.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No documents uploaded yet.</p>
         ) : (
           <ul className="space-y-1">
             {documents.map((d) => (
-              <li key={d.id} className="text-sm text-gray-700">{d.file_name} <span className="text-xs text-gray-400">({d.category})</span></li>
+              <li key={d.id} className="text-sm text-gray-700 dark:text-gray-300">{d.file_name} <span className="text-xs text-gray-400 dark:text-gray-500">({d.category})</span></li>
             ))}
           </ul>
         )}
       </section>
 
-      <div className="border-t pt-6 flex justify-end">
+      <div className="border-t pt-6 flex justify-end dark:border-gray-800">
         <Button
           className="!w-auto px-6"
           onClick={() => setIsConfirmOpen(true)}
@@ -175,7 +175,7 @@ export const Step8ReviewSubmit: React.FC<Props> = ({
           </>
         }
       >
-        <p className="text-sm text-gray-700">Are you sure you want to submit your employee onboarding information?</p>
+        <p className="text-sm text-gray-700 dark:text-gray-300">Are you sure you want to submit your employee onboarding information?</p>
       </Modal>
     </div>
   );

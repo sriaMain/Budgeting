@@ -16,8 +16,8 @@ import type {
 
 const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <div>
-    <p className="text-xs text-gray-500">{label}</p>
-    <p className="text-sm text-gray-900 font-medium">{value || '-'}</p>
+    <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+    <p className="text-sm text-gray-900 font-medium dark:text-gray-100">{value || '-'}</p>
   </div>
 );
 
@@ -81,7 +81,7 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
   };
 
   if (loading || !record) {
-    return <div className="text-center p-12 text-gray-500">Loading...</div>;
+    return <div className="text-center p-12 text-gray-500 dark:text-gray-400">Loading...</div>;
   }
 
   const openChangeRequest = record.change_requests.find((c) => c.status === 'open');
@@ -95,20 +95,20 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
   return (
     <div className="space-y-6 animate-fade-in-down">
       <div className="mb-2 flex items-center gap-2 text-sm">
-        <button onClick={onBack} className="text-blue-600 hover:text-blue-800 font-semibold transition-colors">
+        <button onClick={onBack} className="text-blue-600 hover:text-blue-800 font-semibold transition-colors dark:text-blue-400 dark:hover:text-blue-300">
           {backLabel}
         </button>
-        <span className="text-gray-400">/</span>
-        <span className="text-gray-700 font-medium">{record.account.display_name}</span>
+        <span className="text-gray-400 dark:text-gray-500">/</span>
+        <span className="text-gray-700 font-medium dark:text-gray-300">{record.account.display_name}</span>
       </div>
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-3xl font-bold text-gray-900">{record.account.display_name}</h2>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{record.account.display_name}</h2>
           <StatusBadge status={record.status} />
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             {record.employee_code} &middot; {record.designation || record.department}
             {isUnderReview && ` · ${record.current_stage}`}
           </p>
@@ -124,20 +124,20 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
       </div>
 
       {record.status === 'action_required' && openChangeRequest && (
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-          <p className="text-sm font-semibold text-orange-800">
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 dark:bg-orange-500/10 dark:border-orange-500/30">
+          <p className="text-sm font-semibold text-orange-800 dark:text-orange-300">
             Action Required — {openChangeRequest.section_display}{openChangeRequest.field_name ? ` (${openChangeRequest.field_name})` : ''}
           </p>
-          <p className="text-sm text-orange-700 mt-1">
+          <p className="text-sm text-orange-700 mt-1 dark:text-orange-300">
             Requested by {openChangeRequest.requested_by_name || 'HR'}: {openChangeRequest.reason}
           </p>
-          {openChangeRequest.comments && <p className="text-sm text-orange-600 mt-1">{openChangeRequest.comments}</p>}
+          {openChangeRequest.comments && <p className="text-sm text-orange-600 mt-1 dark:text-orange-400">{openChangeRequest.comments}</p>}
         </div>
       )}
 
       {record.status === 'approved' && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <p className="text-sm font-semibold text-green-800">
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 dark:bg-green-500/10 dark:border-green-500/30">
+          <p className="text-sm font-semibold text-green-800 dark:text-green-300">
             This employee's onboarding has been fully approved.
           </p>
         </div>
@@ -146,7 +146,7 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
       <Tabs tabs={SECTION_TABS} active={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'personal_details' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 dark:bg-gray-900 dark:border-gray-800">
           <Field label="First Name" value={record.account.first_name} />
           <Field label="Last Name" value={record.account.last_name} />
           <Field label="Middle Name" value={p?.middle_name} />
@@ -163,7 +163,7 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
       )}
 
       {activeTab === 'address' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 dark:bg-gray-900 dark:border-gray-800">
           <Field label="Current Address" value={a?.current_address} />
           <Field label="City" value={a?.city} />
           <Field label="State" value={a?.state} />
@@ -173,7 +173,7 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
       )}
 
       {activeTab === 'employment_details' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 dark:bg-gray-900 dark:border-gray-800">
           <Field label="Employee ID" value={record.employee_code} />
           <Field label="Department" value={record.department} />
           <Field label="Designation" value={record.designation} />
@@ -186,7 +186,7 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
       )}
 
       {activeTab === 'statutory_details' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 dark:bg-gray-900 dark:border-gray-800">
           <Field label="PAN" value={s?.pan} />
           <Field label="Aadhaar Number" value={s?.aadhaar_number} />
           <Field label="UAN Number" value={s?.uan_number} />
@@ -196,7 +196,7 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
       )}
 
       {activeTab === 'bank_details' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 dark:bg-gray-900 dark:border-gray-800">
           <Field label="Bank Name" value={b?.bank_name} />
           <Field label="Account Holder" value={b?.account_holder_name} />
           <Field label="Account Number" value={b?.account_number_masked} />
@@ -205,7 +205,7 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
       )}
 
       {activeTab === 'emergency_contact' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 dark:bg-gray-900 dark:border-gray-800">
           <Field label="Name" value={ec?.contact_name} />
           <Field label="Number" value={ec?.contact_number} />
           <Field label="Relationship" value={ec?.relationship} />
@@ -213,18 +213,18 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
       )}
 
       {activeTab === 'documents' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
           {record.documents.length === 0 ? (
-            <p className="text-sm text-gray-500">No documents uploaded.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">No documents uploaded.</p>
           ) : (
             <ul className="space-y-2">
               {record.documents.map((d) => (
-                <li key={d.id} className="flex items-center justify-between gap-2 py-2 border-b border-gray-100 last:border-0">
+                <li key={d.id} className="flex items-center justify-between gap-2 py-2 border-b border-gray-100 last:border-0 dark:border-gray-800">
                   <div className="flex items-center gap-2 min-w-0">
-                    <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 dark:text-gray-500" />
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{d.file_name}</p>
-                      <p className="text-xs text-gray-500">{d.category.replace(/_/g, ' ')} &middot; Uploaded by {d.uploaded_by_role}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate dark:text-gray-100">{d.file_name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{d.category.replace(/_/g, ' ')} &middot; Uploaded by {d.uploaded_by_role}</p>
                     </div>
                   </div>
                   <button
@@ -232,7 +232,7 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
                       const { download_url } = await api.downloadDocument(accountId, d.id);
                       window.open(download_url, '_blank');
                     }}
-                    className="text-gray-400 hover:text-blue-600 flex-shrink-0"
+                    className="text-gray-400 hover:text-blue-600 flex-shrink-0 dark:text-gray-500 dark:hover:text-blue-400"
                     title="Download"
                   >
                     <Download className="w-4 h-4" />
@@ -245,8 +245,8 @@ export function EmployeeOnboardingReviewContent({ accountId, onBack, backLabel =
       )}
 
       {activeTab === 'history' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="font-bold text-gray-900 text-sm mb-4">Timeline</h3>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
+          <h3 className="font-bold text-gray-900 text-sm mb-4 dark:text-white">Timeline</h3>
           <EmployeeApprovalTimeline events={history} />
         </div>
       )}

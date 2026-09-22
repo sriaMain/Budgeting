@@ -26,10 +26,11 @@ export interface Client {
   mobile_number: string;
   email: string;
   gstin?: string;
-  street_address?: string;
+  address1?: string;
+  address2?: string;
+  street_address?: string; // read-only, backend-derived from address1 + address2
   city?: string;
   postal_code?: string;
-  municipality?: string;
   state?: string;
   country?: string;
   tags: CompanyTag[];
@@ -38,11 +39,17 @@ export interface Client {
   pocs?: POC[];  // POCs nested in client response
 }
 
+export const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Dr."] as const;
+
 export interface POC {
   id: number;
   company: number;
   company_name: string;
-  poc_name: string;
+  salutation: string;
+  first_name: string;
+  middle_name?: string;
+  last_name: string;
+  poc_name: string; // read-only, backend-derived full name
   designation: string;
   poc_mobile: string;
   poc_email: string;
@@ -80,7 +87,7 @@ export function ClientListPage({ clients, onAddClient, onSelectClient }: ClientL
     <div className="space-y-4 sm:space-y-6 animate-fade-in-down">
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
-        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Contacts</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Contacts</h2>
 
         <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
           <div className="relative flex-1 sm:flex-initial">
@@ -89,9 +96,9 @@ export function ClientListPage({ clients, onAddClient, onSelectClient }: ClientL
               placeholder="Search contacts..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-64 text-sm sm:text-base"
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-64 text-sm sm:text-base dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
             />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 dark:text-gray-500" />
           </div>
           <button
             onClick={onAddClient}
@@ -105,11 +112,11 @@ export function ClientListPage({ clients, onAddClient, onSelectClient }: ClientL
       </div>
 
       {/* Desktop Table View - Hidden on mobile */}
-      <div className="hidden md:block bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
+      <div className="hidden md:block bg-gray-50 rounded-xl border border-gray-200 overflow-hidden dark:bg-gray-900 dark:border-gray-800">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-gray-100/80 text-gray-900 font-bold border-b border-gray-300">
+              <tr className="bg-gray-100/80 text-gray-900 font-bold border-b border-gray-300 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700">
                 <th className="py-4 px-6 w-24">ID</th>
                 <th className="py-4 px-6">Company Name</th>
                 <th className="py-4 px-6">Address</th>
@@ -117,31 +124,31 @@ export function ClientListPage({ clients, onAddClient, onSelectClient }: ClientL
                 <th className="py-4 px-6">Phone</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
+            <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-800 dark:bg-gray-900">
               {filteredClients.length > 0 ? (
                 filteredClients.map(client => (
                   <tr
                     key={client.id}
-                    className="hover:bg-gray-50 transition-colors group cursor-pointer"
+                    className="hover:bg-gray-50 transition-colors group cursor-pointer dark:hover:bg-gray-800"
                     onClick={() => onSelectClient(client.id)}
                   >
-                    <td className="py-4 px-6 font-medium text-gray-500">#{client.id}</td>
+                    <td className="py-4 px-6 font-medium text-gray-500 dark:text-gray-400">#{client.id}</td>
                     <td className="py-4 px-6 align-top">
                       <div>
-                        <p className="font-bold text-gray-900">{client.company_name}</p>
-                        <p className="text-sm text-gray-500 mt-0.5">{client.tags?.length > 0 ? client.tags.map(t => t.name).join(', ') : 'No tags'}</p>
+                        <p className="font-bold text-gray-900 dark:text-white">{client.company_name}</p>
+                        <p className="text-sm text-gray-500 mt-0.5 dark:text-gray-400">{client.tags?.length > 0 ? client.tags.map(t => t.name).join(', ') : 'No tags'}</p>
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-sm text-gray-600">
+                    <td className="py-4 px-6 text-sm text-gray-600 dark:text-gray-300">
                       {[client.street_address, client.city, client.state].filter(Boolean).join(', ') || 'N/A'}
                     </td>
-                    <td className="py-4 px-6 text-sm text-gray-600">{client.email}</td>
-                    <td className="py-4 px-6 text-sm text-gray-600">{client.mobile_number}</td>
+                    <td className="py-4 px-6 text-sm text-gray-600 dark:text-gray-300">{client.email}</td>
+                    <td className="py-4 px-6 text-sm text-gray-600 dark:text-gray-300">{client.mobile_number}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-gray-500">
+                  <td colSpan={5} className="py-12 text-center text-gray-500 dark:text-gray-400">
                     No clients found. Click "Add Client" to create one.
                   </td>
                 </tr>
@@ -158,16 +165,16 @@ export function ClientListPage({ clients, onAddClient, onSelectClient }: ClientL
             <div
               key={client.id}
               onClick={() => onSelectClient(client.id)}
-              className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+              className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer dark:bg-gray-900 dark:border-gray-800"
             >
               {/* Card Header */}
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <Building2 size={18} className="text-blue-600" />
-                    <h3 className="font-bold text-gray-900 text-lg">{client.company_name}</h3>
+                    <h3 className="font-bold text-gray-900 text-lg dark:text-white">{client.company_name}</h3>
                   </div>
-                  <span className="text-xs text-gray-500">ID: #{client.id}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">ID: #{client.id}</span>
                 </div>
               </div>
 
@@ -177,7 +184,7 @@ export function ClientListPage({ clients, onAddClient, onSelectClient }: ClientL
                   {client.tags.map(tag => (
                     <span
                       key={tag.id}
-                      className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-full font-medium"
+                      className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-full font-medium dark:bg-blue-500/15 dark:text-blue-300"
                     >
                       {tag.name}
                     </span>
@@ -189,29 +196,29 @@ export function ClientListPage({ clients, onAddClient, onSelectClient }: ClientL
               <div className="space-y-2">
                 {/* Email */}
                 <div className="flex items-start gap-2">
-                  <Briefcase size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                  <Briefcase size={16} className="text-gray-400 mt-0.5 flex-shrink-0 dark:text-gray-500" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-500">Email</p>
-                    <p className="text-sm text-gray-900 truncate">{client.email}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Email</p>
+                    <p className="text-sm text-gray-900 truncate dark:text-gray-100">{client.email}</p>
                   </div>
                 </div>
 
                 {/* Phone */}
                 <div className="flex items-start gap-2">
-                  <Phone size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                  <Phone size={16} className="text-gray-400 mt-0.5 flex-shrink-0 dark:text-gray-500" />
                   <div className="flex-1">
-                    <p className="text-xs text-gray-500">Phone</p>
-                    <p className="text-sm text-gray-900">{client.mobile_number}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Phone</p>
+                    <p className="text-sm text-gray-900 dark:text-gray-100">{client.mobile_number}</p>
                   </div>
                 </div>
 
                 {/* Address */}
                 {[client.street_address, client.city, client.state].filter(Boolean).length > 0 && (
                   <div className="flex items-start gap-2">
-                    <MapPin size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                    <MapPin size={16} className="text-gray-400 mt-0.5 flex-shrink-0 dark:text-gray-500" />
                     <div className="flex-1">
-                      <p className="text-xs text-gray-500">Address</p>
-                      <p className="text-sm text-gray-900">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Address</p>
+                      <p className="text-sm text-gray-900 dark:text-gray-100">
                         {[client.street_address, client.city, client.state].filter(Boolean).join(', ')}
                       </p>
                     </div>
@@ -221,8 +228,8 @@ export function ClientListPage({ clients, onAddClient, onSelectClient }: ClientL
             </div>
           ))
         ) : (
-          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-            <p className="text-gray-500">No clients found. Click "Add Client" to create one.</p>
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center dark:bg-gray-900 dark:border-gray-800">
+            <p className="text-gray-500 dark:text-gray-400">No clients found. Click "Add Client" to create one.</p>
           </div>
         )}
       </div>

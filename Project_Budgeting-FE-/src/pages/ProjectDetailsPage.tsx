@@ -4,7 +4,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Filter } from 'lucide-react';
 import type { DropResult } from '@hello-pangea/dnd';
 import axiosInstance from '../utils/axiosInstance';
-import { ReusableTable } from '../components/ReusableTable';
+import { ReusableTable, type Column } from '../components/ReusableTable';
+import { StatusBadge } from '../components/StatusBadge';
 import { AddTaskModal } from '../components/AddTaskModal';
 import { AssignTaskModal } from '../components/AssignTaskModal';
 import { AddExpenseModal } from '../components/AddExpenseModal';
@@ -12,6 +13,7 @@ import { BudgetLinesPanel } from '../components/BudgetLinesPanel';
 import { MilestonesPanel } from '../components/MilestonesPanel';
 import { ResourcesPanel } from '../components/ResourcesPanel';
 import { FinancialSummaryPanel } from '../components/FinancialSummaryPanel';
+import { FreelancerAssignmentsPanel } from '../components/FreelancerAssignmentsPanel';
 import { TaskBoardView } from '../components/TaskBoardView';
 import { TaskCalendarView } from '../components/TaskCalendarView';
 import { TaskGanttView } from '../components/TaskGanttView';
@@ -76,6 +78,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const [paymentSearch, setPaymentSearch] = useState<string>('');
     const [paymentTypeFilter, setPaymentTypeFilter] = useState<string>('All');
     const [showPaymentFilter, setShowPaymentFilter] = useState<boolean>(false);
+    const [expenseSearch, setExpenseSearch] = useState<string>('');
+    const [invoiceSearch, setInvoiceSearch] = useState<string>('');
     const [project, setProject] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
@@ -105,6 +109,10 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const [expenses, setExpenses] = useState<any[]>([]);
     const [isLoadingExpenses, setIsLoadingExpenses] = useState(false);
     const [isAddExpenseModalOpen, setIsAddExpenseModalOpen] = useState(false);
+    // GL Account id -> "CODE - Name" display label, for the Expenses tab table.
+    // The expense list endpoint only returns the gl_account id, so this is
+    // fetched from the same endpoint AddExpenseModal already uses.
+    const [glAccountsById, setGlAccountsById] = useState<Record<number, string>>({});
 
     // Handle tab query parameter
     useEffect(() => {
@@ -237,7 +245,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     }, [projectId]);
 
     useEffect(() => {
-        if (activeTab === 'Finances') {
+        if (activeTab === 'Invoices') {
             refreshInvoices();
         }
     }, [activeTab, refreshInvoices]);
@@ -493,6 +501,25 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         await fetchExpenses();
     };
 
+    // Fetch GL Accounts (id -> "CODE - Name") for the Expenses tab's GL Account
+    // column - the expense list endpoint only returns the gl_account id.
+    // Reuses the same endpoint AddExpenseModal already calls for its GL
+    // Account picker.
+    const fetchGlAccountsForExpenses = async () => {
+        try {
+            const response = await axiosInstance.get<{ id: number; code: string; name: string }[]>(
+                '/gl-accounts/?active_only=true'
+            );
+            const map: Record<number, string> = {};
+            (response.data || []).forEach((acc) => {
+                map[acc.id] = `${acc.code} - ${acc.name}`;
+            });
+            setGlAccountsById(map);
+        } catch (error) {
+            console.error('Error fetching GL accounts for expenses table:', error);
+        }
+    };
+
 
 
     // Fetch quotes when Finances tab is active
@@ -504,16 +531,20 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
             fetchPurchaseOrders();
             // Fetch bills (outgoing payments)
             fetchBills();
-            // Fetch expenses
+        }
+        if (activeTab === 'Expenses') {
             fetchExpenses();
+        }
+        if (activeTab === 'Expenses') {
+            fetchGlAccountsForExpenses();
         }
     }, [activeTab, projectId, project]);
 
 
-    // Fetch payments when the Payment tab, or the Budget tab's Revenue/Profit
+    // Fetch payments when the Payments tab, or the Budget tab's Revenue/Profit
     // sub-tabs (which reuse the same invoiced/received figures), are active.
     useEffect(() => {
-        if (activeTab === 'Payment' || activeTab === 'Budget') {
+        if (activeTab === 'Payments' || activeTab === 'Budget') {
             fetchProjectPayments();
         }
     }, [activeTab, projectId]);
@@ -628,7 +659,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
             case 'Needs Attention':
                 return 'bg-red-500 text-white';
             default:
-                return 'bg-gray-100 text-gray-800';
+                return 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-300';
         }
     };
 
@@ -656,7 +687,11 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const consumedHoursPercent = budgetTotalHours > 0 ? Math.round((budgetConsumedHours / budgetTotalHours) * 100) : 0;
     const remainingHoursPercent = budgetTotalHours > 0 ? Math.round((budgetRemainingHours / budgetTotalHours) * 100) : 0;
 
-    const totalBudgetAmount = Number(project?.budget?.total_budget) || 0;
+    // cost_budget excludes tax and profit margin (in_house + outsourced cost
+    // only), unlike total_budget which mirrors the client-facing quote total
+    // (sub_total + tax) - this is the figure "budget used/remaining" should
+    // be measured against.
+    const totalBudgetAmount = Number(project?.budget?.cost_budget) || 0;
     const usedBudgetAmount = Number(project?.budget?.used_budget) || 0;
     const budgetUsedPercent = totalBudgetAmount > 0 ? Math.round((usedBudgetAmount / totalBudgetAmount) * 100) : 0;
     const remainingBudgetAmount = project?.budget?.remaining_budget != null
@@ -669,19 +704,19 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     // T&M -> Resources); Financial Summary is common to both.
     const engagementType: 'fixed' | 'time_and_material' = project?.engagement_type || 'fixed';
     const mainTabs = [
-        'Tasks', 'Time', 'Budget',
+        'Tasks', 'Time', 'Budget', 'Expenses', 'Invoices',
         ...(engagementType === 'fixed' ? ['Milestones'] : ['Resources']),
-        'Financial Summary',
-        'Finances', 'Details', 'Payment',
+        'Financials',
+        'Details', 'Payments', 'Finances',
     ];
 
     const budgetHealth = totalBudgetAmount <= 0
-        ? { label: 'No budget set', className: 'bg-gray-50 border-gray-200 text-gray-700', bar: 'bg-gray-400' }
+        ? { label: 'No budget set', className: 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300', bar: 'bg-gray-400' }
         : budgetUsedPercent >= 100
-            ? { label: 'Over budget', className: 'bg-red-50 border-red-200 text-red-700', bar: 'bg-red-500' }
+            ? { label: 'Over budget', className: 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-300', bar: 'bg-red-500' }
             : budgetUsedPercent >= 80
-                ? { label: 'At risk', className: 'bg-amber-50 border-amber-200 text-amber-700', bar: 'bg-amber-500' }
-                : { label: 'On track', className: 'bg-green-50 border-green-200 text-green-700', bar: 'bg-green-500' };
+                ? { label: 'At risk', className: 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300', bar: 'bg-amber-500' }
+                : { label: 'On track', className: 'bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/30 text-green-700 dark:text-green-300', bar: 'bg-green-500' };
 
     // Revenue: quoted amount (contracted value, shown for reference only) vs.
     // what's actually been invoiced and received. Invoiced/received come from
@@ -732,8 +767,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
             <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
                 <div className="flex items-center justify-center h-screen">
                     <div className="text-center">
-                        <h2 className="text-2xl font-bold text-gray-900 mb-2">Project Not Found</h2>
-                        <p className="text-gray-600 mb-4">The project you are looking for does not exist or you don't have permission to view it.</p>
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Project Not Found</h2>
+                        <p className="text-gray-600 dark:text-gray-400 mb-4">The project you are looking for does not exist or you don't have permission to view it.</p>
                         <button
                             onClick={() => navigate('/projects')}
                             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -750,11 +785,11 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
             <div className="max-w-7xl mx-auto space-y-6">
                 {/* Header Section */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-6">
                     {/* Top Row: Project # + Status Badge + Action Buttons */}
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
                         <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-500 font-medium">#{project.project_no || projectId}</span>
+                            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">#{project.project_no || projectId}</span>
                             <span className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-semibold ${getStatusColor(project.status || 'In Progress')}`}>
                                 {project.status || 'In Progress'}
                             </span>
@@ -762,7 +797,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                         <div className="flex gap-4">
                             <button
                                 onClick={() => setActiveTab('Budget')}
-                                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors duration-200"
+                                className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors duration-200"
                             >
                                 Monthly Budget
                             </button>
@@ -770,43 +805,43 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                     </div>
 
                     {/* Project Title */}
-                    <h1 className="text-xl font-bold text-gray-900">{project.project_name}</h1>
+                    <h1 className="text-xl font-bold text-gray-900 dark:text-white">{project.project_name}</h1>
                 </div>
 
                 {/* Stats Section */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                        <p className="text-xs text-gray-600 mb-2">Billable hours</p>
-                        <p className="text-2xl font-bold text-gray-900 mb-1">{formatHoursHM(budgetTotalHours)}</p>
-                        <p className="text-xs text-gray-600">h</p>
-                        <p className="text-xs text-gray-600 mt-2">{formatHoursHM(budgetConsumedHours)}h consumed ({consumedHoursPercent}%)</p>
+                    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Billable hours</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{formatHoursHM(budgetTotalHours)}</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">h</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">{formatHoursHM(budgetConsumedHours)}h consumed ({consumedHoursPercent}%)</p>
                     </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                        <p className="text-xs text-gray-600 mb-2">Remaining Billable hours</p>
-                        <p className="text-2xl font-bold text-gray-900 mb-1">{formatHoursHM(budgetRemainingHours)}</p>
-                        <p className="text-xs text-gray-600">h</p>
-                        <p className="text-xs text-gray-600 mt-2">{remainingHoursPercent}% of total</p>
+                    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Remaining Billable hours</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{formatHoursHM(budgetRemainingHours)}</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">h</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">{remainingHoursPercent}% of total</p>
                     </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                        <p className="text-xs text-gray-600 mb-2">User budget</p>
-                        <p className="text-2xl font-bold text-gray-900 mb-1">{totalBudgetAmount.toLocaleString()} {project?.budget?.currency || 'INR'}</p>
-                        <p className="text-xs text-gray-600 mt-2">
+                    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">User budget</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{totalBudgetAmount.toLocaleString()} {project?.budget?.currency || 'INR'}</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
                             Used: {usedBudgetAmount.toLocaleString()} {project?.budget?.currency || 'INR'} ({budgetUsedPercent}%)
                         </p>
                     </div>
 
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                        <p className="text-xs text-gray-600 mb-2">Overdue tasks</p>
-                        <p className="text-2xl font-bold text-gray-900">{overdueTasksCount}</p>
+                    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Overdue tasks</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{overdueTasksCount}</p>
                     </div>
                 </div>
 
                 {/* Tabs Section */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+                <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
                     {/* Main Tabs */}
-                    <div className="border-b border-gray-200 px-6">
+                    <div className="border-b border-gray-200 dark:border-gray-800 px-6">
                         <div className="flex gap-8 overflow-x-auto">
                             {mainTabs.map((tab) => (
                                 <button
@@ -819,8 +854,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                         }
                                     }}
                                     className={`py-4 px-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab
-                                        ? 'text-gray-900 border-blue-600'
-                                        : 'text-gray-600 border-transparent hover:text-gray-900'
+                                        ? 'text-gray-900 dark:text-white border-blue-600'
+                                        : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-white'
                                         }`}
                                 >
                                     {tab}
@@ -831,15 +866,15 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
                     {/* Sub Tabs - Only for Tasks */}
                     {activeTab === 'Tasks' && (
-                        <div className="border-b border-gray-200 px-6 bg-gray-50">
+                        <div className="border-b border-gray-200 dark:border-gray-800 px-6 bg-gray-50 dark:bg-gray-800">
                             <div className="flex gap-6 overflow-x-auto">
                                 {['Task list', 'Gantt', 'Task Board', 'Calendar'].map((subTab) => (
                                     <button
                                         key={subTab}
                                         onClick={() => setActiveSubTab(subTab)}
                                         className={`py-3 px-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${activeSubTab === subTab
-                                            ? 'text-gray-900 border-gray-900'
-                                            : 'text-gray-600 border-transparent hover:text-gray-900'
+                                            ? 'text-gray-900 dark:text-white border-gray-900'
+                                            : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-white'
                                             }`}
                                     >
                                         {subTab}
@@ -858,15 +893,15 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                         <div className="overflow-x-auto">
                                             <table className="w-full">
                                                 <thead>
-                                                    <tr className="border-b border-gray-200">
-                                                        <th className="text-left text-xs font-semibold text-gray-700 py-3 px-3">Assignee</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 py-3 px-3">Task title</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 py-3 px-3">Status</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 py-3 px-3">Activity type</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 py-3 px-3">Allocated hours</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 py-3 px-3">Consumed hours</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 py-3 px-3">Due date</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 py-3 px-3">Remaining</th>
+                                                    <tr className="border-b border-gray-200 dark:border-gray-800">
+                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Assignee</th>
+                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Task title</th>
+                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Status</th>
+                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Activity type</th>
+                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Allocated hours</th>
+                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Consumed hours</th>
+                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Due date</th>
+                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Remaining</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -875,56 +910,56 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                             <td colSpan={8} className="py-12 text-center">
                                                                 <div className="flex flex-col items-center justify-center">
                                                                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
-                                                                    <p className="text-sm text-gray-500">Loading tasks...</p>
+                                                                    <p className="text-sm text-gray-500 dark:text-gray-400">Loading tasks...</p>
                                                                 </div>
                                                             </td>
                                                         </tr>
                                                     ) : tasks.length === 0 ? (
                                                         <tr>
                                                             <td colSpan={8} className="py-12 text-center">
-                                                                <p className="text-sm text-gray-500">No tasks found for this project. Click "Add task" to create one.</p>
+                                                                <p className="text-sm text-gray-500 dark:text-gray-400">No tasks found for this project. Click "Add task" to create one.</p>
                                                             </td>
                                                         </tr>
                                                     ) : (
                                                         tasks.map((task) => (
-                                                            <tr key={task.id} className="border-b border-gray-100 hover:bg-gray-50">
+                                                            <tr key={task.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
                                                                 <td className="py-4 px-3">
                                                                     <div className="flex items-center gap-2">
                                                                         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${task.assignee !== 'Unassigned'
                                                                             ? 'bg-blue-600 text-white'
-                                                                            : 'bg-gray-200 text-gray-400 border-2 border-dashed border-gray-300'
+                                                                            : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border-2 border-dashed border-gray-300 dark:border-gray-700'
                                                                             }`}
                                                                             title={task.assignee}
                                                                         >
                                                                             {task.assigneeAvatar}
                                                                         </div>
-                                                                        <span className="text-sm text-gray-900">&gt;</span>
+                                                                        <span className="text-sm text-gray-900 dark:text-white">&gt;</span>
                                                                         <button
                                                                             onClick={() => {
                                                                                 setSelectedTaskForAssignment(task);
                                                                                 setIsAssignTaskModalOpen(true);
                                                                             }}
-                                                                            className="w-6 h-6 rounded-full border-2 border-dotted border-gray-400 hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer flex items-center justify-center"
+                                                                            className="w-6 h-6 rounded-full border-2 border-dotted border-gray-400 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/15 transition-all cursor-pointer flex items-center justify-center"
                                                                             title={task.assignee !== 'Unassigned' ? 'Reassign task' : 'Assign task'}
                                                                         >
-                                                                            <Plus className="w-3 h-3 text-gray-400 hover:text-blue-500" />
+                                                                            <Plus className="w-3 h-3 text-gray-400 dark:text-gray-500 hover:text-blue-500" />
                                                                         </button>
                                                                     </div>
                                                                 </td>
                                                                 <td
                                                                     onClick={() => openTaskForEdit(task.id)}
-                                                                    className="py-4 px-3 text-sm text-gray-900 cursor-pointer"
+                                                                    className="py-4 px-3 text-sm text-gray-900 dark:text-white cursor-pointer"
                                                                 >{task.title}</td>
                                                                 <td className="py-4 px-3">
                                                                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
                                                                         {task.status}
                                                                     </span>
                                                                 </td>
-                                                                <td className="py-4 px-3 text-sm text-gray-600">{task.activityType}</td>
-                                                                <td className="py-4 px-3 text-sm text-gray-900">{task.allocatedHours}</td>
-                                                                <td className="py-4 px-3 text-sm text-gray-900">{task.consumedHours}</td>
-                                                                <td className="py-4 px-3 text-sm text-gray-600">{task.dueDate}</td>
-                                                                <td className="py-4 px-3 text-sm text-gray-600">{task.remaining}</td>
+                                                                <td className="py-4 px-3 text-sm text-gray-600 dark:text-gray-400">{task.activityType}</td>
+                                                                <td className="py-4 px-3 text-sm text-gray-900 dark:text-white">{task.allocatedHours}</td>
+                                                                <td className="py-4 px-3 text-sm text-gray-900 dark:text-white">{task.consumedHours}</td>
+                                                                <td className="py-4 px-3 text-sm text-gray-600 dark:text-gray-400">{task.dueDate}</td>
+                                                                <td className="py-4 px-3 text-sm text-gray-600 dark:text-gray-400">{task.remaining}</td>
                                                             </tr>
                                                         ))
                                                     )}
@@ -934,7 +969,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                         <div className="mt-6">
                                             <button
                                                 onClick={() => setIsAddTaskModalOpen(true)}
-                                                className="inline-flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900 font-medium"
+                                                className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium"
                                             >
                                                 <Plus className="w-4 h-4" />
                                                 Add task
@@ -980,15 +1015,15 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                         {activeTab === 'Budget' && (
                             <div className="space-y-6">
                                 {/* Budget Sub Tabs: Budget health, Revenue, Profit */}
-                                <div className="border-b border-gray-200">
+                                <div className="border-b border-gray-200 dark:border-gray-800">
                                     <div className="flex gap-6">
                                         {['Budget health', 'Revenue', 'Profit', 'GL Accounts'].map((subTab) => (
                                             <button
                                                 key={subTab}
                                                 type="button"
                                                 className={`py-3 px-1 text-sm font-medium border-b-2 transition-colors ${budgetSubTab === subTab
-                                                    ? 'text-gray-900 border-blue-600'
-                                                    : 'text-gray-600 border-transparent hover:text-gray-900'
+                                                    ? 'text-gray-900 dark:text-white border-blue-600'
+                                                    : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-white'
                                                     }`}
                                                 onClick={() => setBudgetSubTab(subTab)}
                                             >
@@ -1003,15 +1038,15 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                     <div className="space-y-4">
                                         {/* Budget/Time Toggle */}
                                         <div className="flex justify-end mb-4">
-                                            <div className="flex gap-2 bg-gray-100 rounded-lg p-1">
+                                            <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
                                                 {['Budget', 'Time'].map((mode) => (
                                                     <button
                                                         key={mode}
                                                         type="button"
                                                         onClick={() => setBudgetViewMode(mode)}
                                                         className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${budgetViewMode === mode
-                                                            ? 'bg-white text-gray-900 shadow-sm'
-                                                            : 'text-gray-600 hover:text-gray-900'
+                                                            ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                                                            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                                                             }`}
                                                     >
                                                         {mode}
@@ -1031,44 +1066,44 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
                                                 {budgetViewMode === 'Budget' ? (
                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                            <p className="text-xs text-gray-500 mb-1">Total Budget</p>
-                                                            <p className="text-xl font-bold text-gray-900">{totalBudgetAmount.toLocaleString()} {budgetCurrency}</p>
+                                                        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total Budget</p>
+                                                            <p className="text-xl font-bold text-gray-900 dark:text-white">{totalBudgetAmount.toLocaleString()} {budgetCurrency}</p>
                                                         </div>
-                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                            <p className="text-xs text-gray-500 mb-1">Used Budget</p>
-                                                            <p className="text-xl font-bold text-gray-900">{usedBudgetAmount.toLocaleString()} {budgetCurrency}</p>
-                                                            <p className="text-xs text-gray-500 mt-1">{budgetUsedPercent}% of total</p>
+                                                        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Used Budget</p>
+                                                            <p className="text-xl font-bold text-gray-900 dark:text-white">{usedBudgetAmount.toLocaleString()} {budgetCurrency}</p>
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{budgetUsedPercent}% of total</p>
                                                         </div>
-                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                            <p className="text-xs text-gray-500 mb-1">Remaining Budget</p>
-                                                            <p className="text-xl font-bold text-gray-900">{remainingBudgetAmount.toLocaleString()} {budgetCurrency}</p>
+                                                        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Remaining Budget</p>
+                                                            <p className="text-xl font-bold text-gray-900 dark:text-white">{remainingBudgetAmount.toLocaleString()} {budgetCurrency}</p>
                                                         </div>
                                                     </div>
                                                 ) : (
                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                            <p className="text-xs text-gray-500 mb-1">Billable Hours</p>
-                                                            <p className="text-xl font-bold text-gray-900">{formatHoursHM(budgetTotalHours)}</p>
+                                                        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Billable Hours</p>
+                                                            <p className="text-xl font-bold text-gray-900 dark:text-white">{formatHoursHM(budgetTotalHours)}</p>
                                                         </div>
-                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                            <p className="text-xs text-gray-500 mb-1">Consumed Hours</p>
-                                                            <p className="text-xl font-bold text-gray-900">{formatHoursHM(budgetConsumedHours)}</p>
-                                                            <p className="text-xs text-gray-500 mt-1">{consumedHoursPercent}% of total</p>
+                                                        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Consumed Hours</p>
+                                                            <p className="text-xl font-bold text-gray-900 dark:text-white">{formatHoursHM(budgetConsumedHours)}</p>
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{consumedHoursPercent}% of total</p>
                                                         </div>
-                                                        <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                            <p className="text-xs text-gray-500 mb-1">Remaining Hours</p>
-                                                            <p className="text-xl font-bold text-gray-900">{formatHoursHM(budgetRemainingHours)}</p>
+                                                        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Remaining Hours</p>
+                                                            <p className="text-xl font-bold text-gray-900 dark:text-white">{formatHoursHM(budgetRemainingHours)}</p>
                                                         </div>
                                                     </div>
                                                 )}
 
                                                 <div>
-                                                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
                                                         <span>Budget used</span>
                                                         <span>{budgetUsedPercent}%</span>
                                                     </div>
-                                                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                    <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
                                                         <div
                                                             className={`h-full ${budgetHealth.bar} transition-all`}
                                                             style={{ width: `${Math.min(100, budgetUsedPercent)}%` }}
@@ -1077,14 +1112,14 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 </div>
 
                                                 {profitOrLoss !== null ? (
-                                                    <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4">
-                                                        <span className="text-sm text-gray-600">Profit / Loss (invoiced revenue − actual spend)</span>
-                                                        <span className={`text-lg font-bold ${profitOrLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                    <div className="flex items-center justify-between bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+                                                        <span className="text-sm text-gray-600 dark:text-gray-400">Profit / Loss (invoiced revenue − actual spend)</span>
+                                                        <span className={`text-lg font-bold ${profitOrLoss >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                                                             {profitOrLoss.toLocaleString()} {budgetCurrency}
                                                         </span>
                                                     </div>
                                                 ) : (
-                                                    <p className="text-xs text-gray-400">No invoices raised yet — profit will show once this project has been invoiced.</p>
+                                                    <p className="text-xs text-gray-400 dark:text-gray-500">No invoices raised yet — profit will show once this project has been invoiced.</p>
                                                 )}
                                     </div>
                                 )}
@@ -1092,12 +1127,12 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 {/* Revenue Content */}
                                 {budgetSubTab === 'Revenue' && (() => {
                                     const revenueStatus = totalInvoicedAmount <= 0
-                                        ? { label: 'Not yet invoiced', className: 'bg-gray-50 border-gray-200 text-gray-700', bar: 'bg-gray-400' }
+                                        ? { label: 'Not yet invoiced', className: 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300', bar: 'bg-gray-400' }
                                         : revenueReceivedPercent >= 100
-                                            ? { label: 'Fully collected', className: 'bg-green-50 border-green-200 text-green-700', bar: 'bg-green-500' }
+                                            ? { label: 'Fully collected', className: 'bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/30 text-green-700 dark:text-green-300', bar: 'bg-green-500' }
                                             : revenueReceivedPercent > 0
-                                                ? { label: 'Partially collected', className: 'bg-amber-50 border-amber-200 text-amber-700', bar: 'bg-amber-500' }
-                                                : { label: 'Awaiting payment', className: 'bg-red-50 border-red-200 text-red-700', bar: 'bg-red-500' };
+                                                ? { label: 'Partially collected', className: 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300', bar: 'bg-amber-500' }
+                                                : { label: 'Awaiting payment', className: 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-300', bar: 'bg-red-500' };
 
                                     return (
                                         <div className="space-y-4">
@@ -1111,38 +1146,38 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                             </div>
 
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                    <p className="text-xs text-gray-500 mb-1">Quoted Revenue</p>
-                                                    <p className="text-xl font-bold text-gray-900">
+                                                <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Quoted Revenue</p>
+                                                    <p className="text-xl font-bold text-gray-900 dark:text-white">
                                                         {quotedRevenueAmount != null ? `${quotedRevenueAmount.toLocaleString()} ${budgetCurrency}` : 'Not linked to a quote'}
                                                     </p>
                                                 </div>
-                                                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                    <p className="text-xs text-gray-500 mb-1">Invoiced</p>
-                                                    <p className="text-xl font-bold text-gray-900">{totalInvoicedAmount.toLocaleString()} {budgetCurrency}</p>
-                                                    <p className="text-xs text-gray-500 mt-1">{paymentSummary?.invoice_count || 0} invoices</p>
+                                                <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Invoiced</p>
+                                                    <p className="text-xl font-bold text-gray-900 dark:text-white">{totalInvoicedAmount.toLocaleString()} {budgetCurrency}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{paymentSummary?.invoice_count || 0} invoices</p>
                                                 </div>
-                                                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                    <p className="text-xs text-gray-500 mb-1">Received</p>
-                                                    <p className="text-xl font-bold text-green-600">{totalReceivedAmount.toLocaleString()} {budgetCurrency}</p>
-                                                    <p className="text-xs text-gray-500 mt-1">{revenueReceivedPercent}% of invoiced</p>
+                                                <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Received</p>
+                                                    <p className="text-xl font-bold text-green-600 dark:text-green-400">{totalReceivedAmount.toLocaleString()} {budgetCurrency}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{revenueReceivedPercent}% of invoiced</p>
                                                 </div>
                                             </div>
 
                                             <div>
-                                                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                                <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
                                                     <span>Received of invoiced</span>
                                                     <span>{revenueReceivedPercent}%</span>
                                                 </div>
-                                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
                                                     <div className={`h-full ${revenueStatus.bar} transition-all`} style={{ width: `${Math.min(100, revenueReceivedPercent)}%` }} />
                                                 </div>
                                             </div>
 
                                             {outstandingRevenueAmount > 0 && (
-                                                <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4">
-                                                    <span className="text-sm text-gray-600">Outstanding (invoiced but not yet received)</span>
-                                                    <span className="text-lg font-bold text-amber-600">{outstandingRevenueAmount.toLocaleString()} {budgetCurrency}</span>
+                                                <div className="flex items-center justify-between bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+                                                    <span className="text-sm text-gray-600 dark:text-gray-400">Outstanding (invoiced but not yet received)</span>
+                                                    <span className="text-lg font-bold text-amber-600 dark:text-amber-400">{outstandingRevenueAmount.toLocaleString()} {budgetCurrency}</span>
                                                 </div>
                                             )}
                                         </div>
@@ -1153,38 +1188,38 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 {budgetSubTab === 'Profit' && (
                                     profitOrLoss === null ? (
                                         <div className="space-y-4">
-                                            <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 text-center">
-                                                <p className="text-sm text-gray-600">
+                                            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-800 p-4 text-center">
+                                                <p className="text-sm text-gray-600 dark:text-gray-400">
                                                     No invoices have been raised for this project yet, so realized profit can't be calculated.
                                                     Shown below is a forecast instead, based on the project's budget - it will be replaced by real invoiced profit once an invoice is created.
                                                 </p>
                                             </div>
                                             {forecastedProfitAmount !== null && (
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                        <p className="text-xs text-gray-500 mb-1">Budget</p>
-                                                        <p className="text-xl font-bold text-gray-900">{(Number(project?.budget?.total_budget) || 0).toLocaleString()} {budgetCurrency}</p>
+                                                    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Budget</p>
+                                                        <p className="text-xl font-bold text-gray-900 dark:text-white">{(Number(project?.budget?.cost_budget) || 0).toLocaleString()} {budgetCurrency}</p>
                                                     </div>
-                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                        <p className="text-xs text-gray-500 mb-1">Bills & Expenses</p>
-                                                        <p className="text-xl font-bold text-gray-900">{(Number(project?.budget?.bills_and_expenses) || 0).toLocaleString()} {budgetCurrency}</p>
+                                                    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Bills & Expenses</p>
+                                                        <p className="text-xl font-bold text-gray-900 dark:text-white">{(Number(project?.budget?.actual_expenses) || 0).toLocaleString()} {budgetCurrency}</p>
                                                     </div>
-                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                        <p className="text-xs text-gray-500 mb-1">Forecasted Profit</p>
-                                                        <p className={`text-xl font-bold ${forecastedProfitAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Forecasted Profit</p>
+                                                        <p className={`text-xl font-bold ${forecastedProfitAmount >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                                                             {forecastedProfitAmount.toLocaleString()} {budgetCurrency}
                                                         </p>
-                                                        <p className="text-xs text-gray-400 mt-1">Estimate - Budget − Bills & Expenses</p>
+                                                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Estimate - Budget − Bills & Expenses</p>
                                                     </div>
                                                 </div>
                                             )}
                                         </div>
                                     ) : (() => {
                                         const profitStatus = profitOrLoss < 0
-                                            ? { label: 'Loss-making', className: 'bg-red-50 border-red-200 text-red-700' }
+                                            ? { label: 'Loss-making', className: 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-300' }
                                             : (profitMarginPercent ?? 0) < 20
-                                                ? { label: 'Low margin', className: 'bg-amber-50 border-amber-200 text-amber-700' }
-                                                : { label: 'Healthy margin', className: 'bg-green-50 border-green-200 text-green-700' };
+                                                ? { label: 'Low margin', className: 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300' }
+                                                : { label: 'Healthy margin', className: 'bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/30 text-green-700 dark:text-green-300' };
                                         const costPercentOfRevenue = totalInvoicedAmount > 0
                                             ? Math.min(100, Math.round((usedBudgetAmount / totalInvoicedAmount) * 100))
                                             : 0;
@@ -1199,32 +1234,32 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 </div>
 
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                        <p className="text-xs text-gray-500 mb-1">Invoiced Revenue</p>
-                                                        <p className="text-xl font-bold text-gray-900">{totalInvoicedAmount.toLocaleString()} {budgetCurrency}</p>
+                                                    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Invoiced Revenue</p>
+                                                        <p className="text-xl font-bold text-gray-900 dark:text-white">{totalInvoicedAmount.toLocaleString()} {budgetCurrency}</p>
                                                         {quotedRevenueAmount != null && (
-                                                            <p className="text-xs text-gray-500 mt-1">Quoted: {quotedRevenueAmount.toLocaleString()} {budgetCurrency}</p>
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Quoted: {quotedRevenueAmount.toLocaleString()} {budgetCurrency}</p>
                                                         )}
                                                     </div>
-                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                        <p className="text-xs text-gray-500 mb-1">Actual Cost</p>
-                                                        <p className="text-xl font-bold text-gray-900">{usedBudgetAmount.toLocaleString()} {budgetCurrency}</p>
-                                                        <p className="text-xs text-gray-500 mt-1">Labor + expenses</p>
+                                                    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Actual Cost</p>
+                                                        <p className="text-xl font-bold text-gray-900 dark:text-white">{usedBudgetAmount.toLocaleString()} {budgetCurrency}</p>
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Labor + expenses</p>
                                                     </div>
-                                                    <div className="bg-white rounded-lg border border-gray-200 p-4">
-                                                        <p className="text-xs text-gray-500 mb-1">Profit / Loss</p>
-                                                        <p className={`text-xl font-bold ${profitOrLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Profit / Loss</p>
+                                                        <p className={`text-xl font-bold ${profitOrLoss >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                                                             {profitOrLoss.toLocaleString()} {budgetCurrency}
                                                         </p>
                                                     </div>
                                                 </div>
 
                                                 <div>
-                                                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
                                                         <span>Cost as % of invoiced revenue</span>
                                                         <span>{costPercentOfRevenue}%</span>
                                                     </div>
-                                                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                    <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
                                                         <div className={`h-full ${profitOrLoss >= 0 ? 'bg-red-400' : 'bg-red-600'} transition-all`} style={{ width: `${costPercentOfRevenue}%` }} />
                                                     </div>
                                                 </div>
@@ -1240,6 +1275,253 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                             </div>
                         )}
 
+                        {/* Expenses — dedicated tab. The Finances tab below keeps its own
+                            Expenses accordion section too (not removed); this is additive. */}
+                        {activeTab === 'Expenses' && (
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between gap-3">
+                                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Expenses</h3>
+                                    <div className="flex items-center gap-3">
+                                        <div className="relative w-64">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                                            <input
+                                                type="text"
+                                                placeholder="Search expenses..."
+                                                value={expenseSearch}
+                                                onChange={(e) => setExpenseSearch(e.target.value)}
+                                                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-900 dark:text-gray-100"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={() => setIsAddExpenseModalOpen(true)}
+                                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                                        >
+                                            <Plus className="w-4 h-4" />
+                                            Add Expense
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {isLoadingExpenses ? (
+                                    <div className="text-center py-12">
+                                        <div className="inline-flex flex-col items-center">
+                                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-3"></div>
+                                            <p className="text-sm text-gray-500 dark:text-gray-400">Loading expenses...</p>
+                                        </div>
+                                    </div>
+                                ) : (() => {
+                                    const searchLower = expenseSearch.toLowerCase();
+                                    const filteredExpenses = expenses.filter((expense: any) => {
+                                        if (!searchLower) return true;
+                                        return (
+                                            expense.expense_no?.toLowerCase().includes(searchLower) ||
+                                            expense.category?.toLowerCase().includes(searchLower) ||
+                                            expense.description?.toLowerCase().includes(searchLower) ||
+                                            expense.freelancer_name?.toLowerCase().includes(searchLower) ||
+                                            expense.employee_name?.toLowerCase().includes(searchLower)
+                                        );
+                                    });
+
+                                    const expenseColumns: Column<any>[] = [
+                                        {
+                                            header: 'Expense No',
+                                            accessor: (expense) => (
+                                                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                                    {expense.expense_no}
+                                                </span>
+                                            ),
+                                        },
+                                        {
+                                            header: 'Date',
+                                            accessor: (expense) => expense.expense_date
+                                                ? new Date(expense.expense_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                : '-',
+                                        },
+                                        {
+                                            header: 'Category',
+                                            accessor: (expense) => expense.category
+                                                ? (expense.category.charAt(0).toUpperCase() + expense.category.slice(1)).replace(/_/g, ' ')
+                                                : '-',
+                                        },
+                                        {
+                                            header: 'Description',
+                                            accessor: (expense) => (
+                                                <span className="text-sm text-gray-600 dark:text-gray-300">{expense.description || '-'}</span>
+                                            ),
+                                        },
+                                        {
+                                            header: 'Amount',
+                                            accessor: (expense) => (
+                                                <span className="font-semibold text-gray-900 dark:text-white">
+                                                    ₹{parseFloat(expense.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </span>
+                                            ),
+                                        },
+                                        {
+                                            header: 'Status',
+                                            accessor: (expense) => {
+                                                const isPaid = expense.is_fully_paid;
+                                                const isPartial = !isPaid && Number(expense.total_paid) > 0;
+                                                const status = isPaid ? 'paid' : isPartial ? 'partially_paid' : 'unpaid';
+                                                const variant: 'success' | 'warning' | 'neutral' = isPaid ? 'success' : isPartial ? 'warning' : 'neutral';
+                                                const label = isPaid ? 'Paid' : isPartial ? 'Partially Paid' : 'Unpaid';
+                                                return <StatusBadge status={status} variant={variant} label={label} />;
+                                            },
+                                        },
+                                        {
+                                            header: 'GL Account',
+                                            accessor: (expense) => expense.gl_account
+                                                ? (glAccountsById[expense.gl_account] || `#${expense.gl_account}`)
+                                                : '-',
+                                        },
+                                        {
+                                            header: 'Employee / Freelancer / Vendor',
+                                            accessor: (expense) => expense.freelancer_name || expense.employee_name || expense.vendor_name || '-',
+                                        },
+                                    ];
+
+                                    return (
+                                        <ReusableTable<any>
+                                            data={filteredExpenses}
+                                            columns={expenseColumns}
+                                            keyField="id"
+                                            onRowClick={(expense) => navigate(`/expenses/${expense.id}`)}
+                                            emptyMessage="No expenses found for this project"
+                                        />
+                                    );
+                                })()}
+                            </div>
+                        )}
+
+                        {/* Invoices — dedicated tab. The Finances tab below keeps its own
+                            Invoices accordion section too (not removed); this is additive. */}
+                        {activeTab === 'Invoices' && (
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between gap-3">
+                                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Invoices</h3>
+                                    <div className="flex items-center gap-3">
+                                        <div className="relative w-64">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                                            <input
+                                                type="text"
+                                                placeholder="Search invoices..."
+                                                value={invoiceSearch}
+                                                onChange={(e) => setInvoiceSearch(e.target.value)}
+                                                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-900 dark:text-gray-100"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const quotationId = project?.created_from_quotation;
+                                                if (quotationId) {
+                                                    navigate(`/generate-invoice/${quotationId}`);
+                                                } else {
+                                                    toast.error('No quotation associated with this project.');
+                                                }
+                                            }}
+                                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                                        >
+                                            <Plus className="w-4 h-4" />
+                                            Generate Invoice
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {isLoadingInvoices ? (
+                                    <div className="text-center py-12">
+                                        <div className="inline-flex flex-col items-center">
+                                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-3"></div>
+                                            <p className="text-sm text-gray-500 dark:text-gray-400">Loading invoices...</p>
+                                        </div>
+                                    </div>
+                                ) : (() => {
+                                    const searchLower = invoiceSearch.toLowerCase();
+                                    const filteredInvoices = invoices.filter((invoice: any) => {
+                                        if (!searchLower) return true;
+                                        return (
+                                            invoice.invoice_no?.toLowerCase().includes(searchLower) ||
+                                            invoice.status?.toLowerCase().includes(searchLower) ||
+                                            invoice.status_display?.toLowerCase().includes(searchLower)
+                                        );
+                                    });
+
+                                    const invoiceStatusVariant = (status: string): 'success' | 'warning' | 'danger' | 'neutral' | 'info' => {
+                                        switch (status) {
+                                            case 'Paid': return 'success';
+                                            case 'Issued': return 'info';
+                                            case 'Partially Paid': return 'warning';
+                                            case 'Overdue': return 'danger';
+                                            case 'Draft':
+                                            case 'Cancelled':
+                                            default: return 'neutral';
+                                        }
+                                    };
+
+                                    const invoiceColumns: Column<any>[] = [
+                                        {
+                                            header: 'Invoice No',
+                                            accessor: (invoice) => (
+                                                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                                    {invoice.invoice_no || `Invoice #${invoice.id}`}
+                                                </span>
+                                            ),
+                                        },
+                                        {
+                                            header: 'Issue Date',
+                                            accessor: (invoice) => invoice.issue_date
+                                                ? new Date(invoice.issue_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                : '-',
+                                        },
+                                        {
+                                            header: 'Due Date',
+                                            accessor: (invoice) => invoice.due_date
+                                                ? new Date(invoice.due_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                : '-',
+                                        },
+                                        {
+                                            header: 'Amount',
+                                            accessor: (invoice) => (
+                                                <span className="font-semibold text-gray-900 dark:text-white">
+                                                    ₹{parseFloat(invoice.total_amount ?? invoice.total ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </span>
+                                            ),
+                                        },
+                                        {
+                                            header: 'Paid',
+                                            accessor: (invoice) => `₹${parseFloat(invoice.paid_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                                        },
+                                        {
+                                            header: 'Outstanding',
+                                            accessor: (invoice) => `₹${parseFloat(invoice.balance_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                                        },
+                                        {
+                                            header: 'Status',
+                                            accessor: (invoice) => {
+                                                const status = invoice.status || 'Draft';
+                                                return (
+                                                    <StatusBadge
+                                                        status={status}
+                                                        variant={invoiceStatusVariant(status)}
+                                                        label={invoice.status_display || status}
+                                                    />
+                                                );
+                                            },
+                                        },
+                                    ];
+
+                                    return (
+                                        <ReusableTable<any>
+                                            data={filteredInvoices}
+                                            columns={invoiceColumns}
+                                            keyField="id"
+                                            onRowClick={(invoice) => navigate(`/invoices/${invoice.id}`)}
+                                            emptyMessage="No invoices found for this project"
+                                        />
+                                    );
+                                })()}
+                            </div>
+                        )}
+
                         {/* Milestones — Fixed Budget / Milestone-Based projects only */}
                         {activeTab === 'Milestones' && projectId && (
                             <MilestonesPanel projectId={projectId} currency={budgetCurrency} />
@@ -1251,52 +1533,55 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                         )}
 
                         {/* Financial Summary — common to both engagement types */}
-                        {activeTab === 'Financial Summary' && projectId && (
-                            <FinancialSummaryPanel projectId={projectId} engagementType={engagementType} currency={budgetCurrency} />
+                        {activeTab === 'Financials' && projectId && (
+                            <>
+                                <FreelancerAssignmentsPanel projectId={projectId} />
+                                <FinancialSummaryPanel projectId={projectId} engagementType={engagementType} currency={budgetCurrency} />
+                            </>
                         )}
 
                         {activeTab === 'Finances' && (
                             <div className="space-y-4">
                                 {/* Quotes Section */}
-                                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                    <div className="px-6 py-4 bg-gray-50 hover:bg-gray-100 flex items-center justify-between transition-colors">
-                                        <h3 className="font-semibold text-blue-600 text-sm">Quotes</h3>
+                                <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+                                    <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-between transition-colors">
+                                        <h3 className="font-semibold text-blue-600 dark:text-blue-400 text-sm">Quotes</h3>
                                         <button
                                             onClick={() => navigate(
                                                 `/pipeline/add-quote?forProject=${projectId}`,
                                                 { state: { clientName: project?.company_name } }
                                             )}
-                                            className="text-black-800 text-sm font-medium hover:text-blue-600"
+                                            className="text-black-800 dark:text-gray-300 text-sm font-medium hover:text-blue-600 dark:hover:text-blue-400"
                                         >
                                             New Quote
                                         </button>
                                     </div>
-                                    <div className="px-6 py-4 bg-white">
+                                    <div className="px-6 py-4 bg-white dark:bg-gray-900">
                                         {isLoadingQuotation ? (
-                                            <p className="text-gray-500 text-sm">Loading quotes...</p>
+                                            <p className="text-gray-500 dark:text-gray-400 text-sm">Loading quotes...</p>
                                         ) : projectQuotes.length > 0 ? (
                                             <div className="space-y-2">
                                                 {projectQuotes.map((quote) => (
                                                     <div
                                                         key={quote.quote_no}
                                                         onClick={() => navigate(`/pipeline/quote/${quote.quote_no}`)}
-                                                        className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors border border-gray-100"
+                                                        className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg cursor-pointer transition-colors border border-gray-100 dark:border-gray-800"
                                                     >
                                                         <div className="flex-1">
                                                             <div className="flex items-center gap-3">
-                                                                <span className="font-medium text-gray-900">
+                                                                <span className="font-medium text-gray-900 dark:text-white">
                                                                     Quote #{quote.quote_no}
                                                                 </span>
                                                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${quote.status === 'Confirmed'
-                                                                    ? 'bg-green-50 text-green-700'
+                                                                    ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300'
                                                                     : quote.status === 'Sent'
-                                                                        ? 'bg-blue-50 text-blue-700'
-                                                                        : 'bg-gray-50 text-gray-700'
+                                                                        ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                                                        : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
                                                                     }`}>
                                                                     {quote.status || 'Draft'}
                                                                 </span>
                                                             </div>
-                                                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                                                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
                                                                 <span>{quote.quote_name || 'Untitled Quote'}</span>
                                                                 <span>Amount: ₹{quote.total_amount || '0'}</span>
                                                                 {quote.date_of_issue && (
@@ -1304,88 +1589,22 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                 )}
                                                             </div>
                                                         </div>
-                                                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                                         </svg>
                                                     </div>
                                                 ))}
                                             </div>
                                         ) : (
-                                            <p className="text-gray-500 text-sm">No quotes to display</p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Invoices Section */}
-                                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                    <div className="px-6 py-4 bg-gray-50 hover:bg-gray-100 flex items-center justify-between transition-colors">
-                                        <h3 className="font-semibold text-blue-600 text-sm">Invoices</h3>
-                                        <button
-                                            onClick={() => {
-                                                const quotationId = project?.created_from_quotation;
-                                                if (quotationId) {
-                                                    navigate(`/generate-invoice/${quotationId}`);
-                                                } else {
-                                                    toast.error('No quotation associated with this project.');
-                                                }
-                                            }}
-                                            className="text-black-800 text-sm font-medium hover:text-blue-700"
-                                        >
-                                            New Invoice
-                                        </button>
-                                    </div>
-                                    <div className="px-6 py-4 bg-white">
-                                        {isLoadingInvoices ? (
-                                            <p className="text-gray-500 text-sm">Loading invoices...</p>
-                                        ) : invoices.length === 0 ? (
-                                            <p className="text-gray-500 text-sm">No invoices to display</p>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {invoices.map((invoice: any) => (
-                                                    <div
-                                                        key={invoice.id}
-                                                        onClick={() => navigate(`/invoices/${invoice.id}`)}
-                                                        className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors border border-gray-100"
-                                                    >
-                                                        <div className="flex-1">
-                                                            <div className="flex items-center gap-3">
-                                                                <span className="font-medium text-gray-900">
-                                                                    {invoice.invoice_no || `Invoice #${invoice.id}`}
-                                                                </span>
-                                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${invoice.payment_status === 'Paid' || invoice.status_display === 'Paid'
-                                                                    ? 'bg-green-50 text-green-700'
-                                                                    : 'bg-yellow-50 text-yellow-700'
-                                                                    }`}>
-                                                                    {invoice.payment_status || invoice.status_display || 'Unpaid'}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
-                                                                <span>Total: ₹{invoice.total_amount || invoice.total || '0'}</span>
-                                                                {invoice.paid_amount && parseFloat(invoice.paid_amount) > 0 && (
-                                                                    <span>Paid: ₹{invoice.paid_amount}</span>
-                                                                )}
-                                                                {invoice.balance_amount && (
-                                                                    <span>Balance: ₹{invoice.balance_amount}</span>
-                                                                )}
-                                                                {invoice.issue_date && (
-                                                                    <span>Date: {new Date(invoice.issue_date).toLocaleDateString()}</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                                        </svg>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                            <p className="text-gray-500 dark:text-gray-400 text-sm">No quotes to display</p>
                                         )}
                                     </div>
                                 </div>
 
                                 {/* Purchase Orders Section */}
-                                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                    <div className="px-6 py-4 bg-gray-50 hover:bg-gray-100 flex items-center justify-between transition-colors">
-                                        <h3 className="font-semibold text-blue-600 text-sm">Purchase orders</h3>
+                                <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+                                    <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-between transition-colors">
+                                        <h3 className="font-semibold text-blue-600 dark:text-blue-400 text-sm">Purchase orders</h3>
                                         <button
                                             onClick={() => {
                                                 const quotationId = project?.created_from_quotation;
@@ -1395,39 +1614,39 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                     toast.error('No quotation associated with this project.');
                                                 }
                                             }}
-                                            className="text-black-800 text-sm font-medium hover:text-blue-700"
+                                            className="text-black-800 dark:text-gray-300 text-sm font-medium hover:text-blue-700 dark:hover:text-blue-300"
                                         >
                                             New Purchase Order
                                         </button>
                                     </div>
-                                    <div className="px-6 py-4 bg-white">
+                                    <div className="px-6 py-4 bg-white dark:bg-gray-900">
                                         {isLoadingPOs ? (
-                                            <p className="text-gray-500 text-sm">Loading purchase orders...</p>
+                                            <p className="text-gray-500 dark:text-gray-400 text-sm">Loading purchase orders...</p>
                                         ) : purchaseOrders.length === 0 ? (
-                                            <p className="text-gray-500 text-sm">No purchase orders to display</p>
+                                            <p className="text-gray-500 dark:text-gray-400 text-sm">No purchase orders to display</p>
                                         ) : (
                                             <div className="space-y-2">
                                                 {purchaseOrders.map((po: any) => (
                                                     <div
                                                         key={po.po_id}
                                                         onClick={() => navigate(`/purchase-orders/${po.po_id}`)}
-                                                        className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors border border-gray-100"
+                                                        className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg cursor-pointer transition-colors border border-gray-100 dark:border-gray-800"
                                                     >
                                                         <div className="flex-1">
                                                             <div className="flex items-center gap-3">
-                                                                <span className="font-medium text-gray-900">
+                                                                <span className="font-medium text-gray-900 dark:text-white">
                                                                     {po.po_no}
                                                                 </span>
                                                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${po.status === 'confirmed' || po.status === 'completed'
-                                                                    ? 'bg-green-50 text-green-700'
+                                                                    ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300'
                                                                     : po.status === 'sent'
-                                                                        ? 'bg-blue-50 text-blue-700'
-                                                                        : 'bg-gray-50 text-gray-700'
+                                                                        ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                                                        : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
                                                                     }`}>
                                                                     {po.status.charAt(0).toUpperCase() + po.status.slice(1)}
                                                                 </span>
                                                             </div>
-                                                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                                                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
                                                                 <span>Vendor: {po.vendor_name}</span>
                                                                 <span>Amount: ₹{parseFloat(po.total_amount).toLocaleString('en-IN')}</span>
                                                                 <span>Items: {po.items_count}</span>
@@ -1436,7 +1655,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                 )}
                                                             </div>
                                                         </div>
-                                                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                                         </svg>
                                                     </div>
@@ -1447,22 +1666,22 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 </div>
 
                                 {/* Bills Section */}
-                                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                    <div className="px-6 py-4 bg-gray-50 hover:bg-gray-100 flex items-center justify-between transition-colors">
+                                <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+                                    <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-between transition-colors">
                                         <div>
-                                            <h3 className="font-semibold text-blue-600 text-sm">Bills</h3>
+                                            <h3 className="font-semibold text-blue-600 dark:text-blue-400 text-sm">Bills</h3>
                                             {billsSummary && (
-                                                <p className="text-xs text-gray-500 mt-1">
+                                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                                     Total Paid: ₹{parseFloat(billsSummary.total_paid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </p>
                                             )}
                                         </div>
                                     </div>
-                                    <div className="px-6 py-4 bg-white">
+                                    <div className="px-6 py-4 bg-white dark:bg-gray-900">
                                         {isLoadingBills ? (
-                                            <p className="text-gray-500 text-sm">Loading bills...</p>
+                                            <p className="text-gray-500 dark:text-gray-400 text-sm">Loading bills...</p>
                                         ) : bills.length === 0 ? (
-                                            <p className="text-gray-500 text-sm">No bills to display</p>
+                                            <p className="text-gray-500 dark:text-gray-400 text-sm">No bills to display</p>
                                         ) : (
                                             <div className="space-y-2">
                                                 {bills.map((bill: any) => {
@@ -1470,13 +1689,13 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                     const getStatusBadge = (status: string) => {
                                                         switch (status?.toLowerCase()) {
                                                             case 'paid':
-                                                                return 'bg-green-100 text-green-800';
+                                                                return 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300';
                                                             case 'partially_paid':
-                                                                return 'bg-yellow-100 text-yellow-800';
+                                                                return 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-800 dark:text-yellow-300';
                                                             case 'unpaid':
-                                                                return 'bg-red-100 text-red-800';
+                                                                return 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300';
                                                             default:
-                                                                return 'bg-gray-100 text-gray-800';
+                                                                return 'bg-gray-100 dark:bg-gray-800 text-gray-800';
                                                         }
                                                     };
 
@@ -1494,33 +1713,33 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                 // Navigate to bill details page using the bill id
                                                                 navigate(`/bills/${bill.id}`);
                                                             }}
-                                                            className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors border border-gray-100"
+                                                            className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg cursor-pointer transition-colors border border-gray-100 dark:border-gray-800"
                                                         >
                                                             <div className="flex-1">
                                                                 <div className="flex items-center gap-3">
-                                                                    <span className="font-medium text-gray-900">
+                                                                    <span className="font-medium text-gray-900 dark:text-white">
                                                                         {bill.bill_no}
                                                                     </span>
-                                                                    <span className="text-xs text-gray-500">
+                                                                    <span className="text-xs text-gray-500 dark:text-gray-400">
                                                                         PO: {bill.po_no}
                                                                     </span>
                                                                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(bill.status)}`}>
                                                                         {formatStatus(bill.status)}
                                                                     </span>
                                                                     {bill.payment_count > 0 && (
-                                                                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                                                                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300 rounded-full text-xs font-medium">
                                                                             {bill.payment_count} {bill.payment_count === 1 ? 'Payment' : 'Payments'}
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                                                                <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
                                                                     <span>Vendor: {bill.vendor}</span>
                                                                     <span>Total: ₹{parseFloat(bill.total_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                                     <span>Paid: ₹{parseFloat(bill.paid_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                                     <span>Balance: ₹{parseFloat(bill.balance_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                                 </div>
                                                             </div>
-                                                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                                             </svg>
                                                         </div>
@@ -1531,76 +1750,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                     </div>
                                 </div>
 
-                                {/* Expenses Section */}
-                                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                    <div className="px-6 py-4 bg-gray-50 hover:bg-gray-100 flex items-center justify-between transition-colors">
-                                        <h3 className="font-semibold text-blue-600 text-sm">Expenses</h3>
-                                        <button
-                                            onClick={() => setIsAddExpenseModalOpen(true)}
-                                            className="text-black-800 text-sm font-medium hover:text-blue-700"
-                                        >
-                                            New Expense
-                                        </button>
-                                    </div>
-                                    <div className="px-6 py-4 bg-white">
-                                        {isLoadingExpenses ? (
-                                            <p className="text-gray-500 text-sm">Loading expenses...</p>
-                                        ) : expenses.length === 0 ? (
-                                            <p className="text-gray-500 text-sm">No expenses to display</p>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {expenses.map((expense: any) => {
-                                                    // Get category label from the fetched categories or capitalize the key
-                                                    const categoryLabel = expense.category.charAt(0).toUpperCase() + expense.category.slice(1);
-
-                                                    return (
-                                                        <div
-                                                            key={expense.id}
-                                                            onClick={() => navigate(`/expenses/${expense.id}`)}
-                                                            className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors border border-gray-100"
-                                                        >
-                                                            <div className="flex-1">
-                                                                <div className="flex items-center gap-3">
-                                                                    <span className="font-medium text-gray-900">
-                                                                        {expense.expense_no}
-                                                                    </span>
-                                                                    <span className="text-xs text-gray-500">
-                                                                        {categoryLabel}
-                                                                    </span>
-                                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${expense.is_fully_paid
-                                                                        ? 'bg-green-50 text-green-700'
-                                                                        : expense.total_paid > 0
-                                                                            ? 'bg-yellow-50 text-yellow-700'
-                                                                            : 'bg-red-50 text-red-700'
-                                                                        }`}>
-                                                                        {expense.is_fully_paid
-                                                                            ? 'Paid'
-                                                                            : expense.total_paid > 0
-                                                                                ? 'Partially Paid'
-                                                                                : 'Unpaid'}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
-                                                                    <span>{expense.description}</span>
-                                                                    <span>Amount: ₹{parseFloat(expense.amount).toLocaleString('en-IN')}</span>
-                                                                    {!expense.is_fully_paid && (
-                                                                        <span>Balance: ₹{parseFloat(expense.balance_amount).toLocaleString('en-IN')}</span>
-                                                                    )}
-                                                                    {expense.expense_date && (
-                                                                        <span>Date: {new Date(expense.expense_date).toLocaleDateString()}</span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                                            </svg>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
                             </div>
                         )}
 
@@ -1609,23 +1758,23 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 {/* Left Column */}
                                 <div className="space-y-6">
                                     {/* Project Info Section */}
-                                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                    <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
 
-                                        <div className="px-6 py-6 bg-white">
+                                        <div className="px-6 py-6 bg-white dark:bg-gray-900">
                                             {project ? (
                                                 <div className="space-y-4">
                                                     {/* Project Name */}
                                                     {project.project_name && (
                                                         <div>
-                                                            <label className="text-xs font-medium text-gray-500 uppercase">Project Name</label>
-                                                            <p className="text-sm text-gray-900 mt-1">{project.project_name}</p>
+                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Project Name</label>
+                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">{project.project_name}</p>
                                                         </div>
                                                     )}
 
                                                     {/* Budget */}
                                                     <div>
-                                                        <label className="text-xs font-medium text-gray-500 uppercase">Budget</label>
-                                                        <p className="text-sm text-gray-900 mt-1">
+                                                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Budget</label>
+                                                        <p className="text-sm text-gray-900 dark:text-white mt-1">
                                                             ₹{(() => {
                                                                 // Handle nested budget object structure as per user's API response
                                                                 const val = project.budget?.total_budget ||
@@ -1647,8 +1796,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                     {/* Start Date */}
                                                     {project.start_date && (
                                                         <div>
-                                                            <label className="text-xs font-medium text-gray-500 uppercase">Start Date</label>
-                                                            <p className="text-sm text-gray-900 mt-1">
+                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Start Date</label>
+                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">
                                                                 {new Date(project.start_date).toLocaleDateString('en-GB', {
                                                                     day: '2-digit',
                                                                     month: 'short',
@@ -1661,8 +1810,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                     {/* End Date */}
                                                     {project.end_date && (
                                                         <div>
-                                                            <label className="text-xs font-medium text-gray-500 uppercase">End Date</label>
-                                                            <p className="text-sm text-gray-900 mt-1">
+                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">End Date</label>
+                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">
                                                                 {new Date(project.end_date).toLocaleDateString('en-GB', {
                                                                     day: '2-digit',
                                                                     month: 'short',
@@ -1675,39 +1824,39 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                     {/* Project Type */}
                                                     {project.project_type && (
                                                         <div>
-                                                            <label className="text-xs font-medium text-gray-500 uppercase">Project Type</label>
-                                                            <p className="text-sm text-gray-900 mt-1 capitalize">{project.project_type}</p>
+                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Project Type</label>
+                                                            <p className="text-sm text-gray-900 dark:text-white mt-1 capitalize">{project.project_type}</p>
                                                         </div>
                                                     )}
 
                                                     {/* Call Center */}
                                                     {project.call_center_name && (
                                                         <div>
-                                                            <label className="text-xs font-medium text-gray-500 uppercase">Call Center</label>
-                                                            <p className="text-sm text-gray-900 mt-1">{project.call_center_name}</p>
+                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Call Center</label>
+                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">{project.call_center_name}</p>
                                                         </div>
                                                     )}
 
                                                     {/* Profit Center */}
                                                     {project.profit_center_name && (
                                                         <div>
-                                                            <label className="text-xs font-medium text-gray-500 uppercase">Profit Center</label>
-                                                            <p className="text-sm text-gray-900 mt-1">{project.profit_center_name}</p>
+                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Profit Center</label>
+                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">{project.profit_center_name}</p>
                                                         </div>
                                                     )}
 
                                                     {/* GL Account */}
                                                     {project.gl_account_name && (
                                                         <div>
-                                                            <label className="text-xs font-medium text-gray-500 uppercase">GL Account</label>
-                                                            <p className="text-sm text-gray-900 mt-1">
+                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">GL Account</label>
+                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">
                                                                 {project.gl_account_code ? `${project.gl_account_code} - ` : ''}{project.gl_account_name}
                                                             </p>
                                                         </div>
                                                     )}
                                                 </div>
                                             ) : (
-                                                <p className="text-gray-500 text-sm">No project info to display</p>
+                                                <p className="text-gray-500 dark:text-gray-400 text-sm">No project info to display</p>
                                             )}
                                         </div>
                                     </div>
@@ -1726,7 +1875,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                             {fmtCurrency(project.contract_value, project.budget?.currency || project.currency)}
                                                         </p>
                                                         {project.created_from_quotation && (
-                                                            <p className="text-[11px] text-gray-400 mt-0.5">Excluding GST</p>
+                                                            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">Excluding GST</p>
                                                         )}
                                                     </div>
                                                     <div>
@@ -1757,9 +1906,9 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                     )}
 
                                     {/* Files Section */}
-                                    <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                        <div className="px-6 py-4 bg-gray-50 flex items-center justify-between">
-                                            <h3 className="font-semibold text-gray-900 text-sm">Files</h3>
+                                    <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+                                        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
+                                            <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Files</h3>
                                             <input
                                                 type="file"
                                                 ref={fileInputRef}
@@ -1769,38 +1918,38 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                             <button
                                                 onClick={() => fileInputRef.current?.click()}
                                                 disabled={isUploading}
-                                                className="text-blue-600 text-sm font-medium hover:text-blue-700 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="text-blue-600 dark:text-blue-400 text-sm font-medium hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 <span>{isUploading ? '⌛' : '📎'}</span> {isUploading ? 'Uploading...' : 'Add Files'}
                                             </button>
                                         </div>
-                                        <div className="px-6 py-6 bg-white">
+                                        <div className="px-6 py-6 bg-white dark:bg-gray-900">
                                             {isLoadingAttachments ? (
-                                                <p className="text-gray-500 text-sm">Loading files...</p>
+                                                <p className="text-gray-500 dark:text-gray-400 text-sm">Loading files...</p>
                                             ) : attachments.length > 0 ? (
                                                 <div className="space-y-3">
                                                     {attachments.map((attachment: any) => (
                                                         <div
                                                             key={attachment.id}
-                                                            className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                                                            className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                                                         >
                                                             <div className="flex items-center gap-3 flex-1">
                                                                 <span className="text-2xl">{getFileIcon(attachment.file_type)}</span>
                                                                 <div className="flex-1 min-w-0">
                                                                     <div className="flex items-center gap-2">
-                                                                        <p className="text-sm font-medium text-gray-900 truncate">
+                                                                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                                                                             {attachment.file_name}
                                                                         </p>
-                                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${attachment.category === 'contract' ? 'bg-purple-50 text-purple-700' :
-                                                                            attachment.category === 'invoice' ? 'bg-green-50 text-green-700' :
-                                                                                attachment.category === 'report' ? 'bg-blue-50 text-blue-700' :
-                                                                                    attachment.category === 'proposal' ? 'bg-yellow-50 text-yellow-700' :
-                                                                                        'bg-gray-50 text-gray-700'
+                                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${attachment.category === 'contract' ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300' :
+                                                                            attachment.category === 'invoice' ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300' :
+                                                                                attachment.category === 'report' ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300' :
+                                                                                    attachment.category === 'proposal' ? 'bg-yellow-50 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-300' :
+                                                                                        'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
                                                                             }`}>
                                                                             {attachment.category}
                                                                         </span>
                                                                     </div>
-                                                                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                                                                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
                                                                         <span>{formatFileSize(attachment.file_size)}</span>
                                                                         <span>•</span>
                                                                         <span>{attachment.uploaded_by_name}</span>
@@ -1815,7 +1964,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                             </div>
                                                             <button
                                                                 onClick={() => handleFileDownload(attachment)}
-                                                                className="ml-3 px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
+                                                                className="ml-3 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-500/15 rounded-md transition-colors"
                                                             >
                                                                 Download
                                                             </button>
@@ -1823,7 +1972,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                     ))}
                                                 </div>
                                             ) : (
-                                                <p className="text-gray-500 text-sm">No Files to display</p>
+                                                <p className="text-gray-500 dark:text-gray-400 text-sm">No Files to display</p>
                                             )}
                                         </div>
                                     </div>
@@ -1832,56 +1981,56 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 {/* Right Column */}
                                 <div className="space-y-6">
                                     {/* Related Contacts Section */}
-                                    <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                        <div className="px-6 py-4 bg-gray-50 flex items-center justify-between">
-                                            <h3 className="font-semibold text-gray-900 text-sm">Related Contacts</h3>
+                                    <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+                                        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
+                                            <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Related Contacts</h3>
 
                                         </div>
-                                        <div className="px-6 py-6 bg-white">
+                                        <div className="px-6 py-6 bg-white dark:bg-gray-900">
                                             {project?.contacts && project.contacts.length > 0 ? (
                                                 <div className="space-y-3">
                                                     {project.contacts.map((contact: any) => (
                                                         <div
                                                             key={contact.id}
-                                                            className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                                                            className="p-4 border border-gray-200 dark:border-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                                                         >
                                                             <div className="flex items-start justify-between">
                                                                 <div className="flex-1">
-                                                                    <h4 className="font-semibold text-gray-900 text-sm">
+                                                                    <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
                                                                         {contact.poc_name}
                                                                     </h4>
                                                                     {contact.designation && (
-                                                                        <p className="text-xs text-gray-600 mt-1">
+                                                                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                                                                             {contact.designation}
                                                                         </p>
                                                                     )}
                                                                     {contact.company_name && (
-                                                                        <p className="text-xs text-gray-500 mt-1">
+                                                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                                                             {contact.company_name}
                                                                         </p>
                                                                     )}
                                                                     <div className="mt-2 space-y-1">
                                                                         {contact.poc_email && (
-                                                                            <div className="flex items-center gap-2 text-xs text-gray-600">
+                                                                            <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                                                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                                                                 </svg>
                                                                                 <a
                                                                                     href={`mailto:${contact.poc_email}`}
-                                                                                    className="hover:text-blue-600 hover:underline"
+                                                                                    className="hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
                                                                                 >
                                                                                     {contact.poc_email}
                                                                                 </a>
                                                                             </div>
                                                                         )}
                                                                         {contact.poc_mobile && (
-                                                                            <div className="flex items-center gap-2 text-xs text-gray-600">
+                                                                            <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                                                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                                                                                 </svg>
                                                                                 <a
                                                                                     href={`tel:${contact.poc_mobile}`}
-                                                                                    className="hover:text-blue-600 hover:underline"
+                                                                                    className="hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
                                                                                 >
                                                                                     {contact.poc_mobile}
                                                                                 </a>
@@ -1894,7 +2043,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                     ))}
                                                 </div>
                                             ) : (
-                                                <p className="text-gray-500 text-sm">No Contacts to display</p>
+                                                <p className="text-gray-500 dark:text-gray-400 text-sm">No Contacts to display</p>
                                             )}
                                         </div>
                                     </div>
@@ -1902,45 +2051,45 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                             </div>
                         )}
 
-                        {activeTab === 'Payment' && (
+                        {activeTab === 'Payments' && (
                             <div className="space-y-6">
                                 {/* Payment Summary Cards */}
                                 {!isLoadingPayments && paymentSummary && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                                        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                                            <p className="text-xs font-medium text-gray-600 mb-1">Total Invoiced</p>
-                                            <p className="text-2xl font-bold text-gray-900">₹{parseFloat(paymentSummary.total_invoiced || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                                            <p className="text-xs text-gray-500 mt-1">{paymentSummary.invoice_count || 0} invoices</p>
+                                        <div className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 shadow-sm">
+                                            <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Total Invoiced</p>
+                                            <p className="text-2xl font-bold text-gray-900 dark:text-white">₹{parseFloat(paymentSummary.total_invoiced || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{paymentSummary.invoice_count || 0} invoices</p>
                                         </div>
-                                        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                                            <p className="text-xs font-medium text-gray-600 mb-1">Incoming Payments</p>
-                                            <p className="text-2xl font-bold text-green-600">+₹{parseFloat(paymentSummary.total_payments || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                                            <p className="text-xs text-gray-500 mt-1">{paymentSummary.payment_count || 0} payments</p>
+                                        <div className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 shadow-sm">
+                                            <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Incoming Payments</p>
+                                            <p className="text-2xl font-bold text-green-600 dark:text-green-400">+₹{parseFloat(paymentSummary.total_payments || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{paymentSummary.payment_count || 0} payments</p>
                                         </div>
-                                        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                                            <p className="text-xs font-medium text-gray-600 mb-1">Outgoing Payments</p>
-                                            <p className="text-2xl font-bold text-red-600">-₹{parseFloat(paymentSummary.outgoing_total_payments || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                                            <p className="text-xs text-gray-500 mt-1">{paymentSummary.outgoing_payment_count || 0} payments</p>
+                                        <div className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 shadow-sm">
+                                            <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Outgoing Payments</p>
+                                            <p className="text-2xl font-bold text-red-600 dark:text-red-400">-₹{parseFloat(paymentSummary.outgoing_total_payments || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{paymentSummary.outgoing_payment_count || 0} payments</p>
                                         </div>
-                                        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                                            <p className="text-xs font-medium text-gray-600 mb-1">Net Balance</p>
-                                            <p className="text-2xl font-bold text-blue-600">
+                                        <div className="bg-white dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 shadow-sm">
+                                            <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Net Balance</p>
+                                            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                                                 ₹{parseFloat(paymentSummary.net_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </p>
-                                            <p className="text-xs text-gray-500 mt-1">Incoming - Outgoing</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Incoming - Outgoing</p>
                                         </div>
                                     </div>
                                 )}
 
                                 {/* Filter and Search Bar */}
                                 <div className="flex items-center justify-between gap-3">
-                                    <h3 className="text-lg font-semibold text-gray-900">Payment History</h3>
+                                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Payment History</h3>
                                     <div className="flex items-center gap-3">
                                         {/* Payment Type Filter */}
                                         <div className="relative">
                                             <button
                                                 onClick={() => setShowPaymentFilter(!showPaymentFilter)}
-                                                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                                                className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                                             >
                                                 <Filter className="w-4 h-4" />
                                                 {paymentTypeFilter}
@@ -1949,7 +2098,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 </svg>
                                             </button>
                                             {showPaymentFilter && (
-                                                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                                                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg z-10">
                                                     {['All', 'Incoming', 'Outgoing'].map((type) => (
                                                         <button
                                                             key={type}
@@ -1957,7 +2106,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                 setPaymentTypeFilter(type);
                                                                 setShowPaymentFilter(false);
                                                             }}
-                                                            className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors ${paymentTypeFilter === type ? 'bg-gray-100 font-medium' : ''
+                                                            className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${paymentTypeFilter === type ? 'bg-gray-100 dark:bg-gray-800 font-medium' : ''
                                                                 }`}
                                                         >
                                                             {type}
@@ -1969,13 +2118,13 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
                                         {/* Search */}
                                         <div className="relative w-64">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
                                             <input
                                                 type="text"
                                                 placeholder="Search payments..."
                                                 value={paymentSearch}
                                                 onChange={(e) => setPaymentSearch(e.target.value)}
-                                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                             />
                                         </div>
                                     </div>
@@ -1986,7 +2135,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                     <div className="text-center py-12">
                                         <div className="inline-flex flex-col items-center">
                                             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-3"></div>
-                                            <p className="text-sm text-gray-500">Loading payments...</p>
+                                            <p className="text-sm text-gray-500 dark:text-gray-400">Loading payments...</p>
                                         </div>
                                     </div>
                                 ) : (() => {
@@ -2027,8 +2176,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                     header: 'TYPE',
                                                     accessor: (payment) => (
                                                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${payment.type === 'Incoming'
-                                                            ? 'bg-gray-100 text-gray-700'
-                                                            : 'bg-gray-100 text-gray-700'
+                                                            ? 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                                                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
                                                             }`}>
                                                             {payment.type}
                                                         </span>
@@ -2042,7 +2191,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                             return (
                                                                 <span
                                                                     onClick={() => navigate(`/invoices/${payment.invoice_id}`)}
-                                                                    className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                                                                    className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline cursor-pointer"
                                                                 >
                                                                     {payment.invoice_no}
                                                                 </span>
@@ -2054,12 +2203,12 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                     <div className="flex flex-col gap-1">
                                                                         <span
                                                                             onClick={() => navigate(`/bills/${payment.id}`)}
-                                                                            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                                                                            className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline cursor-pointer"
                                                                         >
                                                                             {payment.bill_no}
                                                                         </span>
                                                                         {payment.po_no && (
-                                                                            <span className="text-xs text-gray-500">
+                                                                            <span className="text-xs text-gray-500 dark:text-gray-400">
                                                                                 PO: {payment.po_no}
                                                                             </span>
                                                                         )}
@@ -2070,12 +2219,12 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                     <div className="flex flex-col gap-1">
                                                                         <span
                                                                             onClick={() => navigate(`/expenses/${payment.id}`)}
-                                                                            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                                                                            className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline cursor-pointer"
                                                                         >
                                                                             {payment.expense_no}
                                                                         </span>
                                                                         {payment.category && (
-                                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-500/15 text-purple-800 dark:text-purple-300">
                                                                                 {payment.category.charAt(0).toUpperCase() + payment.category.slice(1)}
                                                                             </span>
                                                                         )}
@@ -2101,7 +2250,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                 party = payment.vendor || 'Internal';
                                                             }
                                                         }
-                                                        return <span className="text-sm text-gray-900">{party}</span>;
+                                                        return <span className="text-sm text-gray-900 dark:text-white">{party}</span>;
                                                     },
                                                     className: 'uppercase text-xs'
                                                 },
@@ -2117,7 +2266,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 {
                                                     header: 'AMOUNT',
                                                     accessor: (payment) => (
-                                                        <span className="font-semibold text-gray-900">
+                                                        <span className="font-semibold text-gray-900 dark:text-white">
                                                             {payment.type === 'Incoming' ? '+' : '-'}₹{parseFloat(payment.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                         </span>
                                                     ),
@@ -2126,7 +2275,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 {
                                                     header: 'PAYMENT METHOD',
                                                     accessor: (payment) => (
-                                                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
                                                             {payment.payment_method || '-'}
                                                         </span>
                                                     ),
@@ -2140,7 +2289,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 {
                                                     header: 'CREATED',
                                                     accessor: (payment) => (
-                                                        <span className="text-xs text-gray-500">
+                                                        <span className="text-xs text-gray-500 dark:text-gray-400">
                                                             {new Date(payment.created_at).toLocaleDateString('en-GB', {
                                                                 day: '2-digit',
                                                                 month: 'short',

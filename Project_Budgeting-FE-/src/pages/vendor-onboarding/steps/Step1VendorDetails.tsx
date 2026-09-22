@@ -17,7 +17,7 @@ export const Step1VendorDetails: React.FC<Props> = ({ vendorTypeOptions }) => {
   return (
     <div className="space-y-8">
       <section>
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Basic Vendor Information</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Basic Vendor Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InputField label="Vendor Legal Name *" {...register('step1.name')} error={errors.step1?.name?.message} />
           <SelectField
@@ -37,7 +37,7 @@ export const Step1VendorDetails: React.FC<Props> = ({ vendorTypeOptions }) => {
       </section>
 
       <section className="border-t pt-6">
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">GST Registration</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">GST Registration</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <Controller
             control={control}
@@ -58,7 +58,7 @@ export const Step1VendorDetails: React.FC<Props> = ({ vendorTypeOptions }) => {
       </section>
 
       <section className="border-t pt-6">
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">MSME Registration</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">MSME Registration</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <Controller
             control={control}
@@ -88,7 +88,7 @@ export const Step1VendorDetails: React.FC<Props> = ({ vendorTypeOptions }) => {
       </section>
 
       <section className="border-t pt-6">
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Registered Office Address</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Registered Office Address</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InputField label="Address Line 1 *" {...register('step1.address_line1')} error={errors.step1?.address_line1?.message} />
           <InputField label="Address Line 2" {...register('step1.address_line2')} />
@@ -102,17 +102,17 @@ export const Step1VendorDetails: React.FC<Props> = ({ vendorTypeOptions }) => {
       </section>
 
       <section className="border-t pt-6">
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Vendor Introduction</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Vendor Introduction</h3>
         <textarea
           {...register('step1.vendor_introduction')}
           rows={4}
-          className="w-full px-4 py-3 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white transition-all"
+          className="w-full px-4 py-3 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white transition-all dark:bg-gray-800 dark:border dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 dark:focus:bg-gray-800"
           placeholder="Optional introduction about this vendor"
         />
       </section>
 
       <section className="border-t pt-6">
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Finance Manager Details (Optional)</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Finance Manager Details (Optional)</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InputField label="Finance Manager Name" {...register('step1.finance_manager_name')} />
           <InputField label="Finance Manager Email" type="email" {...register('step1.finance_manager_email')} />

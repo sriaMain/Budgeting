@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import type { POC } from "../pages/ClientListPage";
+import { SALUTATIONS } from "../pages/ClientListPage";
 import axiosInstance from "../utils/axiosInstance";
 import { parseApiErrors } from "../utils/parseApiErrors";
 import { toast } from "react-hot-toast";
@@ -13,17 +14,32 @@ interface AddPOCModalProps {
     onClose: () => void;
 }
 
+const EMPTY_FORM = {
+    salutation: '',
+    first_name: '',
+    middle_name: '',
+    last_name: '',
+    designation: '',
+    poc_mobile: '',
+    poc_email: ''
+};
+
 export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: AddPOCModalProps) {
     const [formData, setFormData] = useState({
-        poc_name: poc?.poc_name || '',
+        salutation: poc?.salutation || '',
+        first_name: poc?.first_name || '',
+        middle_name: poc?.middle_name || '',
+        last_name: poc?.last_name || '',
         designation: poc?.designation || '',
         poc_mobile: poc?.poc_mobile || '',
         poc_email: poc?.poc_email || ''
     });
     const [isSaving, setIsSaving] = useState(false);
-    const [errors, setErrors] = useState<{ general?: string; poc_name?: string; designation?: string; poc_mobile?: string; poc_email?: string }>({});
+    const [errors, setErrors] = useState<{ general?: string; salutation?: string; first_name?: string; last_name?: string; designation?: string; poc_mobile?: string; poc_email?: string }>({});
     const [touched, setTouched] = useState({
-        poc_name: false,
+        salutation: false,
+        first_name: false,
+        last_name: false,
         designation: false,
         poc_mobile: false,
         poc_email: false
@@ -35,21 +51,21 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
     useEffect(() => {
         if (poc) {
             setFormData({
-                poc_name: poc.poc_name,
+                salutation: poc.salutation || '',
+                first_name: poc.first_name || '',
+                middle_name: poc.middle_name || '',
+                last_name: poc.last_name || '',
                 designation: poc.designation,
                 poc_mobile: poc.poc_mobile,
                 poc_email: poc.poc_email
             });
         } else {
             // Reset form when opening for new POC
-            setFormData({
-                poc_name: '',
-                designation: '',
-                poc_mobile: '',
-                poc_email: ''
-            });
+            setFormData(EMPTY_FORM);
             setTouched({
-                poc_name: false,
+                salutation: false,
+                first_name: false,
+                last_name: false,
                 designation: false,
                 poc_mobile: false,
                 poc_email: false
@@ -70,8 +86,14 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
                 const digitsOnly = value.replace(/[^0-9]/g, '');
                 if (digitsOnly.length !== 10) return 'Phone number must be exactly 10 digits';
                 return '';
-            case 'poc_name':
-                if (!value.trim()) return 'POC name is required';
+            case 'salutation':
+                if (!value) return 'Salutation is required';
+                return '';
+            case 'first_name':
+                if (!value.trim()) return 'First name is required';
+                return '';
+            case 'last_name':
+                if (!value.trim()) return 'Last name is required';
                 return '';
             case 'designation':
                 if (!value.trim()) return 'Designation is required';
@@ -81,7 +103,7 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
         }
     };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
 
         // For phone number, only allow exactly 10 digits
@@ -99,7 +121,7 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
         setErrors(prev => ({ ...prev, [name]: '', general: '' }));
     };
 
-    const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setTouched(prev => ({ ...prev, [name]: true }));
 
@@ -114,7 +136,9 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
 
         // Mark all fields as touched
         setTouched({
-            poc_name: true,
+            salutation: true,
+            first_name: true,
+            last_name: true,
             designation: true,
             poc_mobile: true,
             poc_email: true
@@ -154,6 +178,7 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
             if (response.status === 200 || response.status === 201) {
                 const savedPOC: POC = {
                     ...formData,
+                    ...response.data,
                     company: companyId,
                     company_name: companyName,
                     id: isEditing ? poc.id : (response.data.id || response.data.poc_id || Math.floor(Math.random() * 1000) + 1)
@@ -187,25 +212,25 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
         <div className="fixed inset-0 z-50 overflow-y-auto">
             {/* Backdrop */}
             <div
-                className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all"
+                className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50"
                 onClick={handleClose}
             />
 
             {/* Modal */}
             <div className="flex min-h-full items-center justify-center p-4">
                 <div
-                    className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg transform transition-all"
+                    className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg transform transition-all dark:bg-gray-900 dark:shadow-black/40"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {/* Header */}
-                    <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 rounded-t-xl">
-                        <h4 className="text-lg font-bold text-gray-900">
+                    <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 rounded-t-xl dark:bg-gray-900 dark:border-gray-800">
+                        <h4 className="text-lg font-bold text-gray-900 dark:text-white">
                             {isEditing ? 'Edit POC' : 'Add POC'}
                         </h4>
                         <button
                             onClick={handleClose}
                             disabled={isSaving}
-                            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-300"
                             aria-label="Close modal"
                         >
                             <X size={24} />
@@ -215,7 +240,7 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
                     {/* Content */}
                     <div className="p-6">
                         {errors.general && (
-                            <div className="mb-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center">
+                            <div className="mb-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400">
                                 <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path>
                                 </svg>
@@ -226,38 +251,97 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
                         <form onSubmit={handleSubmit} className="space-y-5">
                             {/* Read-only Company Name */}
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     Client
                                 </label>
-                                <div className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 font-medium">
+                                <div className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 font-medium dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300">
                                     {companyName}
                                 </div>
                             </div>
 
-                            {/* POC Name */}
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">
-                                    <span className="text-red-500 mr-1">*</span>POC Name
-                                </label>
-                                <input
-                                    required
-                                    type="text"
-                                    name="poc_name"
-                                    value={formData.poc_name}
-                                    onChange={handleChange}
-                                    onBlur={handleBlur}
-                                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm ${touched.poc_name && errors.poc_name ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                                        }`}
-                                    placeholder="Enter POC name"
-                                />
-                                {touched.poc_name && errors.poc_name && (
-                                    <p className="text-xs text-red-600 mt-1">{errors.poc_name}</p>
-                                )}
+                            {/* Salutation + Name */}
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        <span className="text-red-500 mr-1">*</span>Salutation
+                                    </label>
+                                    <select
+                                        required
+                                        name="salutation"
+                                        value={formData.salutation}
+                                        onChange={handleChange}
+                                        onBlur={handleBlur}
+                                        className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${touched.salutation && errors.salutation ? 'border-red-500 bg-red-50 dark:bg-red-950/40' : 'border-gray-300 dark:border-gray-700'
+                                            }`}
+                                    >
+                                        <option value="">Select</option>
+                                        {SALUTATIONS.map(s => (
+                                            <option key={s} value={s}>{s}</option>
+                                        ))}
+                                    </select>
+                                    {touched.salutation && errors.salutation && (
+                                        <p className="text-xs text-red-600 mt-1 dark:text-red-400">{errors.salutation}</p>
+                                    )}
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        <span className="text-red-500 mr-1">*</span>First Name
+                                    </label>
+                                    <input
+                                        required
+                                        type="text"
+                                        name="first_name"
+                                        value={formData.first_name}
+                                        onChange={handleChange}
+                                        onBlur={handleBlur}
+                                        className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 ${touched.first_name && errors.first_name ? 'border-red-500 bg-red-50 dark:bg-red-950/40' : 'border-gray-300 dark:border-gray-700'
+                                            }`}
+                                        placeholder="First name"
+                                    />
+                                    {touched.first_name && errors.first_name && (
+                                        <p className="text-xs text-red-600 mt-1 dark:text-red-400">{errors.first_name}</p>
+                                    )}
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        Middle Name
+                                    </label>
+                                    <input
+                                        type="text"
+                                        name="middle_name"
+                                        value={formData.middle_name}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
+                                        placeholder="Middle name"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        <span className="text-red-500 mr-1">*</span>Last Name
+                                    </label>
+                                    <input
+                                        required
+                                        type="text"
+                                        name="last_name"
+                                        value={formData.last_name}
+                                        onChange={handleChange}
+                                        onBlur={handleBlur}
+                                        className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 ${touched.last_name && errors.last_name ? 'border-red-500 bg-red-50 dark:bg-red-950/40' : 'border-gray-300 dark:border-gray-700'
+                                            }`}
+                                        placeholder="Last name"
+                                    />
+                                    {touched.last_name && errors.last_name && (
+                                        <p className="text-xs text-red-600 mt-1 dark:text-red-400">{errors.last_name}</p>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Designation */}
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     <span className="text-red-500 mr-1">*</span>Designation
                                 </label>
                                 <input
@@ -267,18 +351,18 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
                                     value={formData.designation}
                                     onChange={handleChange}
                                     onBlur={handleBlur}
-                                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm ${touched.designation && errors.designation ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 ${touched.designation && errors.designation ? 'border-red-500 bg-red-50 dark:bg-red-950/40' : 'border-gray-300 dark:border-gray-700'
                                         }`}
                                     placeholder="Enter designation"
                                 />
                                 {touched.designation && errors.designation && (
-                                    <p className="text-xs text-red-600 mt-1">{errors.designation}</p>
+                                    <p className="text-xs text-red-600 mt-1 dark:text-red-400">{errors.designation}</p>
                                 )}
                             </div>
 
                             {/* Email */}
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     <span className="text-red-500 mr-1">*</span>Email
                                 </label>
                                 <input
@@ -288,18 +372,18 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
                                     value={formData.poc_email}
                                     onChange={handleChange}
                                     onBlur={handleBlur}
-                                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm ${touched.poc_email && errors.poc_email ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 ${touched.poc_email && errors.poc_email ? 'border-red-500 bg-red-50 dark:bg-red-950/40' : 'border-gray-300 dark:border-gray-700'
                                         }`}
                                     placeholder="Enter email address"
                                 />
                                 {touched.poc_email && errors.poc_email && (
-                                    <p className="text-xs text-red-600 mt-1">{errors.poc_email}</p>
+                                    <p className="text-xs text-red-600 mt-1 dark:text-red-400">{errors.poc_email}</p>
                                 )}
                             </div>
 
                             {/* Phone Number */}
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     <span className="text-red-500 mr-1">*</span>Phone Number
                                 </label>
                                 <input
@@ -311,22 +395,22 @@ export function AddPOCModal({ companyId, companyName, poc, onSave, onClose }: Ad
                                     onBlur={handleBlur}
                                     maxLength={10}
                                     pattern="[0-9]{10}"
-                                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm ${touched.poc_mobile && errors.poc_mobile ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 ${touched.poc_mobile && errors.poc_mobile ? 'border-red-500 bg-red-50 dark:bg-red-950/40' : 'border-gray-300 dark:border-gray-700'
                                         }`}
                                     placeholder="Enter 10-digit phone number"
                                 />
                                 {touched.poc_mobile && errors.poc_mobile && (
-                                    <p className="text-xs text-red-600 mt-1">{errors.poc_mobile}</p>
+                                    <p className="text-xs text-red-600 mt-1 dark:text-red-400">{errors.poc_mobile}</p>
                                 )}
                             </div>
 
                             {/* Footer */}
-                            <div className="flex justify-end gap-3 pt-4 border-t">
+                            <div className="flex justify-end gap-3 pt-4 border-t dark:border-gray-800">
                                 <button
                                     type="button"
                                     onClick={handleClose}
                                     disabled={isSaving}
-                                    className="px-6 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+                                    className="px-6 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                                 >
                                     Cancel
                                 </button>

@@ -37,7 +37,7 @@ export default function ContactsScreen() {
         setClients(clientsData);
 
         // Extract and flatten all POCs from all clients
-        type RawPoc = { id: number; poc_name: string; designation: string; poc_mobile: string; poc_email: string };
+        type RawPoc = { id: number; salutation: string; first_name: string; middle_name?: string; last_name: string; poc_name: string; designation: string; poc_mobile: string; poc_email: string };
         const allPocs: POC[] = [];
         clientsData.forEach((client: Client & { pocs?: RawPoc[] }) => {
           if (client.pocs && Array.isArray(client.pocs)) {
@@ -46,6 +46,10 @@ export default function ContactsScreen() {
                 id: poc.id,
                 company: client.id,
                 company_name: client.company_name,
+                salutation: poc.salutation,
+                first_name: poc.first_name,
+                middle_name: poc.middle_name,
+                last_name: poc.last_name,
                 poc_name: poc.poc_name,
                 designation: poc.designation,
                 poc_mobile: poc.poc_mobile,
@@ -108,18 +112,18 @@ export default function ContactsScreen() {
 
   return (
     <Layout userRole="admin" currentPage="contacts" onNavigate={() => { }}>
-      <div className="bg-gray-50 font-sans min-h-screen">
+      <div className="bg-gray-50 font-sans min-h-screen dark:bg-gray-950">
         <div className="max-w-[1600px] mx-auto px-6 py-6">
           {/* Tabs */}
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm mb-6">
-            <div className="border-b border-gray-200">
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm mb-6 dark:bg-gray-900 dark:border-gray-800">
+            <div className="border-b border-gray-200 dark:border-gray-800">
               <div className="flex">
                 <button
                   onClick={() => setActiveTab('clients')}
                   className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'clients'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                      ? 'border-blue-600 text-blue-600 dark:border-violet-500 dark:text-violet-400'
+                      : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:border-gray-700'
                   }`}
                 >
                   Clients
@@ -128,8 +132,8 @@ export default function ContactsScreen() {
                   onClick={() => setActiveTab('vendors')}
                   className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'vendors'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                      ? 'border-blue-600 text-blue-600 dark:border-violet-500 dark:text-violet-400'
+                      : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:border-gray-700'
                   }`}
                 >
                   Vendors
@@ -138,8 +142,8 @@ export default function ContactsScreen() {
                   onClick={() => setActiveTab('freelancers')}
                   className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'freelancers'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                      ? 'border-blue-600 text-blue-600 dark:border-violet-500 dark:text-violet-400'
+                      : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:border-gray-700'
                   }`}
                 >
                   Freelancers
@@ -184,7 +188,7 @@ export default function ContactsScreen() {
                     onBack={() => setCurrentView('list')}
                   />
                 ) : (
-                  <p className="p-6 text-sm text-gray-500">Loading client…</p>
+                  <p className="p-6 text-sm text-gray-500 dark:text-gray-400">Loading client…</p>
                 )
               )}
             </>

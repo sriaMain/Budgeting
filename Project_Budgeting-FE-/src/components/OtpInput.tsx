@@ -87,18 +87,18 @@ const OtpInput: React.FC<OtpInputProps> = ({ length = 4, value, onChange }) => {
         
         // Styling logic based on state to match the image reference
         // Image: Active = White bg + Blue Border. Inactive/Empty = Gray bg.
-        let baseClasses = "w-16 h-16 rounded-full text-2xl font-semibold text-center transition-all duration-200 outline-none caret-blue-600";
-        
+        let baseClasses = "w-16 h-16 rounded-full text-2xl font-semibold text-center transition-all duration-200 outline-none caret-blue-600 dark:caret-violet-400";
+
         let stateClasses = "";
         if (isActive) {
             // Focused state: White background, Blue border
-            stateClasses = "bg-white border-2 border-blue-700 text-gray-900 shadow-[0_0_0_1px_rgba(29,78,216,0.1)]";
+            stateClasses = "bg-white border-2 border-blue-700 text-gray-900 shadow-[0_0_0_1px_rgba(29,78,216,0.1)] dark:bg-gray-800 dark:border-violet-500 dark:text-gray-100 dark:shadow-none";
         } else if (hasValue) {
             // Filled but not focused: White background, Gray border (or keep simple)
-             stateClasses = "bg-white border border-gray-300 text-gray-900";
+             stateClasses = "bg-white border border-gray-300 text-gray-900 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100";
         } else {
             // Empty and not focused: Gray background
-             stateClasses = "bg-gray-200 border-transparent text-transparent";
+             stateClasses = "bg-gray-200 border-transparent text-transparent dark:bg-gray-800";
         }
 
         return (

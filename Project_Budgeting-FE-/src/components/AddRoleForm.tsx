@@ -289,18 +289,18 @@ const AddRoleForm: React.FC<AddRoleFormProps> = ({ onCancel, onSuccess, role = n
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8 animate-fade-in-down w-full max-w-full relative">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8 animate-fade-in-down w-full max-w-full relative dark:bg-gray-900 dark:border-gray-800">
       {/* Blur overlay when navigating */}
       {isNavigating && (
-        <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto rounded-xl" />
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto rounded-xl dark:bg-gray-900/60" />
       )}
-      
+
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900">{role ? 'Edit Role' : 'Add Role'}</h2>
-        
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{role ? 'Edit Role' : 'Add Role'}</h2>
+
         {/* General Error Alert */}
         {errors.general && (
-          <div className="mt-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center">
+          <div className="mt-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400">
             <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path>
             </svg>
@@ -313,8 +313,8 @@ const AddRoleForm: React.FC<AddRoleFormProps> = ({ onCancel, onSuccess, role = n
         {/* Top Row: Name and Active Status */}
         <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
             <div className="w-full md:w-96 space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Role Name</label>
-                <input 
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">Role Name</label>
+                <input
                     type="text"
                     value={roleName}
                     onChange={(e) => {
@@ -322,39 +322,39 @@ const AddRoleForm: React.FC<AddRoleFormProps> = ({ onCancel, onSuccess, role = n
                       if (errors.roleName) setErrors(prev => ({ ...prev, roleName: undefined }));
                     }}
                     placeholder="Enter Role Name"
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${
-                      errors.roleName ? 'border-red-500' : 'border-gray-300'
+                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 ${
+                      errors.roleName ? 'border-red-500' : 'border-gray-300 dark:border-gray-700'
                     }`}
                 />
                 {errors.roleName && (
-                  <p className="text-sm text-red-600 mt-1">{errors.roleName}</p>
+                  <p className="text-sm text-red-600 mt-1 dark:text-red-400">{errors.roleName}</p>
                 )}
             </div>
             <div className="flex items-center pt-8">
                 <label className="flex items-center gap-3 cursor-pointer select-none">
                     <div className="relative">
-                        <input 
-                            type="checkbox" 
+                        <input
+                            type="checkbox"
                             checked={isActive}
                             onChange={(e) => setIsActive(e.target.checked)}
                             className="sr-only"
                         />
-                        <div className={`w-6 h-6 border-2 rounded-md transition-colors flex items-center justify-center ${isActive ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white'}`}>
+                        <div className={`w-6 h-6 border-2 rounded-md transition-colors flex items-center justify-center ${isActive ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800'}`}>
                             {isActive && <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                         </div>
                     </div>
-                    <span className="text-gray-700 font-medium">Is active</span>
+                    <span className="text-gray-700 font-medium dark:text-gray-300">Is active</span>
                 </label>
             </div>
         </div>
 
         {/* Permissions Error Message */}
         {errors.permissions && (
-          <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-            <svg className="w-5 h-5 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg dark:bg-red-500/10 dark:border-red-500/20">
+            <svg className="w-5 h-5 text-red-600 flex-shrink-0 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path>
             </svg>
-            <p className="text-sm text-red-600 font-medium">{errors.permissions}</p>
+            <p className="text-sm text-red-600 font-medium dark:text-red-400">{errors.permissions}</p>
           </div>
         )}
 
@@ -362,53 +362,53 @@ const AddRoleForm: React.FC<AddRoleFormProps> = ({ onCancel, onSuccess, role = n
         <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-4 items-center h-auto min-h-[500px]">
             
             {/* Left Column: Available Permissions */}
-            <div className="h-[500px] flex flex-col border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm relative">
+            <div className="h-[500px] flex flex-col border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm relative dark:border-gray-700 dark:bg-gray-900">
                 {isLoadingPermissions && (
-                    <div className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center dark:bg-gray-900/80">
                         <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
                     </div>
                 )}
-                
-                <div className="p-3 bg-gray-50 border-b border-gray-200 font-semibold text-gray-700 flex justify-between items-center shrink-0">
+
+                <div className="p-3 bg-gray-50 border-b border-gray-200 font-semibold text-gray-700 flex justify-between items-center shrink-0 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300">
                     <span>Available Permissions</span>
-                    <span className="text-xs font-normal text-gray-500">{filteredAvailable.length} items</span>
+                    <span className="text-xs font-normal text-gray-500 dark:text-gray-400">{filteredAvailable.length} items</span>
                 </div>
-                <div className="p-2 border-b border-gray-200 shrink-0">
+                <div className="p-2 border-b border-gray-200 shrink-0 dark:border-gray-700">
                     <div className="relative">
-                        <input 
-                            type="text" 
-                            placeholder="Filter" 
+                        <input
+                            type="text"
+                            placeholder="Filter"
                             value={leftSearch}
                             onChange={(e) => setLeftSearch(e.target.value)}
-                            className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                            className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500/50"
                         />
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
                     </div>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-1">
                     {!isLoadingPermissions && Object.keys(groupedAvailable).length === 0 && (
-                         <p className="text-gray-400 text-sm text-center py-4">No permissions found</p>
+                         <p className="text-gray-400 text-sm text-center py-4 dark:text-gray-500">No permissions found</p>
                     )}
-                    
+
                     {Object.entries(groupedAvailable).map(([category, items]) => (
-                        <div key={category} className="border border-gray-100 rounded-md overflow-hidden">
-                            <button 
+                        <div key={category} className="border border-gray-100 rounded-md overflow-hidden dark:border-gray-800">
+                            <button
                                 onClick={() => toggleCategory(category)}
-                                className="w-full flex items-center justify-between p-2 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                                className="w-full flex items-center justify-between p-2 bg-gray-50 hover:bg-gray-100 transition-colors text-left dark:bg-gray-800 dark:hover:bg-gray-700"
                             >
-                                <span className="font-semibold text-sm text-gray-800">{category}</span>
-                                {expandedCategories.has(category) ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronRight size={16} className="text-gray-500" />}
+                                <span className="font-semibold text-sm text-gray-800 dark:text-gray-200">{category}</span>
+                                {expandedCategories.has(category) ? <ChevronDown size={16} className="text-gray-500 dark:text-gray-400" /> : <ChevronRight size={16} className="text-gray-500 dark:text-gray-400" />}
                             </button>
-                            
+
                             {expandedCategories.has(category) && (
                                 <div className="p-1 space-y-0.5">
                                     {items.map(perm => (
-                                        <div 
+                                        <div
                                             key={perm.id}
                                             onClick={() => toggleLeftSelection(perm.id)}
                                             className={`
                                                 cursor-pointer px-3 py-2 text-sm rounded-md transition-colors flex items-center justify-between
-                                                ${leftSelectedIds.has(perm.id) ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'}
+                                                ${leftSelectedIds.has(perm.id) ? 'bg-blue-50 text-blue-700 font-medium dark:bg-blue-500/15 dark:text-blue-300' : 'hover:bg-gray-50 text-gray-600 dark:hover:bg-gray-800 dark:text-gray-400'}
                                             `}
                                         >
                                             {perm.code}
@@ -420,8 +420,8 @@ const AddRoleForm: React.FC<AddRoleFormProps> = ({ onCancel, onSuccess, role = n
                         </div>
                     ))}
                 </div>
-                <div className="p-2 bg-gray-50 border-t border-gray-200 text-center shrink-0">
-                    <button onClick={handleSelectAllLeft} className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center justify-center gap-1 mx-auto">
+                <div className="p-2 bg-gray-50 border-t border-gray-200 text-center shrink-0 dark:bg-gray-800 dark:border-gray-700">
+                    <button onClick={handleSelectAllLeft} className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center justify-center gap-1 mx-auto dark:text-blue-400 dark:hover:text-blue-300">
                         Choose all <ArrowRight size={12} />
                     </button>
                 </div>
@@ -429,61 +429,61 @@ const AddRoleForm: React.FC<AddRoleFormProps> = ({ onCancel, onSuccess, role = n
 
             {/* Middle Column: Actions */}
             <div className="flex md:flex-col gap-3 justify-center py-2 md:py-0">
-                <button 
+                <button
                     onClick={handleMoveRight}
                     disabled={leftSelectedIds.size === 0}
-                    className="p-3 rounded-full bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-600 disabled:opacity-50 disabled:hover:bg-gray-100 disabled:cursor-not-allowed transition-all shadow-sm border border-gray-200 rotate-90 md:rotate-0"
+                    className="p-3 rounded-full bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-600 disabled:opacity-50 disabled:hover:bg-gray-100 disabled:cursor-not-allowed transition-all shadow-sm border border-gray-200 rotate-90 md:rotate-0 dark:bg-gray-800 dark:hover:bg-blue-500/15 dark:text-gray-400 dark:hover:text-blue-400 dark:disabled:hover:bg-gray-800 dark:border-gray-700"
                 >
                     <ArrowRight size={20} />
                 </button>
-                <button 
+                <button
                     onClick={handleMoveLeft}
                     disabled={rightSelectedIds.size === 0}
-                    className="p-3 rounded-full bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-600 disabled:opacity-50 disabled:hover:bg-gray-100 disabled:cursor-not-allowed transition-all shadow-sm border border-gray-200 rotate-90 md:rotate-0"
+                    className="p-3 rounded-full bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-600 disabled:opacity-50 disabled:hover:bg-gray-100 disabled:cursor-not-allowed transition-all shadow-sm border border-gray-200 rotate-90 md:rotate-0 dark:bg-gray-800 dark:hover:bg-blue-500/15 dark:text-gray-400 dark:hover:text-blue-400 dark:disabled:hover:bg-gray-800 dark:border-gray-700"
                 >
                     <ArrowLeft size={20} />
                 </button>
             </div>
 
             {/* Right Column: Chosen Permissions */}
-            <div className="h-[500px] flex flex-col border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
-                <div className="p-3 bg-gray-50 border-b border-gray-200 font-semibold text-gray-700 flex justify-between items-center shrink-0">
+            <div className="h-[500px] flex flex-col border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                <div className="p-3 bg-gray-50 border-b border-gray-200 font-semibold text-gray-700 flex justify-between items-center shrink-0 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300">
                     <span>Chosen Permissions</span>
-                    <span className="text-xs font-normal text-gray-500">{filteredChosen.length} items</span>
+                    <span className="text-xs font-normal text-gray-500 dark:text-gray-400">{filteredChosen.length} items</span>
                 </div>
-                <div className="p-2 border-b border-gray-200 shrink-0">
+                <div className="p-2 border-b border-gray-200 shrink-0 dark:border-gray-700">
                     <div className="relative">
-                        <input 
-                            type="text" 
-                            placeholder="Filter" 
+                        <input
+                            type="text"
+                            placeholder="Filter"
                             value={rightSearch}
                             onChange={(e) => setRightSearch(e.target.value)}
-                            className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                            className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500/50"
                         />
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
                     </div>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-1">
                     {filteredChosen.length === 0 && (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm">
+                        <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm dark:text-gray-500">
                             <p>No permissions selected</p>
                         </div>
                     )}
                     {filteredChosen.map(perm => (
-                         <div 
+                         <div
                             key={perm.id}
                             onClick={() => toggleRightSelection(perm.id)}
                             className={`
                                 cursor-pointer px-3 py-2 text-sm rounded-md transition-colors
-                                ${rightSelectedIds.has(perm.id) ? 'bg-red-50 text-red-700 font-medium' : 'hover:bg-gray-50 text-gray-600'}
+                                ${rightSelectedIds.has(perm.id) ? 'bg-red-50 text-red-700 font-medium dark:bg-red-500/15 dark:text-red-300' : 'hover:bg-gray-50 text-gray-600 dark:hover:bg-gray-800 dark:text-gray-400'}
                             `}
                         >
                             {perm.code}
                         </div>
                     ))}
                 </div>
-                 <div className="p-2 bg-gray-50 border-t border-gray-200 text-center shrink-0">
-                    <button onClick={handleSelectAllRight} className="text-xs font-semibold text-gray-600 hover:text-red-600 flex items-center justify-center gap-1 mx-auto">
+                 <div className="p-2 bg-gray-50 border-t border-gray-200 text-center shrink-0 dark:bg-gray-800 dark:border-gray-700">
+                    <button onClick={handleSelectAllRight} className="text-xs font-semibold text-gray-600 hover:text-red-600 flex items-center justify-center gap-1 mx-auto dark:text-gray-400 dark:hover:text-red-400">
                         <ArrowLeft size={12} /> Remove all
                     </button>
                 </div>
@@ -492,10 +492,10 @@ const AddRoleForm: React.FC<AddRoleFormProps> = ({ onCancel, onSuccess, role = n
         </div>
 
         {/* Footer Actions */}
-        <div className="flex justify-end gap-4 pt-4 border-t border-gray-100">
+        <div className="flex justify-end gap-4 pt-4 border-t border-gray-100 dark:border-gray-800">
              <button
                 onClick={onCancel}
-                className="px-6 py-2.5 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
+                className="px-6 py-2.5 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                 disabled={isSubmitting}
             >
                 Cancel

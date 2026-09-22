@@ -28,13 +28,13 @@ const AddProductGroupModal: React.FC<AddProductGroupModalProps> = ({ isOpen, onC
     try {
       // API call to create product group
        const response = await axiosInstance.post('/product-groups/', {product_group_name: groupName });
-      
+
        const newGroup = response.data;
        console.log("API response:", response);
-      
+
       onSuccess(newGroup);
       setGroupName('');
-      
+
       // Show toast and close after delay
       setIsClosing(true);
       setShowToast(true);
@@ -51,40 +51,40 @@ const AddProductGroupModal: React.FC<AddProductGroupModalProps> = ({ isOpen, onC
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 transform transition-all scale-100 p-6 relative">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 transform transition-all scale-100 p-6 relative dark:bg-gray-900">
         {/* Blur overlay when closing */}
         {isClosing && (
-          <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto rounded-xl" />
+          <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto rounded-xl dark:bg-gray-900/40" />
         )}
-        
+
         <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-gray-800">Add Product Group</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <h3 className="text-xl font-bold text-gray-800 dark:text-white">Add Product Group</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors dark:text-gray-500 dark:hover:text-gray-300">
             <X size={20} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div className="mb-6">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2 dark:text-gray-300">
               Group Name <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
               placeholder="e.g. Finance Modules"
               autoFocus
             />
-            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+            {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
           </div>
 
           <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:bg-gray-100 font-medium rounded-lg transition-colors"
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 font-medium rounded-lg transition-colors dark:text-gray-300 dark:hover:bg-gray-800"
             >
               Cancel
             </button>
@@ -98,7 +98,7 @@ const AddProductGroupModal: React.FC<AddProductGroupModalProps> = ({ isOpen, onC
             </button>
           </div>
         </form>
-        
+
         {/* Toast Notification */}
         {showToast && (
           <Toast

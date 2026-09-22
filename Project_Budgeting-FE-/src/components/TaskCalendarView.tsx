@@ -22,10 +22,10 @@ const DOT_COLORS: Record<CalendarTask['status'], string> = {
 };
 
 const CHIP_COLORS: Record<CalendarTask['status'], string> = {
-    'Planned': 'bg-purple-50 text-purple-700 border-purple-200',
-    'In Progress': 'bg-green-50 text-green-700 border-green-200',
-    'Completed': 'bg-blue-50 text-blue-700 border-blue-200',
-    'Needs Attention': 'bg-red-50 text-red-700 border-red-200',
+    'Planned': 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/15 dark:text-purple-300 dark:border-purple-500/30',
+    'In Progress': 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/15 dark:text-green-300 dark:border-green-500/30',
+    'Completed': 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30',
+    'Needs Attention': 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/30',
 };
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -76,29 +76,29 @@ export const TaskCalendarView: React.FC<TaskCalendarViewProps> = ({ tasks, onTas
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold text-gray-900">
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">
                     {currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
                 </h3>
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1))}
-                        className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg border border-gray-200"
+                        className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg border border-gray-200 dark:text-gray-400 dark:hover:bg-gray-800 dark:border-gray-800"
                     >
                         Today
                     </button>
-                    <button onClick={() => goToMonth(-1)} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
-                        <ChevronLeft className="w-4 h-4 text-gray-600" />
+                    <button onClick={() => goToMonth(-1)} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800">
+                        <ChevronLeft className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                     </button>
-                    <button onClick={() => goToMonth(1)} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
-                        <ChevronRight className="w-4 h-4 text-gray-600" />
+                    <button onClick={() => goToMonth(1)} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800">
+                        <ChevronRight className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                     </button>
                 </div>
             </div>
 
-            <div className="border border-gray-200 rounded-xl overflow-hidden">
-                <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200">
+            <div className="border border-gray-200 rounded-xl overflow-hidden dark:border-gray-800">
+                <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-800">
                     {WEEKDAYS.map(day => (
-                        <div key={day} className="py-2 text-center text-xs font-semibold text-gray-500 uppercase">
+                        <div key={day} className="py-2 text-center text-xs font-semibold text-gray-500 uppercase dark:text-gray-400">
                             {day}
                         </div>
                     ))}
@@ -115,10 +115,10 @@ export const TaskCalendarView: React.FC<TaskCalendarViewProps> = ({ tasks, onTas
                         return (
                             <div
                                 key={idx}
-                                className={`min-h-[100px] p-2 border-b border-r border-gray-100 ${isCurrentMonth ? 'bg-white' : 'bg-gray-50/50'}`}
+                                className={`min-h-[100px] p-2 border-b border-r border-gray-100 dark:border-gray-800 ${isCurrentMonth ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-900/40'}`}
                             >
                                 <span
-                                    className={`inline-flex items-center justify-center w-6 h-6 text-xs font-medium rounded-full mb-1 ${isToday ? 'bg-blue-600 text-white' : isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
+                                    className={`inline-flex items-center justify-center w-6 h-6 text-xs font-medium rounded-full mb-1 ${isToday ? 'bg-blue-600 text-white' : isCurrentMonth ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-600'
                                         }`}
                                 >
                                     {day.getDate()}
@@ -136,7 +136,7 @@ export const TaskCalendarView: React.FC<TaskCalendarViewProps> = ({ tasks, onTas
                                         </button>
                                     ))}
                                     {overflowCount > 0 && (
-                                        <p className="text-[11px] text-gray-400 px-1.5">+{overflowCount} more</p>
+                                        <p className="text-[11px] text-gray-400 px-1.5 dark:text-gray-500">+{overflowCount} more</p>
                                     )}
                                 </div>
                             </div>
@@ -147,7 +147,7 @@ export const TaskCalendarView: React.FC<TaskCalendarViewProps> = ({ tasks, onTas
 
             {unscheduledTasks.length > 0 && (
                 <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Unscheduled ({unscheduledTasks.length})</p>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2 dark:text-gray-400">Unscheduled ({unscheduledTasks.length})</p>
                     <div className="flex flex-wrap gap-2">
                         {unscheduledTasks.map(task => (
                             <button

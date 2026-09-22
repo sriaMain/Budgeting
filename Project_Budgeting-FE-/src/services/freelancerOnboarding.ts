@@ -6,6 +6,7 @@ import type {
   FreelancerProjectAssignmentPayload, CapacityCheckResult, FreelancerTaskAssignment,
   FreelancerTaskAssignmentPayload, FreelancerTimeEntry, FreelancerTimeEntryPayload, SimpleTask,
   FreelancerBankDetail, FreelancerBankDetailPayload, FreelancerBankDetailUnmasked,
+  FreelancerPANUnmasked, FreelancerEquipment, FreelancerEquipmentPayload, FreelancerAuditLog,
 } from "../types/freelancerOnboarding.types";
 
 const BASE = "/freelancer-onboarding";
@@ -245,6 +246,32 @@ export const updateBankDetail = async (
 
 export const getBankDetailUnmasked = async (freelancerId: number): Promise<FreelancerBankDetailUnmasked> => {
   const res = await axiosInstance.get(`${BASE}/freelancers/${freelancerId}/bank-detail/unmasked/`);
+  return res.data;
+};
+
+export const getPANUnmasked = async (freelancerId: number): Promise<FreelancerPANUnmasked> => {
+  const res = await axiosInstance.get(`${BASE}/freelancers/${freelancerId}/bank-detail/pan-unmasked/`);
+  return res.data;
+};
+
+// --- Equipment / Laptop ---
+
+export const getEquipment = async (freelancerId: number): Promise<FreelancerEquipment | null> => {
+  const res = await axiosInstance.get(`${BASE}/freelancers/${freelancerId}/equipment/`);
+  return res.data;
+};
+
+export const updateEquipment = async (
+  freelancerId: number, payload: FreelancerEquipmentPayload,
+): Promise<FreelancerEquipment> => {
+  const res = await axiosInstance.patch(`${BASE}/freelancers/${freelancerId}/equipment/`, payload);
+  return res.data;
+};
+
+// --- Activity / Audit Log ---
+
+export const listAuditLog = async (freelancerId: number): Promise<FreelancerAuditLog[]> => {
+  const res = await axiosInstance.get(`${BASE}/freelancers/${freelancerId}/audit-log/`);
   return res.data;
 };
 

@@ -63,10 +63,10 @@ const STATUS_OPTIONS = [
 ];
 
 const STATUS_BADGE: Record<string, string> = {
-    active: 'bg-green-50 text-green-700',
-    completed: 'bg-blue-50 text-blue-700',
-    on_hold: 'bg-amber-50 text-amber-700',
-    removed: 'bg-red-50 text-red-700',
+    active: 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300',
+    completed: 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300',
+    on_hold: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    removed: 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300',
 };
 
 const num = (v: string | number | undefined | null): number => {
@@ -209,7 +209,7 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-900">Resources</p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white">Resources</p>
                 <button
                     type="button"
                     onClick={() => setShowAddForm((v) => !v)}
@@ -220,7 +220,7 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
             </div>
 
             {showAddForm && (
-                <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
+                <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4 space-y-3">
                     <div className="flex gap-2">
                         {RESOURCE_TYPES.map((t) => (
                             <button
@@ -228,8 +228,8 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                                 type="button"
                                 onClick={() => setForm({ ...form, resourceType: t.value, resource: null })}
                                 className={`px-4 py-1.5 text-sm font-medium rounded-lg border ${form.resourceType === t.value
-                                    ? 'border-blue-600 bg-blue-50 text-blue-700'
-                                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                                    ? 'border-blue-600 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                    : 'border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
                                     }`}
                             >
                                 {t.label}
@@ -239,7 +239,7 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
 
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                         <div className="md:col-span-2">
-                            <label className="block text-xs font-medium text-gray-500 mb-1">
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                                 {form.resourceType === 'employee' ? 'Employee' : 'Freelancer'}
                             </label>
                             <SearchableSelect
@@ -249,87 +249,87 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                                 placeholder={`Search ${form.resourceType}...`}
                                 emptyMessage={`No ${form.resourceType}s found`}
                             />
-                            {formErrors.resource && <p className="text-xs text-red-600 mt-1">{formErrors.resource}</p>}
+                            {formErrors.resource && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.resource}</p>}
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Role</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Role</label>
                             <input
                                 type="text"
                                 value={form.role}
                                 onChange={(e) => setForm({ ...form, role: e.target.value })}
                                 placeholder="e.g. Backend Developer"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Status</label>
                             <select
                                 value={form.status}
                                 onChange={(e) => setForm({ ...form, status: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             >
                                 {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Start Date</label>
                             <input
                                 type="date"
                                 value={form.start_date}
                                 onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             />
-                            {formErrors.start_date && <p className="text-xs text-red-600 mt-1">{formErrors.start_date}</p>}
+                            {formErrors.start_date && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.start_date}</p>}
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">End Date</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">End Date</label>
                             <input
                                 type="date"
                                 value={form.end_date}
                                 onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             />
-                            {formErrors.end_date && <p className="text-xs text-red-600 mt-1">{formErrors.end_date}</p>}
+                            {formErrors.end_date && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.end_date}</p>}
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Allocation %</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Allocation %</label>
                             <input
                                 type="number"
                                 min="0"
                                 max="100"
                                 value={form.allocation_percent}
                                 onChange={(e) => setForm({ ...form, allocation_percent: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Cost Rate (hourly)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Cost Rate (hourly)</label>
                             <input
                                 type="number"
                                 value={form.cost_rate}
                                 onChange={(e) => setForm({ ...form, cost_rate: e.target.value })}
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.cost_rate ? 'border-red-400' : 'border-gray-300'}`}
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.cost_rate ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                             />
-                            {formErrors.cost_rate && <p className="text-xs text-red-600 mt-1">{formErrors.cost_rate}</p>}
+                            {formErrors.cost_rate && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.cost_rate}</p>}
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Billing Rate (hourly)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Billing Rate (hourly)</label>
                             <input
                                 type="number"
                                 value={form.billing_rate}
                                 onChange={(e) => setForm({ ...form, billing_rate: e.target.value })}
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.billing_rate ? 'border-red-400' : 'border-gray-300'}`}
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.billing_rate ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                             />
-                            {formErrors.billing_rate && <p className="text-xs text-red-600 mt-1">{formErrors.billing_rate}</p>}
+                            {formErrors.billing_rate && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.billing_rate}</p>}
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Working Hours (period)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Working Hours (period)</label>
                             <input
                                 type="number"
                                 value={form.working_hours}
                                 onChange={(e) => setForm({ ...form, working_hours: e.target.value })}
                                 placeholder="e.g. 160"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             />
                         </div>
                     </div>
@@ -347,15 +347,15 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                 </div>
             )}
 
-            <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-x-auto">
                 {isLoading ? (
-                    <p className="p-4 text-sm text-gray-500">Loading resources...</p>
+                    <p className="p-4 text-sm text-gray-500 dark:text-gray-400">Loading resources...</p>
                 ) : assignments.length === 0 ? (
-                    <p className="p-4 text-sm text-gray-500">No resources assigned yet.</p>
+                    <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No resources assigned yet.</p>
                 ) : (
                     <table className="w-full text-sm">
                         <thead>
-                            <tr className="border-b border-gray-200 text-left text-xs text-gray-500 uppercase">
+                            <tr className="border-b border-gray-200 dark:border-gray-800 text-left text-xs text-gray-500 dark:text-gray-400 uppercase">
                                 <th className="px-4 py-2">Resource</th>
                                 <th className="px-4 py-2">Role</th>
                                 <th className="px-4 py-2">Period</th>
@@ -370,37 +370,37 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                         </thead>
                         <tbody>
                             {assignments.map((a) => (
-                                <tr key={a.id} className="border-b border-gray-100">
+                                <tr key={a.id} className="border-b border-gray-100 dark:border-gray-800">
                                     <td className="px-4 py-2">
-                                        <p className="text-gray-900 font-medium">{a.resource_name || `#${a.resource_id}`}</p>
-                                        <p className="text-xs text-gray-500">{a.resource_type_display}</p>
+                                        <p className="text-gray-900 dark:text-white font-medium">{a.resource_name || `#${a.resource_id}`}</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">{a.resource_type_display}</p>
                                     </td>
-                                    <td className="px-4 py-2 text-gray-600">{a.role || '—'}</td>
-                                    <td className="px-4 py-2 text-gray-600 whitespace-nowrap">
+                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{a.role || '—'}</td>
+                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400 whitespace-nowrap">
                                         {a.start_date} {a.end_date ? `- ${a.end_date}` : '- ongoing'}
                                     </td>
                                     <td className="px-4 py-2 text-right">{num(a.cost_rate).toLocaleString()} {currency}</td>
                                     <td className="px-4 py-2 text-right">{num(a.billing_rate).toLocaleString()} {currency}</td>
                                     <td className="px-4 py-2 text-right">{num(a.working_hours)}</td>
-                                    <td className="px-4 py-2 text-right text-gray-900">{num(a.monthly_cost).toLocaleString()} {currency}</td>
-                                    <td className="px-4 py-2 text-right text-gray-900">{num(a.monthly_billing).toLocaleString()} {currency}</td>
+                                    <td className="px-4 py-2 text-right text-gray-900 dark:text-white">{num(a.monthly_cost).toLocaleString()} {currency}</td>
+                                    <td className="px-4 py-2 text-right text-gray-900 dark:text-white">{num(a.monthly_billing).toLocaleString()} {currency}</td>
                                     <td className="px-4 py-2">
                                         <select
                                             value={a.status}
                                             onChange={(e) => handleStatusChange(a, e.target.value)}
-                                            className={`px-2 py-1 rounded text-xs font-medium border-0 ${STATUS_BADGE[a.status] || 'bg-gray-100 text-gray-700'}`}
+                                            className={`px-2 py-1 rounded text-xs font-medium border-0 ${STATUS_BADGE[a.status] || 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
                                         >
                                             {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                                         </select>
                                     </td>
                                     <td className="px-4 py-2 text-right">
-                                        <button onClick={() => handleArchive(a.id)} className="text-xs text-red-600 hover:underline">Remove</button>
+                                        <button onClick={() => handleArchive(a.id)} className="text-xs text-red-600 dark:text-red-400 hover:underline">Remove</button>
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
                         <tfoot>
-                            <tr className="bg-gray-50 font-semibold">
+                            <tr className="bg-gray-50 dark:bg-gray-800 font-semibold">
                                 <td className="px-4 py-2" colSpan={6}>Total (active + all listed)</td>
                                 <td className="px-4 py-2 text-right">{totals.cost.toLocaleString()} {currency}</td>
                                 <td className="px-4 py-2 text-right">{totals.billing.toLocaleString()} {currency}</td>

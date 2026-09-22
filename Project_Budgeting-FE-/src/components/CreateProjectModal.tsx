@@ -463,35 +463,35 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             >
                 {/* Modal */}
                 <div
-                    className="bg-white rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+                    className="bg-white dark:bg-gray-900 rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {/* Header */}
-                    <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 z-10">
+                    <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 z-10">
                         <div className="flex items-center justify-between mb-2">
-                            <h2 className="text-xl font-bold text-gray-900">Create Project</h2>
+                            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Create Project</h2>
                             <button
                                 onClick={onClose}
-                                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
                                 aria-label="Close modal"
                             >
-                                <X size={24} className="text-gray-600" />
+                                <X size={24} className="text-gray-600 dark:text-gray-400" />
                             </button>
                         </div>
                         {/* Static informational text */}
-                        <p className="text-sm text-gray-600 mt-2">
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                             Move questions to Confirmed & Create Project.
                         </p>
                     </div>
 
                     {/* Tabs */}
-                    <div className="border-b border-gray-200 px-6">
+                    <div className="border-b border-gray-200 dark:border-gray-800 px-6">
                         <div className="flex gap-1">
                             <button
                                 onClick={() => setActiveTab('project')}
                                 className={`px-6 py-3 font-semibold text-sm transition-colors relative ${activeTab === 'project'
-                                    ? 'text-gray-900 bg-gray-100'
-                                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                                    ? 'text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800'
+                                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800'
                                     }`}
                             >
                                 Project Settings
@@ -503,8 +503,8 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                 <button
                                     onClick={() => setActiveTab('budget')}
                                     className={`px-6 py-3 font-semibold text-sm transition-colors relative ${activeTab === 'budget'
-                                        ? 'text-gray-900 bg-gray-100'
-                                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                                        ? 'text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800'
+                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800'
                                         }`}
                                 >
                                     Budget Settings
@@ -539,7 +539,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 
                                 {/* Project Type (engagement/billing model) */}
                                 <div>
-                                    <label className="block text-base font-medium text-gray-900 mb-3">
+                                    <label className="block text-base font-medium text-gray-900 dark:text-white mb-3">
                                         Project Type
                                     </label>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -549,12 +549,12 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                 type="button"
                                                 onClick={() => setEngagementType(type.value)}
                                                 className={`text-left p-3 rounded-lg border transition-colors ${engagementType === type.value
-                                                    ? 'border-blue-600 bg-blue-50'
-                                                    : 'border-gray-300 hover:bg-gray-50'
+                                                    ? 'border-blue-600 bg-blue-50 dark:bg-blue-500/10'
+                                                    : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
                                                     }`}
                                             >
-                                                <p className="text-sm font-semibold text-gray-900">{type.label}</p>
-                                                <p className="text-xs text-gray-500 mt-0.5">{type.description}</p>
+                                                <p className="text-sm font-semibold text-gray-900 dark:text-white">{type.label}</p>
+                                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{type.description}</p>
                                             </button>
                                         ))}
                                     </div>
@@ -578,11 +578,11 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                     placeholder="0"
                                                 />
                                                 <div>
-                                                    <label className="block text-sm text-gray-600 mb-1">Billing Frequency</label>
+                                                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Billing Frequency</label>
                                                     <select
                                                         value={billingFrequency}
                                                         onChange={(e) => setBillingFrequency(e.target.value)}
-                                                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                                                        className="w-full px-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                                                     >
                                                         {BILLING_FREQUENCIES.map((f) => (
                                                             <option key={f.value} value={f.value}>{f.label}</option>
@@ -596,20 +596,20 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                     {/* Project Contract: Project % / Project Amount / Remaining Amount,
                                         calculated against the Contract Value above. */}
                                     {engagementType === 'fixed' && (
-                                        <div className="mt-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
-                                            <p className="text-sm font-semibold text-gray-900 mb-3">Project Contract</p>
+                                        <div className="mt-4 border border-gray-200 dark:border-gray-800 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+                                            <p className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Project Contract</p>
                                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                                                 <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">Contract Value</label>
-                                                    <p className="text-sm font-semibold text-gray-900 mt-2">
+                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Contract Value</label>
+                                                    <p className="text-sm font-semibold text-gray-900 dark:text-white mt-2">
                                                         {contractValue
                                                             ? `${parseFloat(contractValue).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${priceList}`
                                                             : '—'}
                                                     </p>
-                                                    {quoteId && <p className="text-[11px] text-gray-400">Excluding GST</p>}
+                                                    {quoteId && <p className="text-[11px] text-gray-400 dark:text-gray-500">Excluding GST</p>}
                                                 </div>
                                                 <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">Project %</label>
+                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Project %</label>
                                                     <input
                                                         type="number"
                                                         min={0}
@@ -618,11 +618,11 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                         value={projectPercentage}
                                                         onChange={(e) => handleProjectPercentageChange(e.target.value)}
                                                         placeholder="0"
-                                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                                                        className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">Profit Margin ({priceList})</label>
+                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Profit Margin ({priceList})</label>
                                                     <input
                                                         type="number"
                                                         min={0}
@@ -630,12 +630,12 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                         value={projectAmount}
                                                         onChange={(e) => handleProjectAmountChange(e.target.value)}
                                                         placeholder="0"
-                                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                                                        className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">Remaining Amount</label>
-                                                    <p className="text-sm font-semibold text-gray-900 mt-2">{remainingAmountDisplay}</p>
+                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Remaining Amount</label>
+                                                    <p className="text-sm font-semibold text-gray-900 dark:text-white mt-2">{remainingAmountDisplay}</p>
                                                 </div>
                                             </div>
                                         </div>
@@ -644,13 +644,13 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 
                                 {/* Project Setup */}
                                 <div>
-                                    <label className="block text-base font-medium text-gray-900 mb-3">
+                                    <label className="block text-base font-medium text-gray-900 dark:text-white mb-3">
                                         Project Setup
                                     </label>
                                     <div className="space-y-4">
                                         {/* Client */}
                                         <div>
-                                            <label className="block text-sm text-gray-600 mb-1">Client</label>
+                                            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Client</label>
                                             <SearchableSelect
                                                 options={clientOptions}
                                                 value={client}
@@ -660,7 +660,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                 emptyMessage="No clients found"
                                             />
                                             {clientContact && (
-                                                <p className="mt-1 text-xs text-gray-500">
+                                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                                                     Client contact: {clientContact.name}
                                                     {clientContact.email ? ` • ${clientContact.email}` : ''}
                                                 </p>
@@ -669,7 +669,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 
                                         {/* Project Manager */}
                                         <div>
-                                            <label className="block text-sm text-gray-600 mb-1">Project Manager</label>
+                                            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Project Manager</label>
                                             <SearchableSelect
                                                 options={projectManagerOptions}
                                                 value={projectManager}
@@ -681,10 +681,10 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 
                                         {/* POC */}
                                         <div>
-                                            <label className="block text-sm text-gray-600 mb-1">POC</label>
+                                            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">POC</label>
                                             <div className="space-y-3">
                                                 <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">POC Category</label>
+                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">POC Category</label>
                                                     <div className="flex gap-2">
                                                         {POC_CATEGORIES.map((category) => (
                                                             <button
@@ -692,8 +692,8 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                                 type="button"
                                                                 onClick={() => handlePocCategoryChange(category.value)}
                                                                 className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${pocCategory === category.value
-                                                                    ? 'bg-gray-200 text-gray-900'
-                                                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                                                                    ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
+                                                                    : 'bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
                                                                     }`}
                                                             >
                                                                 {category.label}
@@ -702,7 +702,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">
+                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
                                                         Select {POC_CATEGORIES.find((c) => c.value === pocCategory)?.label}
                                                     </label>
                                                     <SearchableSelect
@@ -719,7 +719,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                         {/* Dates */}
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="block text-sm text-gray-600 mb-1">Start Date</label>
+                                                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Start Date</label>
                                                 <InputField
                                                     type="date"
                                                     value={startDate}
@@ -727,7 +727,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-sm text-gray-600 mb-1">End Date</label>
+                                                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">End Date</label>
                                                 <InputField
                                                     type="date"
                                                     value={dueDate}
@@ -746,8 +746,8 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                     <button
                                         onClick={() => setBudgetMethod('quoted')}
                                         className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${budgetMethod === 'quoted'
-                                            ? 'bg-gray-200 text-gray-900'
-                                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                                            ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
+                                            : 'bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
                                             }`}
                                     >
                                         Use quoted amounts
@@ -755,20 +755,20 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                     <button
                                         onClick={() => setBudgetMethod('manual')}
                                         className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${budgetMethod === 'manual'
-                                            ? 'bg-gray-200 text-gray-900'
-                                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                                            ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
+                                            : 'bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
                                             }`}
                                     >
                                         Set manually
                                     </button>
                                 </div>
 
-                                <p className="text-sm text-gray-500">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
                                     You can add members to the project later from the project view
                                 </p>
 
                                 {quoteId && (
-                                    <p className="text-sm text-blue-600">
+                                    <p className="text-sm text-blue-600 dark:text-blue-400">
                                         {isLoadingQuoteBudget
                                             ? 'Fetching hours, budget, bills & expenses and price list from the quote...'
                                             : 'Values below were fetched from the quote. You can edit them if needed.'}
@@ -811,13 +811,13 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 
                                 {/* Price List */}
                                 <div>
-                                    <label className="block text-sm text-gray-600 mb-1">Price list</label>
+                                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Price list</label>
                                     <div className="relative">
                                         <select
                                             value={priceList}
                                             onChange={(e) => setPriceList(e.target.value)}
                                             disabled={isLoadingQuoteBudget}
-                                            className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 appearance-none disabled:opacity-50"
+                                            className="w-full px-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 appearance-none disabled:opacity-50"
                                         >
                                             <option value="INR">INR - Indian Rupee (₹)</option>
                                             <option value="USD">USD - US Dollar ($)</option>
@@ -830,7 +830,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                         </select>
                                         <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                                             <svg
-                                                className="w-5 h-5 text-gray-400"
+                                                className="w-5 h-5 text-gray-400 dark:text-gray-500"
                                                 fill="none"
                                                 stroke="currentColor"
                                                 viewBox="0 0 24 24"
@@ -850,7 +850,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                     </div>
 
                     {/* Footer */}
-                    <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-center">
+                    <div className="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 px-6 py-4 flex justify-center">
                         <button
                             onClick={handleCreateProject}
                             disabled={isSaving}

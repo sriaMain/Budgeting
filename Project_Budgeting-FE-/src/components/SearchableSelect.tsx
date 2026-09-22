@@ -65,20 +65,20 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 type="button"
                 disabled={disabled}
                 onClick={() => setIsOpen((prev) => !prev)}
-                className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-left focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between gap-2"
+                className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-left focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between gap-2 dark:bg-gray-800 dark:border-gray-700 dark:focus:ring-violet-500"
             >
                 {value ? (
                     <span className="flex items-baseline gap-2 truncate">
-                        <span className="text-gray-900 truncate">{value.label}</span>
+                        <span className="text-gray-900 truncate dark:text-gray-100">{value.label}</span>
                         {value.sublabel && (
-                            <span className="text-xs text-gray-500 shrink-0">— {value.sublabel}</span>
+                            <span className="text-xs text-gray-500 shrink-0 dark:text-gray-400">— {value.sublabel}</span>
                         )}
                     </span>
                 ) : (
-                    <span className="text-gray-400">{placeholder}</span>
+                    <span className="text-gray-400 dark:text-gray-500">{placeholder}</span>
                 )}
                 <svg
-                    className={`w-5 h-5 text-gray-400 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    className={`w-5 h-5 text-gray-400 shrink-0 transition-transform dark:text-gray-500 ${isOpen ? 'rotate-180' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -88,31 +88,31 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
             </button>
 
             {isOpen && (
-                <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg overflow-hidden">
-                    <div className="p-2 border-b border-gray-100">
+                <div className="absolute z-20 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg overflow-hidden dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
+                    <div className="p-2 border-b border-gray-100 dark:border-gray-700">
                         <input
                             autoFocus
                             type="text"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             placeholder="Search..."
-                            className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                            className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-600 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                         />
                     </div>
                     <ul className="max-h-56 overflow-y-auto py-1">
                         {filteredOptions.length === 0 ? (
-                            <li className="px-4 py-2 text-sm text-gray-400">{emptyMessage}</li>
+                            <li className="px-4 py-2 text-sm text-gray-400 dark:text-gray-500">{emptyMessage}</li>
                         ) : (
                             filteredOptions.map((option) => (
                                 <li key={`${option.id}-${option.sublabel ?? ''}`}>
                                     <button
                                         type="button"
                                         onClick={() => handleSelect(option)}
-                                        className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-baseline gap-2"
+                                        className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-baseline gap-2 dark:hover:bg-gray-700"
                                     >
-                                        <span className="text-gray-900 truncate">{option.label}</span>
+                                        <span className="text-gray-900 truncate dark:text-gray-100">{option.label}</span>
                                         {option.sublabel && (
-                                            <span className="text-xs text-gray-500 shrink-0">— {option.sublabel}</span>
+                                            <span className="text-xs text-gray-500 shrink-0 dark:text-gray-400">— {option.sublabel}</span>
                                         )}
                                     </button>
                                 </li>

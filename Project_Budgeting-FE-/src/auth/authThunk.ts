@@ -37,7 +37,7 @@ export const initializeAuth = createAsyncThunk<
           email: response.data.email || '',
         };
     } catch (error) {
-    
+
       return thunkAPI.rejectWithValue(
         "Authentication Expired please login again"
       );

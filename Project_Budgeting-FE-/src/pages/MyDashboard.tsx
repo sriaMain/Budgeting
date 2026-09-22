@@ -84,8 +84,8 @@ export const MyDashboard: React.FC = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">My Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-1">Your tasks and hours at a glance</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Dashboard</h1>
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Your tasks and hours at a glance</p>
       </div>
 
       {/* Task status stat cards */}
@@ -101,16 +101,16 @@ export const MyDashboard: React.FC = () => {
         <ChartCard title="This Week's Hours" subtitle={`Target ${WEEKLY_TARGET_HOURS}h`} loading={loading} className="lg:col-span-2">
           <div className="mb-4">
             <div className="flex items-baseline justify-between mb-1.5">
-              <span className="text-2xl font-bold text-gray-900">{weeklyHours.toFixed(1)}h</span>
-              <span className="text-sm text-gray-500">of {WEEKLY_TARGET_HOURS}h</span>
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">{weeklyHours.toFixed(1)}h</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">of {WEEKLY_TARGET_HOURS}h</span>
             </div>
-            <div className="h-2.5 bg-blue-100 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${weeklyPercent}%` }} />
+            <div className="h-2.5 bg-blue-100 rounded-full overflow-hidden dark:bg-blue-500/20">
+              <div className="h-full bg-blue-600 rounded-full transition-all dark:bg-blue-500" style={{ width: `${weeklyPercent}%` }} />
             </div>
           </div>
 
           {(timesheet?.tasks?.length ?? 0) > 0 ? (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-gray-100 dark:divide-gray-800">
               {timesheet?.tasks.map((task) => {
                 const pct = task.allocated_hours > 0
                   ? Math.min((task.consumed_hours / task.allocated_hours) * 100, 100)
@@ -118,14 +118,14 @@ export const MyDashboard: React.FC = () => {
                 return (
                   <div key={task.id} className="py-2.5">
                     <div className="flex items-center justify-between text-sm mb-1">
-                      <span className="text-gray-900 font-medium truncate">{task.title}</span>
-                      <span className="text-gray-500 shrink-0 ml-2">
+                      <span className="text-gray-900 font-medium truncate dark:text-gray-100">{task.title}</span>
+                      <span className="text-gray-500 shrink-0 ml-2 dark:text-gray-400">
                         {task.consumed_hours.toFixed(1)}h / {task.allocated_hours.toFixed(1)}h
                       </span>
                     </div>
-                    <div className="h-1.5 bg-blue-100 rounded-full overflow-hidden">
+                    <div className="h-1.5 bg-blue-100 rounded-full overflow-hidden dark:bg-blue-500/20">
                       <div
-                        className={`h-full rounded-full ${pct >= 100 ? 'bg-red-500' : 'bg-blue-600'}`}
+                        className={`h-full rounded-full ${pct >= 100 ? 'bg-red-500 dark:bg-red-500' : 'bg-blue-600 dark:bg-blue-500'}`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -134,7 +134,7 @@ export const MyDashboard: React.FC = () => {
               })}
             </div>
           ) : (
-            <p className="text-sm text-gray-400 text-center py-4">No assigned tasks yet</p>
+            <p className="text-sm text-gray-400 text-center py-4 dark:text-gray-500">No assigned tasks yet</p>
           )}
         </ChartCard>
 
@@ -142,26 +142,26 @@ export const MyDashboard: React.FC = () => {
         <ChartCard title="Active Timer" loading={loading}>
           {activeTimer?.has_active_timer && activeTimer.task ? (
             <div className="text-center py-4">
-              <Clock className="mx-auto text-blue-600 mb-2" size={28} />
-              <p className="text-sm font-medium text-gray-900 truncate">{activeTimer.task.title}</p>
+              <Clock className="mx-auto text-blue-600 mb-2 dark:text-blue-400" size={28} />
+              <p className="text-sm font-medium text-gray-900 truncate dark:text-gray-100">{activeTimer.task.title}</p>
               {activeTimer.task.project_name && (
-                <p className="text-xs text-gray-500 mb-2">{activeTimer.task.project_name}</p>
+                <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">{activeTimer.task.project_name}</p>
               )}
-              <p className="text-xl font-bold text-gray-900 tabular-nums">{activeTimer.task.formatted_time}</p>
+              <p className="text-xl font-bold text-gray-900 tabular-nums dark:text-white">{activeTimer.task.formatted_time}</p>
               <button
                 onClick={() => navigate('/task-management')}
-                className="mt-3 text-sm text-blue-600 hover:underline"
+                className="mt-3 text-sm text-blue-600 hover:underline dark:text-blue-400"
               >
                 Manage timer
               </button>
             </div>
           ) : (
             <div className="text-center py-6">
-              <Clock className="mx-auto text-gray-300 mb-2" size={28} />
-              <p className="text-sm text-gray-400">No timer running</p>
+              <Clock className="mx-auto text-gray-300 mb-2 dark:text-gray-600" size={28} />
+              <p className="text-sm text-gray-400 dark:text-gray-500">No timer running</p>
               <button
                 onClick={() => navigate('/task-management')}
-                className="mt-3 text-sm text-blue-600 hover:underline"
+                className="mt-3 text-sm text-blue-600 hover:underline dark:text-blue-400"
               >
                 Go to my tasks
               </button>
@@ -180,17 +180,17 @@ export const MyDashboard: React.FC = () => {
         isEmpty={!loading && !(extras?.upcoming_deadlines.length)}
         emptyMessage="No upcoming deadlines"
       >
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-gray-100 dark:divide-gray-800">
           {extras?.upcoming_deadlines.map((task) => (
             <div key={task.id} className="flex items-center justify-between py-3">
               <div className="flex items-center gap-3">
-                <CalendarClock size={16} className="text-gray-400" />
+                <CalendarClock size={16} className="text-gray-400 dark:text-gray-500" />
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{task.title}</p>
-                  {task.project_name && <p className="text-xs text-gray-500">{task.project_name}</p>}
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{task.title}</p>
+                  {task.project_name && <p className="text-xs text-gray-500 dark:text-gray-400">{task.project_name}</p>}
                 </div>
               </div>
-              <span className="text-sm text-gray-500">{new Date(task.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">{new Date(task.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
             </div>
           ))}
         </div>

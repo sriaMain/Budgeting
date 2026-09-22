@@ -24,17 +24,23 @@ export const Captcha: React.FC<CaptchaProps> = ({ onCaptchaChange, refreshCounte
     // Config
     const width = canvas.width;
     const height = canvas.height;
-    
+    // Canvas pixels are drawn imperatively, so they can't pick up `dark:`
+    // Tailwind classes - read the `dark` class on <html> directly instead
+    // (set before React mounts, see index.html / useTheme.ts).
+    const isDark = document.documentElement.classList.contains('dark');
+
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
 
     // Background
-    ctx.fillStyle = '#f9fafb'; // gray-50
+    ctx.fillStyle = isDark ? '#1f2937' : '#f9fafb'; // dark:gray-800 / gray-50
     ctx.fillRect(0, 0, width, height);
 
     // Add noise (dots)
     for (let i = 0; i < 50; i++) {
-      ctx.fillStyle = `rgba(${Math.random() * 100}, ${Math.random() * 100}, ${Math.random() * 100}, 0.2)`;
+      ctx.fillStyle = isDark
+        ? `rgba(${155 + Math.random() * 100}, ${155 + Math.random() * 100}, ${155 + Math.random() * 100}, 0.25)`
+        : `rgba(${Math.random() * 100}, ${Math.random() * 100}, ${Math.random() * 100}, 0.2)`;
       ctx.beginPath();
       ctx.arc(Math.random() * width, Math.random() * height, Math.random() * 2, 0, 2 * Math.PI);
       ctx.fill();
@@ -42,7 +48,9 @@ export const Captcha: React.FC<CaptchaProps> = ({ onCaptchaChange, refreshCounte
 
     // Add noise (lines)
     for (let i = 0; i < 7; i++) {
-        ctx.strokeStyle = `rgba(${Math.random() * 100}, ${Math.random() * 100}, ${Math.random() * 100}, 0.15)`;
+        ctx.strokeStyle = isDark
+          ? `rgba(${140 + Math.random() * 100}, ${140 + Math.random() * 100}, ${140 + Math.random() * 100}, 0.2)`
+          : `rgba(${Math.random() * 100}, ${Math.random() * 100}, ${Math.random() * 100}, 0.15)`;
         ctx.lineWidth = 1 + Math.random();
         ctx.beginPath();
         ctx.moveTo(Math.random() * width, Math.random() * height);
@@ -71,7 +79,9 @@ export const Captcha: React.FC<CaptchaProps> = ({ onCaptchaChange, refreshCounte
       ctx.rotate(rotation);
       
       // Style
-      ctx.fillStyle = `rgb(${Math.floor(Math.random() * 150)}, ${Math.floor(Math.random() * 150)}, ${Math.floor(Math.random() * 150)})`;
+      ctx.fillStyle = isDark
+        ? `rgb(${200 + Math.floor(Math.random() * 55)}, ${200 + Math.floor(Math.random() * 55)}, ${200 + Math.floor(Math.random() * 55)})`
+        : `rgb(${Math.floor(Math.random() * 150)}, ${Math.floor(Math.random() * 150)}, ${Math.floor(Math.random() * 150)})`;
       
       ctx.fillText(char, 0, 0);
       ctx.restore();
@@ -105,12 +115,12 @@ export const Captcha: React.FC<CaptchaProps> = ({ onCaptchaChange, refreshCounte
 
   return (
     <div className="flex items-center space-x-3 select-none">
-      <div className="relative overflow-hidden rounded-lg border border-gray-300 shadow-sm">
-        <canvas 
-            ref={canvasRef} 
-            width={240} 
-            height={60} 
-            className="block bg-gray-50 cursor-pointer"
+      <div className="relative overflow-hidden rounded-lg border border-gray-300 shadow-sm dark:border-gray-700">
+        <canvas
+            ref={canvasRef}
+            width={240}
+            height={60}
+            className="block bg-gray-50 cursor-pointer dark:bg-gray-800"
             onClick={regenerate}
             title="Click to refresh captcha"
         />
@@ -118,7 +128,7 @@ export const Captcha: React.FC<CaptchaProps> = ({ onCaptchaChange, refreshCounte
       <button
         type="button"
         onClick={regenerate}
-        className={`p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 ${isRegenerating ? 'rotate-180' : ''}`}
+        className={`p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-gray-400 dark:hover:text-violet-400 dark:hover:bg-violet-500/10 dark:focus:ring-violet-500 ${isRegenerating ? 'rotate-180' : ''}`}
         title="Refresh Captcha"
       >
         <RefreshIcon className="w-6 h-6" />

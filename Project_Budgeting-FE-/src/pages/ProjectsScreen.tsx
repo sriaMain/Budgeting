@@ -26,7 +26,19 @@ interface Project {
 		total_hours: number;
 		billable_hours?: number | string;
 		total_budget: string;
+		// Tax and profit excluded (unlike total_budget, which still mirrors
+		// the quote's client-facing total) - see ProjectBudget.cost_budget on
+		// the backend. This is what should be shown as "Total Budget"/"User
+		// budget" everywhere, matching the Project Details page.
+		cost_budget: string;
 		bills_and_expenses: string;
+		// Real spend so far (labor cost + actual logged expenses) - unlike
+		// bills_and_expenses, which is a quote-time estimate that's rarely
+		// ever populated in practice and so never actually changes as real
+		// expenses get logged. This is what the Project Details page's
+		// "User budget" card already shows as "Used", so the list page's
+		// Budget-used % should read the same figure.
+		used_budget: string;
 		currency: string;
 		forecasted_profit: string;
 	};
@@ -40,13 +52,13 @@ interface CompanyGroup {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-	planning: 'bg-purple-50 text-purple-700 border-purple-200',
-	development: 'bg-blue-50 text-blue-700 border-blue-200',
-	testing: 'bg-amber-50 text-amber-700 border-amber-200',
-	uat: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-	ready_for_deployment: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-	deployed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-	on_hold: 'bg-orange-50 text-orange-700 border-orange-200',
+	planning: 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-500/30',
+	development: 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/30',
+	testing: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30',
+	uat: 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30',
+	ready_for_deployment: 'bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-500/30',
+	deployed: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30',
+	on_hold: 'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-500/30',
 };
 
 const StatusSelect = ({
@@ -58,7 +70,7 @@ const StatusSelect = ({
 	statusChoices: { value: string; label: string }[];
 	onChange: (project: Project, status: string) => void;
 }) => {
-	const activeStyle = STATUS_STYLES[project.status] || 'bg-gray-50 text-gray-700 border-gray-200';
+	const activeStyle = STATUS_STYLES[project.status] || 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800';
 	// Make sure the project's current status always has a matching <option>,
 	// even if it hasn't loaded into statusChoices yet.
 	const options = statusChoices.some(choice => choice.value === project.status)
@@ -82,8 +94,8 @@ const StatusSelect = ({
 // Budget-usage heuristic for the health badge — the API has no computed "health" field
 // today (see enterprise-artifacts/UI_BUILD_HANDOFF.md's Phase 3 backend gaps).
 function projectHealth(project: Project): { health: ProjectHealth; pct: number } {
-	const total = parseFloat(project.budget?.total_budget) || 0;
-	const used = parseFloat(project.budget?.bills_and_expenses) || 0;
+	const total = parseFloat(project.budget?.cost_budget) || 0;
+	const used = parseFloat(project.budget?.used_budget) || 0;
 	const pct = total > 0 ? (used / total) * 100 : 0;
 	const health: ProjectHealth = pct >= 90 ? 'at_risk' : pct >= 75 ? 'watch' : 'healthy';
 	return { health, pct };
@@ -170,7 +182,7 @@ export default function ProjectsScreen(_props: any) {
 					const projects: Project[] = (company.project_details || []).map((p: any) => {
 						// Parse budget values for KPIs
 						const profit = p.budget?.forecasted_profit ? parseFloat(p.budget.forecasted_profit) : 0;
-						const budget = p.budget?.total_budget ? parseFloat(p.budget.total_budget) : 0;
+						const budget = p.budget?.cost_budget ? parseFloat(p.budget.cost_budget) : 0;
 						// Prefer billable_hours (falls back to task-allocated hours on the
 						// backend when total_hours/quote hours were never set) over the raw
 						// total_hours field, which can be 0 even when tasks have real hours.
@@ -280,23 +292,23 @@ export default function ProjectsScreen(_props: any) {
 							<Plus size={16} />
 							New
 						</button>
-						<div className="h-8 w-[1px] bg-gray-200 mx-2"></div>
+						<div className="h-8 w-[1px] bg-gray-200 dark:bg-gray-700 mx-2"></div>
 						<div className="relative">
 							<select
 								value={filterStatus}
 								onChange={(e) => setFilterStatus(e.target.value)}
-								className="px-4 py-2 pr-8 appearance-none bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-600 cursor-pointer transition-colors"
+								className="px-4 py-2 pr-8 appearance-none bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-600 cursor-pointer transition-colors"
 							>
 								<option value="All">All Statuses</option>
 								{statusChoices.map(choice => (
 									<option key={choice.value} value={choice.value}>{choice.label}</option>
 								))}
 							</select>
-							<ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none w-4 h-4" />
+							<ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none w-4 h-4" />
 						</div>
 						<button
 							onClick={() => setIsFilterModalOpen(true)}
-							className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium flex items-center gap-2 border border-gray-200 whitespace-nowrap"
+							className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg text-sm font-medium flex items-center gap-2 border border-gray-200 dark:border-gray-800 whitespace-nowrap"
 						>
 							<Filter size={16} />
 							Filters
@@ -304,13 +316,13 @@ export default function ProjectsScreen(_props: any) {
 					</div>
 
 					<div className="relative w-full md:w-80">
-						<Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+						<Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
 						<input
 							type="text"
 							placeholder="Search..."
 							value={searchQuery}
 							onChange={(e) => setSearchQuery(e.target.value)}
-							className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+							className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
 						/>
 					</div>
 				</div>
@@ -330,7 +342,7 @@ export default function ProjectsScreen(_props: any) {
 
 				{/* Projects */}
 				{loading ? (
-					<div className="p-8 text-center text-gray-500">Loading projects...</div>
+					<div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading projects...</div>
 				) : filteredCompanyGroups.length === 0 ? (
 					<EmptyState title="No projects found" description="Try clearing filters or search, or create a new project." />
 				) : (
@@ -338,8 +350,8 @@ export default function ProjectsScreen(_props: any) {
 						{filteredCompanyGroups.map((company) => (
 							<div key={company.id}>
 								<div className="flex items-center justify-between mb-3">
-									<span className="text-sm font-bold text-gray-900">{company.company_name}</span>
-									<span className="text-xs text-gray-500 font-medium">
+									<span className="text-sm font-bold text-gray-900 dark:text-white">{company.company_name}</span>
+									<span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
 										{company.projects.length} project{company.projects.length !== 1 ? 's' : ''}
 									</span>
 								</div>
@@ -353,7 +365,7 @@ export default function ProjectsScreen(_props: any) {
 												name={project.project_name}
 												health={health}
 												budgetUsedPct={pct}
-												totalBudget={`${(parseFloat(project.budget?.total_budget) || 0).toLocaleString()} ${project.budget?.currency || 'INR'}`}
+												totalBudget={`${(parseFloat(project.budget?.cost_budget) || 0).toLocaleString()} ${project.budget?.currency || 'INR'}`}
 												totalHours={`${project.budget?.billable_hours != null ? Number(project.budget.billable_hours) : (project.budget?.total_hours || 0)}h`}
 												startDate={project.start_date ? new Date(project.start_date).toLocaleDateString() : undefined}
 												endDate={project.end_date ? new Date(project.end_date).toLocaleDateString() : undefined}
@@ -381,21 +393,21 @@ export default function ProjectsScreen(_props: any) {
 			/>
 
 			{isFilterModalOpen && (
-				<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-					<div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
-						<div className="p-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
-							<h2 className="text-lg font-semibold text-gray-900">Advanced Filters</h2>
-							<button onClick={() => setIsFilterModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100">
+				<div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4">
+					<div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+						<div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-900 z-10">
+							<h2 className="text-lg font-semibold text-gray-900 dark:text-white">Advanced Filters</h2>
+							<button onClick={() => setIsFilterModalOpen(false)} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
 								<X size={20} />
 							</button>
 						</div>
 						<div className="p-4 overflow-y-auto space-y-4">
 							<div>
-								<label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project Name</label>
 								<select
 									value={advancedFilters.project_name}
 									onChange={(e) => setAdvancedFilters(prev => ({ ...prev, project_name: e.target.value }))}
-									className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+									className="w-full px-3 py-2 border border-gray-200 dark:border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
 								>
 									<option value="">All Projects</option>
 									{allProjectNames.map((name, idx) => (
@@ -404,7 +416,7 @@ export default function ProjectsScreen(_props: any) {
 								</select>
 							</div>
 						</div>
-						<div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50 mt-auto">
+						<div className="p-4 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-3 bg-gray-50 dark:bg-gray-800 mt-auto">
 							<Button variant="secondary" className="!w-auto px-6" onClick={() => {
 								setAdvancedFilters(appliedFilters);
 								setIsFilterModalOpen(false);

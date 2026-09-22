@@ -18,13 +18,13 @@ interface PipelineScreenProps {
 }
 
 const STAGE_COLORS = {
-  oppurtunity: 'bg-gray-50 border-gray-200',
-  scoping: 'bg-blue-50 border-blue-200',
-  proposal: 'bg-yellow-50 border-yellow-200',
-  confirmed: 'bg-green-50 border-green-200',
-  rejected: 'bg-red-50 border-red-200',
-  closed: 'bg-emerald-50 border-emerald-200',
-  cancelled: 'bg-gray-50 border-gray-200'
+  oppurtunity: 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700',
+  scoping: 'bg-blue-50 border-blue-200 dark:bg-blue-500/10 dark:border-blue-900',
+  proposal: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-500/10 dark:border-yellow-900',
+  confirmed: 'bg-green-50 border-green-200 dark:bg-green-500/10 dark:border-green-900',
+  rejected: 'bg-red-50 border-red-200 dark:bg-red-500/10 dark:border-red-900',
+  closed: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-900',
+  cancelled: 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700'
 };
 
 export default function PipelineScreen({
@@ -237,7 +237,7 @@ export default function PipelineScreen({
     return (
       <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
         <div className="flex flex-col items-center justify-center min-h-[400px]">
-          <div className="text-red-600 mb-4">{error}</div>
+          <div className="text-red-600 mb-4 dark:text-red-400">{error}</div>
           <button
             onClick={loadPipelineData}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -280,13 +280,13 @@ export default function PipelineScreen({
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Pipeline</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Pipeline</h1>
 
           <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
             <div className="relative filter-dropdown-container">
               <button
                 onClick={handleFilterClick}
-                className="flex items-center gap-2 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium text-sm sm:text-base relative"
+                className="flex items-center gap-2 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium text-sm sm:text-base relative dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
               >
                 <span>Filter</span>
                 <SlidersHorizontal size={18} className="sm:w-5 sm:h-5" />
@@ -299,14 +299,14 @@ export default function PipelineScreen({
 
               {/* Filter Dropdown */}
               {showFilterDropdown && (
-                <div className="absolute top-full mt-2 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-64">
+                <div className="absolute top-full mt-2 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-64 dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
                   <div className="p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold text-gray-900">Filter by Status</h3>
+                      <h3 className="font-semibold text-gray-900 dark:text-white">Filter by Status</h3>
                       {activeFilterCount > 0 && (
                         <button
                           onClick={clearFilters}
-                          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium dark:text-blue-400 dark:hover:text-blue-300"
                         >
                           Clear All
                         </button>
@@ -315,14 +315,14 @@ export default function PipelineScreen({
 
                     <div className="space-y-2">
                       {['Oppurtunity', 'Scoping', 'Proposal', 'Confirmed'].map(status => (
-                        <label key={status} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
+                        <label key={status} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded dark:hover:bg-gray-700">
                           <input
                             type="checkbox"
                             checked={selectedStatuses.includes(status)}
                             onChange={() => toggleStatusFilter(status)}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
                           />
-                          <span className="text-sm text-gray-700">{status}</span>
+                          <span className="text-sm text-gray-700 dark:text-gray-300">{status}</span>
                         </label>
                       ))}
                     </div>
@@ -363,10 +363,10 @@ export default function PipelineScreen({
         <div className="md:hidden space-y-3">
           {filteredPipelineData.stages.map(stage => {
             const isExpanded = expandedStages.has(stage.stage);
-            const colorClass = STAGE_COLORS[stage.stage] || 'bg-gray-50 border-gray-200';
+            const colorClass = STAGE_COLORS[stage.stage] || 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700';
 
             return (
-              <div key={stage.stage} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+              <div key={stage.stage} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm dark:bg-gray-900 dark:border-gray-800">
 
                 {/* Accordion Header */}
                 <button
@@ -374,8 +374,8 @@ export default function PipelineScreen({
                   className={`w-full ${colorClass} p-4 flex items-center justify-between transition-colors hover:opacity-90`}
                 >
                   <div className="flex-1 text-left">
-                    <h3 className="font-bold text-gray-900 text-base mb-1">{stage.title}</h3>
-                    <div className="flex items-baseline gap-2 text-xs text-gray-600">
+                    <h3 className="font-bold text-gray-900 text-base mb-1 dark:text-white">{stage.title}</h3>
+                    <div className="flex items-baseline gap-2 text-xs text-gray-600 dark:text-gray-400">
                       <span className="font-semibold">{stage.count} quotes</span>
                       <span>
                         ₹{stage.total_sum.toLocaleString('en-IN', {
@@ -388,9 +388,9 @@ export default function PipelineScreen({
 
                   <div className="ml-3">
                     {isExpanded ? (
-                      <ChevronUp size={20} className="text-gray-600" />
+                      <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
                     ) : (
-                      <ChevronDown size={20} className="text-gray-600" />
+                      <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
                     )}
                   </div>
                 </button>
@@ -402,7 +402,7 @@ export default function PipelineScreen({
                       <div
                         ref={provided.innerRef}
                         {...provided.droppableProps}
-                        className={`${colorClass} p-3 space-y-3 border-t border-gray-300`}
+                        className={`${colorClass} p-3 space-y-3 border-t border-gray-300 dark:border-gray-700`}
                       >
                         {stage.quotes.length > 0 ? (
                           stage.quotes.map((quote, index) => (
@@ -414,7 +414,7 @@ export default function PipelineScreen({
                             />
                           ))
                         ) : (
-                          <div className="text-center text-gray-400 text-sm py-8">
+                          <div className="text-center text-gray-400 text-sm py-8 dark:text-gray-500">
                             No quotes in this stage
                           </div>
                         )}

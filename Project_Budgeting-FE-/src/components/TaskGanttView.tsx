@@ -72,25 +72,25 @@ export const TaskGanttView: React.FC<TaskGanttViewProps> = ({ tasks, projectStar
 
     return (
         <div className="space-y-4">
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
                 Tasks plotted by due date across the project timeline. This project has no per-task start date, so each task is shown as a single due-date marker rather than a start-to-end bar.
             </p>
 
             {scheduledTasks.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-gray-500 text-sm">No tasks with a due date yet.</p>
+                <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200 dark:bg-gray-800 dark:border-gray-800">
+                    <p className="text-gray-500 text-sm dark:text-gray-400">No tasks with a due date yet.</p>
                 </div>
             ) : (
-                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <div className="border border-gray-200 rounded-xl overflow-hidden dark:border-gray-800">
                     {/* Month axis */}
-                    <div className="relative h-8 bg-gray-50 border-b border-gray-200">
+                    <div className="relative h-8 bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-800">
                         {monthTicks.map(tick => (
                             <div
                                 key={tick.date.toISOString()}
-                                className="absolute top-0 h-full border-l border-gray-200 pl-1.5 flex items-center"
+                                className="absolute top-0 h-full border-l border-gray-200 pl-1.5 flex items-center dark:border-gray-700"
                                 style={{ left: `${tick.percent}%` }}
                             >
-                                <span className="text-[11px] font-medium text-gray-500 whitespace-nowrap">
+                                <span className="text-[11px] font-medium text-gray-500 whitespace-nowrap dark:text-gray-400">
                                     {tick.date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
                                 </span>
                             </div>
@@ -112,15 +112,15 @@ export const TaskGanttView: React.FC<TaskGanttViewProps> = ({ tasks, projectStar
                             const isOverdue = dueDate.getTime() < today.getTime() && task.status !== 'Completed';
 
                             return (
-                                <div key={task.id} className="flex items-center border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
-                                    <div className="w-48 shrink-0 px-3 py-2.5 flex items-center gap-2 border-r border-gray-100">
+                                <div key={task.id} className="flex items-center border-b border-gray-100 last:border-b-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800">
+                                    <div className="w-48 shrink-0 px-3 py-2.5 flex items-center gap-2 border-r border-gray-100 dark:border-gray-800">
                                         <div
                                             className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-medium shrink-0"
                                             title={task.assignee}
                                         >
                                             {task.assigneeAvatar}
                                         </div>
-                                        <span className="text-xs font-medium text-gray-900 truncate" title={task.title}>{task.title}</span>
+                                        <span className="text-xs font-medium text-gray-900 truncate dark:text-gray-100" title={task.title}>{task.title}</span>
                                     </div>
                                     <div className="relative flex-1 h-10">
                                         <button
@@ -139,13 +139,13 @@ export const TaskGanttView: React.FC<TaskGanttViewProps> = ({ tasks, projectStar
 
             {unscheduledTasks.length > 0 && (
                 <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">No due date ({unscheduledTasks.length})</p>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2 dark:text-gray-400">No due date ({unscheduledTasks.length})</p>
                     <div className="flex flex-wrap gap-2">
                         {unscheduledTasks.map(task => (
                             <button
                                 key={task.id}
                                 onClick={() => onTaskClick?.(task)}
-                                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border bg-gray-50 text-gray-600 border-gray-200"
+                                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border bg-gray-50 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700"
                             >
                                 {task.title}
                             </button>

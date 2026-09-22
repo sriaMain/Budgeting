@@ -29,14 +29,14 @@ export const PasswordRequirements: React.FC<PasswordRequirementsProps> = ({ pass
             key={req.id} 
             className={`
               flex items-center space-x-3 text-sm transition-all duration-300 ease-out
-              ${isValid ? 'text-gray-800' : 'text-gray-400'}
+              ${isValid ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500'}
             `}
           >
             <div className={`
               flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 border
-              ${isValid 
-                ? 'bg-blue-600 border-blue-600 text-white scale-100' 
-                : 'bg-transparent border-gray-300 text-transparent scale-95'
+              ${isValid
+                ? 'bg-blue-600 border-blue-600 text-white scale-100 dark:bg-violet-500 dark:border-violet-500'
+                : 'bg-transparent border-gray-300 text-transparent scale-95 dark:border-gray-600'
               }
             `}>
               <Check size={12} strokeWidth={3.5} />

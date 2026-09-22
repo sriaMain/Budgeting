@@ -116,7 +116,7 @@ const TimesheetStatusBadge: React.FC<{ status: TimesheetRecord['status'] }> = ({
   return (
     <div className="flex items-center gap-2">
       <div className={`w-2 h-2 rounded-full ${styles[status]}`} />
-      <span className="text-sm font-medium text-gray-700">{status}</span>
+      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{status}</span>
     </div>
   );
 };
@@ -884,10 +884,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
   return (
     <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
-      <div className="min-h-screen bg-gray-50 p-6">
+      <div className="min-h-screen bg-gray-50 p-6 dark:bg-gray-950">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Task Management</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Task Management</h1>
         </div>
 
         {/* Stats Cards */}
@@ -895,11 +895,11 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
           {stats.map((stat, index) => (
             <div
               key={index}
-              className="bg-white rounded-lg border border-gray-200 p-5"
+              className="bg-white rounded-lg border border-gray-200 p-5 dark:bg-gray-900 dark:border-gray-800"
             >
-              <p className="text-xs text-gray-600 mb-1">{stat.title}</p>
+              <p className="text-xs text-gray-600 mb-1 dark:text-gray-400">{stat.title}</p>
               <p
-                className={`text-3xl font-bold ${stat.title === 'Overdue Tasks' ? 'text-red-600' : 'text-gray-900'
+                className={`text-3xl font-bold ${stat.title === 'Overdue Tasks' ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'
                   }`}
               >
                 {stat.value}
@@ -909,9 +909,9 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
         </div>
 
         {/* Tabs and Actions Container */}
-        <div className="bg-white rounded-lg border border-gray-200 mb-6">
+        <div className="bg-white rounded-lg border border-gray-200 mb-6 dark:bg-gray-900 dark:border-gray-800">
           {/* Tabs */}
-          <div className="flex gap-6 px-6 pt-4 border-b border-gray-200">
+          <div className="flex gap-6 px-6 pt-4 border-b border-gray-200 dark:border-gray-800">
             {(['list', 'board', 'timesheet'] as const).map((tab) => (
               <button
                 key={tab}
@@ -927,8 +927,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                   }
                 }}
                 className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${activeTab === tab
-                  ? 'text-gray-900 border-b-2 border-gray-900'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'text-gray-900 border-b-2 border-gray-900 dark:text-white dark:border-white'
+                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
                   }`}
               >
                 {tab === 'list' ? 'Task List' : tab === 'board' ? 'Task Board' : 'Timesheet'}
@@ -944,8 +944,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                   fetchRequestHistory();
                 }}
                 className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${activeTab === 'requests'
-                  ? 'text-gray-900 border-b-2 border-gray-900'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'text-gray-900 border-b-2 border-gray-900 dark:text-white dark:border-white'
+                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
                   }`}
               >
                 Additional Time Requests
@@ -977,28 +977,28 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                   <select
                     value={selectedAssigneeId}
                     onChange={(e) => setSelectedAssigneeId(e.target.value)}
-                    className="flex items-center gap-2 border border-gray-300 text-gray-700 pl-8 pr-8 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors appearance-none bg-white cursor-pointer"
+                    className="flex items-center gap-2 border border-gray-300 text-gray-700 pl-8 pr-8 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors appearance-none bg-white cursor-pointer dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/70"
                   >
                     <option value="">All Assignees</option>
                     {users.map(u => (
                       <option key={u.id} value={u.id}>{u.username || u.first_name || u.email}</option>
                     ))}
                   </select>
-                  <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none dark:text-gray-400" />
                 </div>
 
                 <div className="relative">
                   <select
                     value={selectedStatus}
                     onChange={(e) => setSelectedStatus(e.target.value)}
-                    className="flex items-center gap-2 border border-gray-300 text-gray-700 pl-8 pr-8 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors appearance-none bg-white cursor-pointer"
+                    className="flex items-center gap-2 border border-gray-300 text-gray-700 pl-8 pr-8 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors appearance-none bg-white cursor-pointer dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/70"
                   >
                     <option value="">All Statuses</option>
                     {statusChoices.map(s => (
                       <option key={s.value} value={s.value}>{s.label}</option>
                     ))}
                   </select>
-                  <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                  <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none dark:text-gray-400" />
                 </div>
 
                 {/* <button className="border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors">
@@ -1011,7 +1011,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
         {/* List View */}
         {activeTab === 'list' && (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto dark:bg-gray-900 dark:border-gray-800">
             {isLoadingTasks ? (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -1019,38 +1019,38 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <tr className="bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-800">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                       Task/Description
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                       Allocated Time
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                       Consumed Hours
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                       Remaining
                     </th>
                     {/* Actions column - hidden for admin and manager users */}
                     {userRole !== 'admin' && userRole !== 'manager' && (
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                         Actions
                       </th>
                     )}
 
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-100">
+                <tbody className="bg-white divide-y divide-gray-100 dark:bg-gray-900 dark:divide-gray-800">
                   {taskGroups.map((group) => (
                     <React.Fragment key={group.project}>
                       {/* Project Name Row */}
-                      <tr className="bg-white border-b border-gray-200 border-t-4 border-t-blue-800">
+                      <tr className="bg-white border-b border-gray-200 border-t-4 border-t-blue-800 dark:bg-gray-900 dark:border-gray-800">
                         <td colSpan={userRole === 'admin' || userRole === 'manager' ? 5 : 6} className="px-6 py-3">
-                          <span className="text-base font-bold text-gray-900">{group.project}</span>
+                          <span className="text-base font-bold text-gray-900 dark:text-white">{group.project}</span>
                         </td>
                       </tr>
                       {/* Task Rows for this project */}
@@ -1058,7 +1058,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                         <tr
                           key={task.id}
                           onClick={() => handleTaskClick(task)}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer group"
+                          className="hover:bg-gray-50 transition-colors cursor-pointer group dark:hover:bg-gray-800"
                         >
                           <td className="px-6 py-4">
                             <div className="relative flex items-center gap-2 group/status">
@@ -1070,7 +1070,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                       e.stopPropagation();
                                       setEditingStatusTaskId(editingStatusTaskId === task.id ? null : task.id);
                                     }}
-                                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors opacity-0 group-hover/status:opacity-100"
+                                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors opacity-0 group-hover/status:opacity-100 dark:text-gray-500"
                                     title="Change Status"
                                   >
                                     <Edit2 size={14} />
@@ -1085,7 +1085,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                           setEditingStatusTaskId(null);
                                         }}
                                       />
-                                      <div className="absolute top-full left-0 mt-1 bg-white shadow-xl rounded-md border border-gray-200 z-20 w-44 overflow-hidden">
+                                      <div className="absolute top-full left-0 mt-1 bg-white shadow-xl rounded-md border border-gray-200 z-20 w-44 overflow-hidden dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
                                         {['planned', 'in_progress', 'completed', 'needs_attention'].map((choice) => (
                                           <button
                                             key={choice}
@@ -1093,7 +1093,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                               e.stopPropagation();
                                               updateTaskStatus(task.id, choice);
                                             }}
-                                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 capitalize transition-colors border-b border-gray-50 last:border-0 ${task.status === choice ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 capitalize transition-colors border-b border-gray-50 last:border-0 dark:hover:bg-gray-700 dark:border-gray-700 ${task.status === choice ? 'bg-blue-50 text-blue-700 font-medium dark:bg-blue-500/15 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'
                                               }`}
                                           >
                                             {choice.replace('_', ' ')}
@@ -1108,26 +1108,26 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex flex-col">
-                              <span className="text-sm font-medium text-gray-900">{task.title}</span>
+                              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{task.title}</span>
                               {task.assigned_to && (
-                                <span className="text-xs text-gray-500 mt-1">
+                                <span className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                                   Assigned to: {task.assigned_to.username}
                                 </span>
                               )}
                             </div>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <span className="text-sm text-gray-900 font-mono">
+                            <span className="text-sm text-gray-900 font-mono dark:text-gray-100">
                               {task.allocated_formatted || parseFloat(task.allocated_hours || '0').toFixed(2) + 'h'}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <span className="text-sm text-gray-900 font-mono">
+                            <span className="text-sm text-gray-900 font-mono dark:text-gray-100">
                               {task.consumed_formatted || (task.consumed_hours || 0).toFixed(2) + 'h'}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <span className={`text-sm font-medium font-mono ${(task.remaining_hours || 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            <span className={`text-sm font-medium font-mono ${(task.remaining_hours || 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                               {task.remaining_formatted_hms || (task.remaining_hours || 0).toFixed(2) + 'h'}
                             </span>
                           </td>
@@ -1137,15 +1137,15 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               <div className="flex items-center justify-center gap-2">
                                 {/* Control Buttons Group - Only hidden when needs extra hours or has pending approval */}
                                 {!task.needs_extra_hours && !task.has_extra_hours_request && (
-                                  <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200">
+                                  <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 dark:bg-gray-800 dark:border-gray-700">
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (!task.running) handleStartTimer(task.id);
                                       }}
                                       className={`p-1.5 rounded-md transition-all ${task.running
-                                        ? 'text-gray-300 cursor-not-allowed'
-                                        : 'text-green-600 hover:bg-white hover:shadow-sm'
+                                        ? 'text-gray-300 cursor-not-allowed dark:text-gray-600'
+                                        : 'text-green-600 hover:bg-white hover:shadow-sm dark:text-green-400 dark:hover:bg-gray-700'
                                         }`}
                                       disabled={task.running}
                                       title="Play"
@@ -1158,8 +1158,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                         if (task.running) handlePauseTimer(task.id);
                                       }}
                                       className={`p-1.5 rounded-md transition-all ${!task.running
-                                        ? 'text-gray-300 cursor-not-allowed'
-                                        : 'text-orange-600 hover:bg-white hover:shadow-sm'
+                                        ? 'text-gray-300 cursor-not-allowed dark:text-gray-600'
+                                        : 'text-orange-600 hover:bg-white hover:shadow-sm dark:text-orange-400 dark:hover:bg-gray-700'
                                         }`}
                                       disabled={!task.running}
                                       title="Pause"
@@ -1172,8 +1172,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                         if (task.running) handleStopTimer(task.id);
                                       }}
                                       className={`p-1.5 rounded-md transition-all ${!task.running
-                                        ? 'text-gray-300 cursor-not-allowed'
-                                        : 'text-red-600 hover:bg-white hover:shadow-sm'
+                                        ? 'text-gray-300 cursor-not-allowed dark:text-gray-600'
+                                        : 'text-red-600 hover:bg-white hover:shadow-sm dark:text-red-400 dark:hover:bg-gray-700'
                                         }`}
                                       disabled={!task.running}
                                       title="Stop"
@@ -1186,10 +1186,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                 {/* Timer Field (Dynamic elapsed time) - Hidden when needs extra hours or pending approval */}
                                 {!task.needs_extra_hours && !task.has_extra_hours_request && (
                                   <div className={`px-2 py-1.5 rounded-lg border text-xs font-mono min-w-[70px] text-center transition-all ${task.is_stopped
-                                      ? 'bg-red-50 border-red-200 text-red-600 font-semibold'
+                                      ? 'bg-red-50 border-red-200 text-red-600 font-semibold dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400'
                                       : task.running
-                                        ? 'bg-green-50 border-green-200 text-green-700 font-bold'
-                                        : 'bg-gray-50 border-gray-200 text-gray-500'
+                                        ? 'bg-green-50 border-green-200 text-green-700 font-bold dark:bg-green-500/10 dark:border-green-500/30 dark:text-green-300'
+                                        : 'bg-gray-50 border-gray-200 text-gray-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
                                     }`}>
                                     {formatElapsedTime(elapsedTimes[task.id] || task.total_seconds || 0)}
                                     {task.is_stopped && <span className="ml-1 text-[10px]">(Stopped)</span>}
@@ -1205,7 +1205,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                 ) && (
                                     task.has_extra_hours_request ? (
                                       // Show "Pending Approval" badge if request already sent
-                                      <div className="px-3 py-1.5 bg-yellow-100 border border-yellow-300 text-yellow-800 text-xs font-medium rounded-lg whitespace-nowrap">
+                                      <div className="px-3 py-1.5 bg-yellow-100 border border-yellow-300 text-yellow-800 text-xs font-medium rounded-lg whitespace-nowrap dark:bg-amber-500/15 dark:border-amber-500/30 dark:text-amber-300">
                                         Pending Approval
                                       </div>
                                     ) : (
@@ -1250,31 +1250,31 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                     <h3 className="text-lg font-bold">Planned</h3>
                     <p className="text-sm opacity-90">{groupedTasks.planned.count} tasks</p>
                   </div>
-                  <div className="bg-gray-50 p-3 space-y-3 max-h-[600px] overflow-y-auto rounded-b-lg border border-gray-200">
+                  <div className="bg-gray-50 p-3 space-y-3 max-h-[600px] overflow-y-auto rounded-b-lg border border-gray-200 dark:bg-gray-800 dark:border-gray-800">
                     {groupedTasks.planned.tasks.map((task: any) => (
-                      <div key={task.id} className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-purple-600">
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">{task.title}</h4>
-                        <div className="space-y-1 text-xs text-gray-600">
+                      <div key={task.id} className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-purple-600 dark:bg-gray-900">
+                        <h4 className="text-sm font-medium text-gray-900 mb-2 dark:text-gray-100">{task.title}</h4>
+                        <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
                           <div className="flex justify-between">
                             <span>Allocated:</span>
                             <span className="font-semibold font-mono">{task.allocated_formatted || task.allocated_hours + 'h'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Consumed:</span>
-                            <span className="font-semibold text-orange-600 font-mono">{task.consumed_formatted || task.consumed_hours + 'h'}</span>
+                            <span className="font-semibold text-orange-600 font-mono dark:text-orange-400">{task.consumed_formatted || task.consumed_hours + 'h'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Remaining:</span>
-                            <span className="font-semibold text-green-600 font-mono">{task.remaining_formatted_hms || task.remaining_hours + 'h'}</span>
+                            <span className="font-semibold text-green-600 font-mono dark:text-green-400">{task.remaining_formatted_hms || task.remaining_hours + 'h'}</span>
                           </div>
                           {task.assigned_to && (
-                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200">
-                              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
-                                <span className="text-xs font-semibold text-blue-700">
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-800">
+                              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center dark:bg-blue-500/15">
+                                <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
                                   {task.assigned_to.username.substring(0, 2).toUpperCase()}
                                 </span>
                               </div>
-                              <span className="text-xs text-gray-700">{task.assigned_to.username}</span>
+                              <span className="text-xs text-gray-700 dark:text-gray-300">{task.assigned_to.username}</span>
                             </div>
                           )}
                         </div>
@@ -1289,31 +1289,31 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                     <h3 className="text-lg font-bold">In Progress</h3>
                     <p className="text-sm opacity-90">{groupedTasks.in_progress.count} tasks</p>
                   </div>
-                  <div className="bg-gray-50 p-3 space-y-3 max-h-[600px] overflow-y-auto rounded-b-lg border border-gray-200">
+                  <div className="bg-gray-50 p-3 space-y-3 max-h-[600px] overflow-y-auto rounded-b-lg border border-gray-200 dark:bg-gray-800 dark:border-gray-800">
                     {groupedTasks.in_progress.tasks.map((task: any) => (
-                      <div key={task.id} className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-green-600">
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">{task.title}</h4>
-                        <div className="space-y-1 text-xs text-gray-600">
+                      <div key={task.id} className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-green-600 dark:bg-gray-900">
+                        <h4 className="text-sm font-medium text-gray-900 mb-2 dark:text-gray-100">{task.title}</h4>
+                        <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
                           <div className="flex justify-between">
                             <span>Allocated:</span>
                             <span className="font-semibold font-mono">{task.allocated_formatted || task.allocated_hours + 'h'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Consumed:</span>
-                            <span className="font-semibold text-orange-600 font-mono">{task.consumed_formatted || task.consumed_hours + 'h'}</span>
+                            <span className="font-semibold text-orange-600 font-mono dark:text-orange-400">{task.consumed_formatted || task.consumed_hours + 'h'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Remaining:</span>
-                            <span className="font-semibold text-green-600 font-mono">{task.remaining_formatted_hms || task.remaining_hours + 'h'}</span>
+                            <span className="font-semibold text-green-600 font-mono dark:text-green-400">{task.remaining_formatted_hms || task.remaining_hours + 'h'}</span>
                           </div>
                           {task.assigned_to && (
-                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200">
-                              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
-                                <span className="text-xs font-semibold text-blue-700">
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-800">
+                              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center dark:bg-blue-500/15">
+                                <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
                                   {task.assigned_to.username.substring(0, 2).toUpperCase()}
                                 </span>
                               </div>
-                              <span className="text-xs text-gray-700">{task.assigned_to.username}</span>
+                              <span className="text-xs text-gray-700 dark:text-gray-300">{task.assigned_to.username}</span>
                             </div>
                           )}
                         </div>
@@ -1328,31 +1328,31 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                     <h3 className="text-lg font-bold">Completed</h3>
                     <p className="text-sm opacity-90">{groupedTasks.completed.count} tasks</p>
                   </div>
-                  <div className="bg-gray-50 p-3 space-y-3 max-h-[600px] overflow-y-auto rounded-b-lg border border-gray-200">
+                  <div className="bg-gray-50 p-3 space-y-3 max-h-[600px] overflow-y-auto rounded-b-lg border border-gray-200 dark:bg-gray-800 dark:border-gray-800">
                     {groupedTasks.completed.tasks.map((task: any) => (
-                      <div key={task.id} className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-blue-600">
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">{task.title}</h4>
-                        <div className="space-y-1 text-xs text-gray-600">
+                      <div key={task.id} className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-blue-600 dark:bg-gray-900">
+                        <h4 className="text-sm font-medium text-gray-900 mb-2 dark:text-gray-100">{task.title}</h4>
+                        <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
                           <div className="flex justify-between">
                             <span>Allocated:</span>
                             <span className="font-semibold font-mono">{task.allocated_formatted || task.allocated_hours + 'h'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Consumed:</span>
-                            <span className="font-semibold text-orange-600 font-mono">{task.consumed_formatted || task.consumed_hours + 'h'}</span>
+                            <span className="font-semibold text-orange-600 font-mono dark:text-orange-400">{task.consumed_formatted || task.consumed_hours + 'h'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Remaining:</span>
-                            <span className="font-semibold text-green-600 font-mono">{task.remaining_formatted_hms || task.remaining_hours + 'h'}</span>
+                            <span className="font-semibold text-green-600 font-mono dark:text-green-400">{task.remaining_formatted_hms || task.remaining_hours + 'h'}</span>
                           </div>
                           {task.assigned_to && (
-                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200">
-                              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
-                                <span className="text-xs font-semibold text-blue-700">
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-800">
+                              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center dark:bg-blue-500/15">
+                                <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
                                   {task.assigned_to.username.substring(0, 2).toUpperCase()}
                                 </span>
                               </div>
-                              <span className="text-xs text-gray-700">{task.assigned_to.username}</span>
+                              <span className="text-xs text-gray-700 dark:text-gray-300">{task.assigned_to.username}</span>
                             </div>
                           )}
                         </div>
@@ -1367,31 +1367,31 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                     <h3 className="text-lg font-bold">Needs Attention</h3>
                     <p className="text-sm opacity-90">{groupedTasks.needs_attention.count} tasks</p>
                   </div>
-                  <div className="bg-gray-50 p-3 space-y-3 max-h-[600px] overflow-y-auto rounded-b-lg border border-gray-200">
+                  <div className="bg-gray-50 p-3 space-y-3 max-h-[600px] overflow-y-auto rounded-b-lg border border-gray-200 dark:bg-gray-800 dark:border-gray-800">
                     {groupedTasks.needs_attention.tasks.map((task: any) => (
-                      <div key={task.id} className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-red-600">
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">{task.title}</h4>
-                        <div className="space-y-1 text-xs text-gray-600">
+                      <div key={task.id} className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-red-600 dark:bg-gray-900">
+                        <h4 className="text-sm font-medium text-gray-900 mb-2 dark:text-gray-100">{task.title}</h4>
+                        <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
                           <div className="flex justify-between">
                             <span>Allocated:</span>
                             <span className="font-semibold font-mono">{task.allocated_formatted || task.allocated_hours + 'h'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Consumed:</span>
-                            <span className="font-semibold text-orange-600 font-mono">{task.consumed_formatted || task.consumed_hours + 'h'}</span>
+                            <span className="font-semibold text-orange-600 font-mono dark:text-orange-400">{task.consumed_formatted || task.consumed_hours + 'h'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Remaining:</span>
-                            <span className="font-semibold text-green-600 font-mono">{task.remaining_formatted_hms || task.remaining_hours + 'h'}</span>
+                            <span className="font-semibold text-green-600 font-mono dark:text-green-400">{task.remaining_formatted_hms || task.remaining_hours + 'h'}</span>
                           </div>
                           {task.assigned_to && (
-                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200">
-                              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
-                                <span className="text-xs font-semibold text-blue-700">
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-800">
+                              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center dark:bg-blue-500/15">
+                                <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
                                   {task.assigned_to.username.substring(0, 2).toUpperCase()}
                                 </span>
                               </div>
-                              <span className="text-xs text-gray-700">{task.assigned_to.username}</span>
+                              <span className="text-xs text-gray-700 dark:text-gray-300">{task.assigned_to.username}</span>
                             </div>
                           )}
                         </div>
@@ -1412,15 +1412,15 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
               <>
                 {/* Timesheet Summary View (admin/manager) */}
                 {timesheetStep === 'summary' && (
-                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-visible animate-in fade-in duration-500">
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-visible animate-in fade-in duration-500 dark:bg-gray-900 dark:border-gray-800">
                     {/* Header */}
-                    <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+                    <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50 dark:border-gray-800 dark:from-blue-500/10 dark:to-indigo-500/10">
                       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                         <div>
-                          <h2 className="text-2xl font-bold text-gray-900 mb-1">Weekly Timesheet Summary</h2>
-                          <p className="text-sm text-gray-600">View and manage employee timesheets</p>
+                          <h2 className="text-2xl font-bold text-gray-900 mb-1 dark:text-white">Weekly Timesheet Summary</h2>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">View and manage employee timesheets</p>
                         </div>
-                        <div className="relative flex items-center bg-white border border-gray-200 rounded-lg p-1.5 shadow-sm">
+                        <div className="relative flex items-center bg-white border border-gray-200 rounded-lg p-1.5 shadow-sm dark:bg-gray-800 dark:border-gray-700">
                           <button
                             onClick={() => {
                               const newDate = new Date(timesheetDate);
@@ -1430,7 +1430,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               sunday.setDate(newDate.getDate() - newDate.getDay());
                               fetchWeeklySummary(sunday.toISOString().split('T')[0]);
                             }}
-                            className="p-1.5 hover:bg-gray-50 rounded-md transition-all text-gray-600"
+                            className="p-1.5 hover:bg-gray-50 rounded-md transition-all text-gray-600 dark:hover:bg-gray-700 dark:text-gray-400"
                           >
                             <ChevronLeft size={18} />
                           </button>
@@ -1439,14 +1439,14 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               if (!showWeekPicker) setAdminSelectedYear(timesheetDate.getFullYear());
                               setShowWeekPicker(!showWeekPicker);
                             }}
-                            className="px-4 flex items-center gap-2 min-w-[300px] justify-center hover:bg-gray-50 rounded-md transition-all"
+                            className="px-4 flex items-center gap-2 min-w-[300px] justify-center hover:bg-gray-50 rounded-md transition-all dark:hover:bg-gray-700"
                           >
                             <Calendar size={18} className="text-blue-600" />
                             <div className="flex flex-col items-center">
-                              <span className="text-sm font-bold text-gray-900">
+                              <span className="text-sm font-bold text-gray-900 dark:text-white">
                                 {weeklySummary?.week?.label || getWeekRange(timesheetDate)}
                               </span>
-                              <span className="text-[10px] text-gray-500 font-medium mt-0.5">
+                              <span className="text-[10px] text-gray-500 font-medium mt-0.5 dark:text-gray-400">
                                 {timesheetDate.toDateString() === new Date().toDateString() ? 'Current Week' : 'Selected Week'} • Click to select
                               </span>
                             </div>
@@ -1460,7 +1460,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               sunday.setDate(newDate.getDate() - newDate.getDay());
                               fetchWeeklySummary(sunday.toISOString().split('T')[0]);
                             }}
-                            className="p-1.5 hover:bg-gray-50 rounded-md transition-all text-gray-600"
+                            className="p-1.5 hover:bg-gray-50 rounded-md transition-all text-gray-600 dark:hover:bg-gray-700 dark:text-gray-400"
                           >
                             <ChevronRight size={18} />
                           </button>
@@ -1474,10 +1474,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                 onClick={() => setShowWeekPicker(false)}
                               />
                               {/* Dropdown Content */}
-                              <div className="absolute top-full mt-2 right-0 bg-white border border-gray-300 rounded-lg shadow-xl z-20 w-80 max-h-96 overflow-y-auto">
-                                <div className="p-3 border-b border-gray-200 bg-white">
-                                  <h3 className="text-sm font-semibold text-gray-900">Select Week</h3>
-                                  <p className="text-xs text-gray-600 mt-0.5">Choose year then week</p>
+                              <div className="absolute top-full mt-2 right-0 bg-white border border-gray-300 rounded-lg shadow-xl z-20 w-80 max-h-96 overflow-y-auto dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
+                                <div className="p-3 border-b border-gray-200 bg-white dark:bg-gray-800 dark:border-gray-700">
+                                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Select Week</h3>
+                                  <p className="text-xs text-gray-600 mt-0.5 dark:text-gray-400">Choose year then week</p>
                                 </div>
                                 <div className="py-1">
                                   {(() => {
@@ -1491,19 +1491,19 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
                                       return (
                                         <div>
-                                          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-                                            <p className="text-xs font-medium text-gray-600">Select Year</p>
+                                          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700">
+                                            <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Select Year</p>
                                           </div>
                                           {years.map((year) => (
                                             <button
                                               key={year}
                                               onClick={() => setAdminSelectedYear(year)}
-                                              className="w-full text-left px-4 py-3 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0"
+                                              className="w-full text-left px-4 py-3 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 dark:hover:bg-gray-700 dark:border-gray-700"
                                             >
                                               <div className="flex items-center justify-between">
-                                                <span className="text-sm font-medium text-gray-900">{year}</span>
+                                                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{year}</span>
                                                 {year === currentYear && (
-                                                  <span className="text-xs text-gray-500">(Current)</span>
+                                                  <span className="text-xs text-gray-500 dark:text-gray-400">(Current)</span>
                                                 )}
                                               </div>
                                             </button>
@@ -1549,15 +1549,15 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
                                       return (
                                         <div>
-                                          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                                          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between dark:bg-gray-800 dark:border-gray-700">
                                             <button
                                               onClick={() => setAdminSelectedYear(null)}
-                                              className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
+                                              className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                                             >
                                               <span>←</span>
                                               <span>Back to Years</span>
                                             </button>
-                                            <p className="text-xs font-medium text-gray-600">{adminSelectedYear}</p>
+                                            <p className="text-xs font-medium text-gray-600 dark:text-gray-400">{adminSelectedYear}</p>
                                           </div>
                                           <div className="">
                                             {weeks.map((week, idx) => (
@@ -1570,13 +1570,13 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                                   setShowWeekPicker(false);
                                                   setAdminSelectedYear(null);
                                                 }}
-                                                className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 ${week.isSelected ? 'bg-gray-100' : ''
+                                                className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 dark:hover:bg-gray-700 dark:border-gray-700 ${week.isSelected ? 'bg-gray-100 dark:bg-gray-700' : ''
                                                   }`}
                                               >
-                                                <div className="text-sm text-gray-900">
+                                                <div className="text-sm text-gray-900 dark:text-gray-100">
                                                   {week.label}
-                                                  {week.isCurrent && <span className="ml-2 text-xs text-gray-500">(Current)</span>}
-                                                  {week.isSelected && <span className="ml-2 text-xs text-gray-500">✓</span>}
+                                                  {week.isCurrent && <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">(Current)</span>}
+                                                  {week.isSelected && <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">✓</span>}
                                                 </div>
                                               </button>
                                             ))}
@@ -1594,12 +1594,12 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                     </div>
 
                     {/* Summary Stats & Search Bar */}
-                    <div className="px-6 py-5 bg-white border-b border-gray-100">
+                    <div className="px-6 py-5 bg-white border-b border-gray-100 dark:bg-gray-900 dark:border-gray-800">
                       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                         {/* Summary Stats */}
                         {weeklySummary?.summary && (
                           <div className="flex gap-4">
-                            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg px-4 py-3 border border-blue-200">
+                            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg px-4 py-3 border border-blue-200 dark:from-blue-500/10 dark:to-blue-500/15 dark:border-blue-500/30">
                               <div className="flex items-center gap-3">
                                 <div className="bg-blue-600 rounded-lg p-2">
                                   <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1607,12 +1607,12 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                   </svg>
                                 </div>
                                 <div>
-                                  <p className="text-xs font-medium text-blue-700 uppercase tracking-wide">Total Employees</p>
-                                  <p className="text-2xl font-bold text-blue-900">{weeklySummary.summary.total_employees}</p>
+                                  <p className="text-xs font-medium text-blue-700 uppercase tracking-wide dark:text-blue-400">Total Employees</p>
+                                  <p className="text-2xl font-bold text-blue-900 dark:text-blue-300">{weeklySummary.summary.total_employees}</p>
                                 </div>
                               </div>
                             </div>
-                            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg px-4 py-3 border border-green-200">
+                            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg px-4 py-3 border border-green-200 dark:from-green-500/10 dark:to-green-500/15 dark:border-green-500/30">
                               <div className="flex items-center gap-3">
                                 <div className="bg-green-600 rounded-lg p-2">
                                   <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1620,8 +1620,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                   </svg>
                                 </div>
                                 <div>
-                                  <p className="text-xs font-medium text-green-700 uppercase tracking-wide">Total Time</p>
-                                  <p className="text-2xl font-bold text-green-900 font-mono">{weeklySummary.summary.total_formatted || '00:00:00'}</p>
+                                  <p className="text-xs font-medium text-green-700 uppercase tracking-wide dark:text-green-400">Total Time</p>
+                                  <p className="text-2xl font-bold text-green-900 font-mono dark:text-green-300">{weeklySummary.summary.total_formatted || '00:00:00'}</p>
                                 </div>
                               </div>
                             </div>
@@ -1634,9 +1634,9 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                             placeholder="Search employees..."
                             value={timesheetSearch}
                             onChange={(e) => setTimesheetSearch(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white outline-none transition-all text-sm"
+                            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white outline-none transition-all text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:bg-gray-800"
                           />
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" size={18} />
                         </div>
                       </div>
                     </div>
@@ -1647,21 +1647,21 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                       </div>
                     ) : !weeklySummary || weeklySummary.data.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+                      <div className="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
                         <p>No timesheet data available for this week.</p>
                       </div>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                          <thead className="bg-gray-50/50 border-y border-gray-100">
+                          <thead className="bg-gray-50/50 border-y border-gray-100 dark:bg-gray-800/80 dark:border-gray-800">
                             <tr>
-                              <th className="px-8 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Employee</th>
-                              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Total Time</th>
-                              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                              <th className="px-8 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Last Updated</th>
+                              <th className="px-8 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400">Employee</th>
+                              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-center dark:text-gray-400">Total Time</th>
+                              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400">Status</th>
+                              <th className="px-8 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right dark:text-gray-400">Last Updated</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-100">
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {weeklySummary.data
                               .filter((record: any) =>
                                 !timesheetSearch ||
@@ -1679,29 +1679,29 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                     sunday.setDate(timesheetDate.getDate() - timesheetDate.getDay());
                                     fetchEmployeeTimesheet(record.employee.id, weeklySummary.week.start);
                                   }}
-                                  className="hover:bg-gray-50/80 cursor-pointer transition-colors group"
+                                  className="hover:bg-gray-50/80 cursor-pointer transition-colors group dark:hover:bg-gray-800/80"
                                 >
                                   <td className="px-8 py-5">
                                     <div className="flex flex-col">
-                                      <span className="text-sm font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{record.employee.name}</span>
-                                      <span className="text-xs text-gray-400 font-medium">{record.employee.username}</span>
+                                      <span className="text-sm font-bold text-gray-900 group-hover:text-blue-600 transition-colors dark:text-white dark:group-hover:text-blue-400">{record.employee.name}</span>
+                                      <span className="text-xs text-gray-400 font-medium dark:text-gray-500">{record.employee.username}</span>
                                     </div>
                                   </td>
                                   <td className="px-6 py-5 text-center">
-                                    <span className="text-sm font-bold text-gray-900 font-mono">{record.total_formatted || '00:00:00'}</span>
+                                    <span className="text-sm font-bold text-gray-900 font-mono dark:text-gray-100">{record.total_formatted || '00:00:00'}</span>
                                   </td>
                                   <td className="px-6 py-5">
                                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${record.status === 'approved'
-                                        ? 'bg-green-100 text-green-800'
+                                        ? 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300'
                                         : record.status === 'submitted'
-                                          ? 'bg-blue-100 text-blue-800'
-                                          : 'bg-yellow-100 text-yellow-800'
+                                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300'
+                                          : 'bg-yellow-100 text-yellow-800 dark:bg-amber-500/15 dark:text-amber-300'
                                       }`}>
                                       {record.status}
                                     </span>
                                   </td>
                                   <td className="px-8 py-5 text-right">
-                                    <span className="text-sm font-medium text-gray-500">
+                                    <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
                                       {new Date(record.last_updated).toLocaleString()}
                                     </span>
                                   </td>
@@ -1716,18 +1716,18 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
                 {/* Employee Detail View (admin/manager) */}
                 {timesheetStep === 'detail' && (
-                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 animate-in slide-in-from-right-4 duration-500">
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 animate-in slide-in-from-right-4 duration-500 dark:bg-gray-900 dark:border-gray-800">
                     {/* Header */}
                     <div className="mb-8 flex justify-between items-center">
                       <button
                         onClick={() => setTimesheetStep('summary')}
-                        className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-50 hover:shadow-sm transition-all"
+                        className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-50 hover:shadow-sm transition-all dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                       >
                         <ArrowLeft size={16} />
                         Back to Summary
                       </button>
 
-                      <div className="relative flex items-center bg-gray-50 border border-gray-200 rounded-lg p-1">
+                      <div className="relative flex items-center bg-gray-50 border border-gray-200 rounded-lg p-1 dark:bg-gray-800 dark:border-gray-700">
                         <button
                           onClick={() => {
                             const newDate = new Date(timesheetDate);
@@ -1739,7 +1739,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               fetchEmployeeTimesheet(selectedEmployeeId, sunday.toISOString().split('T')[0]);
                             }
                           }}
-                          className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-gray-500"
+                          className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-gray-500 dark:hover:bg-gray-700 dark:text-gray-400"
                         >
                           <ChevronLeft size={18} />
                         </button>
@@ -1748,11 +1748,11 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                             if (!showEmployeeWeekPicker) setEmployeeSelectedYear(timesheetDate.getFullYear());
                             setShowEmployeeWeekPicker(!showEmployeeWeekPicker);
                           }}
-                          className="px-3 flex items-center gap-2 text-sm font-semibold text-gray-700 min-w-[280px] justify-center text-center hover:bg-white rounded-md transition-all"
+                          className="px-3 flex items-center gap-2 text-sm font-semibold text-gray-700 min-w-[280px] justify-center text-center hover:bg-white rounded-md transition-all dark:text-gray-300 dark:hover:bg-gray-700"
                         >
                           <Calendar size={16} />
                           <div className="flex flex-col">
-                            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">{getWeekRange(timesheetDate).split(',')[0]}</span>
+                            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider dark:text-gray-400">{getWeekRange(timesheetDate).split(',')[0]}</span>
                             <span className="leading-none text-xs">{timesheetDate.toDateString() === new Date().toDateString() ? 'Current' : 'Selected'} • Click</span>
                           </div>
                         </button>
@@ -1767,7 +1767,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               fetchEmployeeTimesheet(selectedEmployeeId, sunday.toISOString().split('T')[0]);
                             }
                           }}
-                          className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-gray-500"
+                          className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-gray-500 dark:hover:bg-gray-700 dark:text-gray-400"
                         >
                           <ChevronRight size={18} />
                         </button>
@@ -1776,10 +1776,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                         {showEmployeeWeekPicker && (
                           <>
                             <div className="fixed inset-0 z-10" onClick={() => setShowEmployeeWeekPicker(false)} />
-                            <div className="absolute top-full mt-2 right-0 bg-white border border-gray-300 rounded-lg shadow-xl z-20 w-80 max-h-96 overflow-y-auto">
-                              <div className="p-3 border-b border-gray-200 bg-white">
-                                <h3 className="text-sm font-semibold text-gray-900">Select Week</h3>
-                                <p className="text-xs text-gray-600 mt-0.5">Choose year then week</p>
+                            <div className="absolute top-full mt-2 right-0 bg-white border border-gray-300 rounded-lg shadow-xl z-20 w-80 max-h-96 overflow-y-auto dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
+                              <div className="p-3 border-b border-gray-200 bg-white dark:bg-gray-800 dark:border-gray-700">
+                                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Select Week</h3>
+                                <p className="text-xs text-gray-600 mt-0.5 dark:text-gray-400">Choose year then week</p>
                               </div>
                               <div className="py-1">
                                 {(() => {
@@ -1793,19 +1793,19 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
                                     return (
                                       <div>
-                                        <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-                                          <p className="text-xs font-medium text-gray-600">Select Year</p>
+                                        <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700">
+                                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Select Year</p>
                                         </div>
                                         {years.map((year) => (
                                           <button
                                             key={year}
                                             onClick={() => setEmployeeSelectedYear(year)}
-                                            className="w-full text-left px-4 py-3 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0"
+                                            className="w-full text-left px-4 py-3 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 dark:hover:bg-gray-700 dark:border-gray-700"
                                           >
                                             <div className="flex items-center justify-between">
-                                              <span className="text-sm font-medium text-gray-900">{year}</span>
+                                              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{year}</span>
                                               {year === currentYear && (
-                                                <span className="text-xs text-gray-500">(Current)</span>
+                                                <span className="text-xs text-gray-500 dark:text-gray-400">(Current)</span>
                                               )}
                                             </div>
                                           </button>
@@ -1850,15 +1850,15 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
                                     return (
                                       <div>
-                                        <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                                        <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between dark:bg-gray-800 dark:border-gray-700">
                                           <button
                                             onClick={() => setEmployeeSelectedYear(null)}
-                                            className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
+                                            className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                                           >
                                             <span>←</span>
                                             <span>Back to Years</span>
                                           </button>
-                                          <p className="text-xs font-medium text-gray-600">{employeeSelectedYear}</p>
+                                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400">{employeeSelectedYear}</p>
                                         </div>
                                         <div className="">
                                           {weeks.map((week, idx) => (
@@ -1873,13 +1873,13 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                                 setShowEmployeeWeekPicker(false);
                                                 setEmployeeSelectedYear(null);
                                               }}
-                                              className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 ${week.isSelected ? 'bg-gray-100' : ''
+                                              className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 dark:hover:bg-gray-700 dark:border-gray-700 ${week.isSelected ? 'bg-gray-100 dark:bg-gray-700' : ''
                                                 }`}
                                             >
-                                              <div className="text-sm text-gray-900">
+                                              <div className="text-sm text-gray-900 dark:text-gray-100">
                                                 {week.label}
-                                                {week.isCurrent && <span className="ml-2 text-xs text-gray-500">(Current)</span>}
-                                                {week.isSelected && <span className="ml-2 text-xs text-gray-500">✓</span>}
+                                                {week.isCurrent && <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">(Current)</span>}
+                                                {week.isSelected && <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">✓</span>}
                                               </div>
                                             </button>
                                           ))}
@@ -1895,7 +1895,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                       </div>
                     </div>
 
-                    <h2 className="text-2xl font-bold text-gray-900 mb-8">{selectedEmployeeName}'s Timesheet</h2>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-8 dark:text-white">{selectedEmployeeName}'s Timesheet</h2>
 
                     {/* Render the same timesheet grid as employee view */}
                     {isLoadingTimesheet ? (
@@ -1903,21 +1903,21 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                       </div>
                     ) : !timesheetData ? (
-                      <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+                      <div className="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
                         <p>{timesheetError || 'No timesheet data available.'}</p>
                       </div>
                     ) : (
-                      <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                      <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm dark:border-gray-800">
                         <table className="w-full text-left border-collapse">
                           <thead>
-                            <tr className="bg-gray-50/80 border-b border-gray-200">
-                              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase w-1/3">Task</th>
+                            <tr className="bg-gray-50/80 border-b border-gray-200 dark:bg-gray-800/80 dark:border-gray-800">
+                              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase w-1/3 dark:text-gray-400">Task</th>
                               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => {
                                 const start = new Date(timesheetData.timesheet.week_start);
                                 const current = new Date(start);
                                 current.setDate(start.getDate() + i);
                                 return (
-                                  <th key={day} className="px-2 py-4 text-xs font-bold text-gray-500 uppercase text-center w-[8%]">
+                                  <th key={day} className="px-2 py-4 text-xs font-bold text-gray-500 uppercase text-center w-[8%] dark:text-gray-400">
                                     <div className="flex flex-col items-center">
                                       <span>{day}</span>
                                       <span className="text-[10px] opacity-60 font-medium mt-0.5">{current.getDate()}</span>
@@ -1925,10 +1925,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                   </th>
                                 );
                               })}
-                              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-right w-24">Total</th>
+                              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-right w-24 dark:text-gray-400">Total</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-100">
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {(() => {
                               const rows: Record<number, any> = {};
                               const hoursFormatted: Record<number, Record<string, string>> = {};
@@ -1953,7 +1953,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               if (Object.keys(rows).length === 0) {
                                 return (
                                   <tr>
-                                    <td colSpan={9} className="px-6 py-12 text-center text-gray-500 bg-white">
+                                    <td colSpan={9} className="px-6 py-12 text-center text-gray-500 bg-white dark:text-gray-400 dark:bg-gray-900">
                                       No time logged for this week yet.
                                     </td>
                                   </tr>
@@ -1970,10 +1970,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               };
 
                               return Object.values(rows).map((row: any) => (
-                                <tr key={row.id} className="hover:bg-gray-50/50 transition-colors bg-white">
+                                <tr key={row.id} className="hover:bg-gray-50/50 transition-colors bg-white dark:bg-gray-900 dark:hover:bg-gray-800/50">
                                   <td className="px-6 py-5">
                                     <div className="flex flex-col">
-                                      <span className="text-sm font-bold text-gray-900">{row.title}</span>
+                                      <span className="text-sm font-bold text-gray-900 dark:text-white">{row.title}</span>
                                     </div>
                                   </td>
                                   {Array.from({ length: 7 }).map((_, i) => {
@@ -1986,22 +1986,22 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
                                     return (
                                       <td key={i} className="px-2 py-5 text-center">
-                                        <div className={`text-sm font-medium font-mono ${hours > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                                        <div className={`text-sm font-medium font-mono ${hours > 0 ? 'text-gray-900 dark:text-gray-100' : 'text-gray-300 dark:text-gray-600'}`}>
                                           {hours > 0 ? formatted : '-'}
                                         </div>
                                       </td>
                                     );
                                   })}
-                                  <td className="px-6 py-5 text-right bg-gray-50/30">
-                                    <span className="text-sm font-bold text-blue-600 font-mono">{formatSeconds(row.total)}</span>
+                                  <td className="px-6 py-5 text-right bg-gray-50/30 dark:bg-gray-800/30">
+                                    <span className="text-sm font-bold text-blue-600 font-mono dark:text-blue-400">{formatSeconds(row.total)}</span>
                                   </td>
                                 </tr>
                               ));
                             })()}
                           </tbody>
-                          <tfoot className="bg-gray-50/80 border-t border-gray-200">
+                          <tfoot className="bg-gray-50/80 border-t border-gray-200 dark:bg-gray-800/80 dark:border-gray-800">
                             <tr>
-                              <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Total</td>
+                              <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase dark:text-gray-400">Total</td>
                               {Array.from({ length: 7 }).map((_, i) => {
                                 const start = new Date(timesheetData.timesheet.week_start);
                                 const current = new Date(start);
@@ -2024,12 +2024,12 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                 };
 
                                 return (
-                                  <td key={i} className="px-2 py-4 text-center text-xs font-bold text-gray-900 font-mono">
+                                  <td key={i} className="px-2 py-4 text-center text-xs font-bold text-gray-900 font-mono dark:text-gray-100">
                                     {dailyTotal > 0 ? formatSeconds(dailyTotal) : '-'}
                                   </td>
                                 );
                               })}
-                              <td className="px-6 py-4 text-right text-xs font-bold text-blue-700 font-mono">
+                              <td className="px-6 py-4 text-right text-xs font-bold text-blue-700 font-mono dark:text-blue-400">
                                 {(() => {
                                   const total = timesheetData.timesheet.entries.reduce((acc: number, curr: any) => acc + parseFloat(curr.hours), 0);
                                   const totalSeconds = Math.round(total * 3600);
@@ -2051,27 +2051,27 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
             {/* Regular User View - Own Timesheet */}
             {userRole === 'user' && (
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 animate-in slide-in-from-right-4 duration-500">
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 animate-in slide-in-from-right-4 duration-500 dark:bg-gray-900 dark:border-gray-800">
                 {/* Header */}
                 <div className="mb-8 flex justify-between items-center">
                   <div>
-                    <h2 className="text-2xl font-bold text-gray-900 mb-1">My Timesheet</h2>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-1 dark:text-white">My Timesheet</h2>
                     {timesheetData?.timesheet?.status && (
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${timesheetData.timesheet.status === 'approved'
-                          ? 'bg-green-100 text-green-800'
+                          ? 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300'
                           : timesheetData.timesheet.status === 'submitted'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-yellow-100 text-yellow-800'
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300'
+                            : 'bg-yellow-100 text-yellow-800 dark:bg-amber-500/15 dark:text-amber-300'
                         }`}>
                         {timesheetData.timesheet.status}
                       </span>
                     )}
                   </div>
 
-                  <div className="relative flex items-center bg-gray-50 border border-gray-200 rounded-lg p-1">
+                  <div className="relative flex items-center bg-gray-50 border border-gray-200 rounded-lg p-1 dark:bg-gray-800 dark:border-gray-700">
                     <button
                       onClick={() => shiftWeek(-1)}
-                      className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-gray-500"
+                      className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-gray-500 dark:hover:bg-gray-700 dark:text-gray-400"
                     >
                       <ChevronLeft size={18} />
                     </button>
@@ -2080,17 +2080,17 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                         if (!showUserWeekPicker) setUserSelectedYear(timesheetDate.getFullYear());
                         setShowUserWeekPicker(!showUserWeekPicker);
                       }}
-                      className="px-3 flex items-center gap-2 text-sm font-semibold text-gray-700 min-w-[280px] justify-center text-center hover:bg-white rounded-md transition-all"
+                      className="px-3 flex items-center gap-2 text-sm font-semibold text-gray-700 min-w-[280px] justify-center text-center hover:bg-white rounded-md transition-all dark:text-gray-300 dark:hover:bg-gray-700"
                     >
                       <Calendar size={16} />
                       <div className="flex flex-col">
-                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">{getWeekRange(timesheetDate).split(',')[0]}</span>
+                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider dark:text-gray-400">{getWeekRange(timesheetDate).split(',')[0]}</span>
                         <span className="leading-none text-xs">{timesheetDate.toDateString() === new Date().toDateString() ? 'Current' : 'Selected'} • Click</span>
                       </div>
                     </button>
                     <button
                       onClick={() => shiftWeek(1)}
-                      className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-gray-500"
+                      className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-gray-500 dark:hover:bg-gray-700 dark:text-gray-400"
                     >
                       <ChevronRight size={18} />
                     </button>
@@ -2099,10 +2099,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                     {showUserWeekPicker && (
                       <>
                         <div className="fixed inset-0 z-10" onClick={() => setShowUserWeekPicker(false)} />
-                        <div className="absolute top-full mt-2 right-0 bg-white border border-gray-300 rounded-lg shadow-xl z-20 w-80 max-h-96 overflow-y-auto">
-                          <div className="p-3 border-b border-gray-200 bg-white">
-                            <h3 className="text-sm font-semibold text-gray-900">Select Week</h3>
-                            <p className="text-xs text-gray-600 mt-0.5">Choose year then week</p>
+                        <div className="absolute top-full mt-2 right-0 bg-white border border-gray-300 rounded-lg shadow-xl z-20 w-80 max-h-96 overflow-y-auto dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
+                          <div className="p-3 border-b border-gray-200 bg-white dark:bg-gray-800 dark:border-gray-700">
+                            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Select Week</h3>
+                            <p className="text-xs text-gray-600 mt-0.5 dark:text-gray-400">Choose year then week</p>
                           </div>
                           <div className="py-1">
                             {(() => {
@@ -2116,19 +2116,19 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
                                 return (
                                   <div>
-                                    <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-                                      <p className="text-xs font-medium text-gray-600">Select Year</p>
+                                    <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700">
+                                      <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Select Year</p>
                                     </div>
                                     {years.map((year) => (
                                       <button
                                         key={year}
                                         onClick={() => setUserSelectedYear(year)}
-                                        className="w-full text-left px-4 py-3 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0"
+                                        className="w-full text-left px-4 py-3 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 dark:hover:bg-gray-700 dark:border-gray-700"
                                       >
                                         <div className="flex items-center justify-between">
-                                          <span className="text-sm font-medium text-gray-900">{year}</span>
+                                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{year}</span>
                                           {year === currentYear && (
-                                            <span className="text-xs text-gray-500">(Current)</span>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400">(Current)</span>
                                           )}
                                         </div>
                                       </button>
@@ -2173,15 +2173,15 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
                                 return (
                                   <div>
-                                    <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                                    <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between dark:bg-gray-800 dark:border-gray-700">
                                       <button
                                         onClick={() => setUserSelectedYear(null)}
-                                        className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
+                                        className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                                       >
                                         <span>←</span>
                                         <span>Back to Years</span>
                                       </button>
-                                      <p className="text-xs font-medium text-gray-600">{userSelectedYear}</p>
+                                      <p className="text-xs font-medium text-gray-600 dark:text-gray-400">{userSelectedYear}</p>
                                     </div>
                                     <div className="">
                                       {weeks.map((week, idx) => (
@@ -2195,13 +2195,13 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                             setShowUserWeekPicker(false);
                                             setUserSelectedYear(null);
                                           }}
-                                          className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 ${week.isSelected ? 'bg-gray-100' : ''
+                                          className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-0 dark:hover:bg-gray-700 dark:border-gray-700 ${week.isSelected ? 'bg-gray-100 dark:bg-gray-700' : ''
                                             }`}
                                         >
-                                          <div className="text-sm text-gray-900">
+                                          <div className="text-sm text-gray-900 dark:text-gray-100">
                                             {week.label}
-                                            {week.isCurrent && <span className="ml-2 text-xs text-gray-500">(Current)</span>}
-                                            {week.isSelected && <span className="ml-2 text-xs text-gray-500">✓</span>}
+                                            {week.isCurrent && <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">(Current)</span>}
+                                            {week.isSelected && <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">✓</span>}
                                           </div>
                                         </button>
                                       ))}
@@ -2222,27 +2222,27 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                   </div>
                 ) : !timesheetData ? (
-                  <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+                  <div className="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
                     <p>{timesheetError || 'No timesheet data available.'}</p>
                     <button
                       onClick={() => fetchTimesheet()}
-                      className="mt-4 px-4 py-2 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                      className="mt-4 px-4 py-2 text-sm text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
                     >
                       Retry
                     </button>
                   </div>
                 ) : (
-                  <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                  <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm dark:border-gray-800">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="bg-gray-50/80 border-b border-gray-200">
-                          <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase w-1/3">Task</th>
+                        <tr className="bg-gray-50/80 border-b border-gray-200 dark:bg-gray-800/80 dark:border-gray-800">
+                          <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase w-1/3 dark:text-gray-400">Task</th>
                           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => {
                             const start = new Date(timesheetData.timesheet.week_start);
                             const current = new Date(start);
                             current.setDate(start.getDate() + i);
                             return (
-                              <th key={day} className="px-2 py-4 text-xs font-bold text-gray-500 uppercase text-center w-[8%]">
+                              <th key={day} className="px-2 py-4 text-xs font-bold text-gray-500 uppercase text-center w-[8%] dark:text-gray-400">
                                 <div className="flex flex-col items-center">
                                   <span>{day}</span>
                                   <span className="text-[10px] opacity-60 font-medium mt-0.5">{current.getDate()}</span>
@@ -2250,10 +2250,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               </th>
                             );
                           })}
-                          <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-right w-24">Total</th>
+                          <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-right w-24 dark:text-gray-400">Total</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                         {(() => {
                           const rows: Record<number, any> = {};
                           const hoursFormatted: Record<number, Record<string, string>> = {};
@@ -2278,7 +2278,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                           if (Object.keys(rows).length === 0) {
                             return (
                               <tr>
-                                <td colSpan={9} className="px-6 py-12 text-center text-gray-500 bg-white">
+                                <td colSpan={9} className="px-6 py-12 text-center text-gray-500 bg-white dark:text-gray-400 dark:bg-gray-900">
                                   No time logged for this week yet.
                                 </td>
                               </tr>
@@ -2295,10 +2295,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                           };
 
                           return Object.values(rows).map((row: any) => (
-                            <tr key={row.id} className="hover:bg-gray-50/50 transition-colors bg-white">
+                            <tr key={row.id} className="hover:bg-gray-50/50 transition-colors bg-white dark:bg-gray-900 dark:hover:bg-gray-800/50">
                               <td className="px-6 py-5">
                                 <div className="flex flex-col">
-                                  <span className="text-sm font-bold text-gray-900">{row.title}</span>
+                                  <span className="text-sm font-bold text-gray-900 dark:text-white">{row.title}</span>
                                 </div>
                               </td>
                               {Array.from({ length: 7 }).map((_, i) => {
@@ -2311,22 +2311,22 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
                                 return (
                                   <td key={i} className="px-2 py-5 text-center">
-                                    <div className={`text-sm font-medium font-mono ${hours > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                                    <div className={`text-sm font-medium font-mono ${hours > 0 ? 'text-gray-900 dark:text-gray-100' : 'text-gray-300 dark:text-gray-600'}`}>
                                       {hours > 0 ? formatted : '-'}
                                     </div>
                                   </td>
                                 );
                               })}
-                              <td className="px-6 py-5 text-right bg-gray-50/30">
-                                <span className="text-sm font-bold text-blue-600 font-mono">{formatSeconds(row.total)}</span>
+                              <td className="px-6 py-5 text-right bg-gray-50/30 dark:bg-gray-800/30">
+                                <span className="text-sm font-bold text-blue-600 font-mono dark:text-blue-400">{formatSeconds(row.total)}</span>
                               </td>
                             </tr>
                           ));
                         })()}
                       </tbody>
-                      <tfoot className="bg-gray-50/80 border-t border-gray-200">
+                      <tfoot className="bg-gray-50/80 border-t border-gray-200 dark:bg-gray-800/80 dark:border-gray-800">
                         <tr>
-                          <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Total</td>
+                          <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase dark:text-gray-400">Total</td>
                           {Array.from({ length: 7 }).map((_, i) => {
                             const start = new Date(timesheetData.timesheet.week_start);
                             const current = new Date(start);
@@ -2349,12 +2349,12 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                             };
 
                             return (
-                              <td key={i} className="px-2 py-4 text-center text-xs font-bold text-gray-900 font-mono">
+                              <td key={i} className="px-2 py-4 text-center text-xs font-bold text-gray-900 font-mono dark:text-gray-100">
                                 {dailyTotal > 0 ? formatSeconds(dailyTotal) : '-'}
                               </td>
                             );
                           })}
-                          <td className="px-6 py-4 text-right text-xs font-bold text-blue-700 font-mono">
+                          <td className="px-6 py-4 text-right text-xs font-bold text-blue-700 font-mono dark:text-blue-400">
                             {(() => {
                               const total = timesheetData.timesheet.entries.reduce((acc: number, curr: any) => acc + parseFloat(curr.hours), 0);
                               const totalSeconds = Math.round(total * 3600);
@@ -2376,18 +2376,18 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
         {/* Additional Time Requests Tab */}
         {activeTab === 'requests' && (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-visible">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-visible dark:bg-gray-900 dark:border-gray-800">
             {/* Header with View Tabs */}
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Additional Time Requests</h2>
+            <div className="p-6 border-b border-gray-200 dark:border-gray-800">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4 dark:text-white">Additional Time Requests</h2>
 
               {/* View Tabs */}
-              <div className="flex gap-4 border-b border-gray-200">
+              <div className="flex gap-4 border-b border-gray-200 dark:border-gray-800">
                 <button
                   onClick={() => setRequestsView('pending')}
                   className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${requestsView === 'pending'
-                      ? 'text-blue-600 border-b-2 border-blue-600'
-                      : 'text-gray-500 hover:text-gray-700'
+                      ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
                     }`}
                 >
                   Pending ({pendingRequests.length})
@@ -2400,8 +2400,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                     }
                   }}
                   className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${requestsView === 'history'
-                      ? 'text-blue-600 border-b-2 border-blue-600'
-                      : 'text-gray-500 hover:text-gray-700'
+                      ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
                     }`}
                 >
                   History ({requestHistory.length})
@@ -2418,37 +2418,37 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                   </div>
                 ) : pendingRequests.length === 0 ? (
                   <div className="text-center py-12">
-                    <p className="text-gray-500">No pending requests</p>
+                    <p className="text-gray-500 dark:text-gray-400">No pending requests</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
-                        <tr className="bg-gray-50 border-b border-gray-200">
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        <tr className="bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-800">
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             ID
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Task
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Requested By
                           </th>
-                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Requested Time
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Reason
                           </th>
-                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Actions
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-100">
+                      <tbody className="bg-white divide-y divide-gray-100 dark:bg-gray-900 dark:divide-gray-800">
                         {pendingRequests.map((request) => (
-                          <tr key={request.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-6 py-4 text-sm text-gray-900">
+                          <tr key={request.id} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
+                            <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
                               #{request.id}
                             </td>
                             <td className="px-6 py-4">
@@ -2467,22 +2467,22 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                 }}
                                 disabled={isLoadingTaskDetails}
                                 className={`text-sm font-semibold transition-colors text-left ${isLoadingTaskDetails
-                                    ? 'text-gray-400 cursor-wait'
-                                    : 'text-blue-600 hover:text-blue-800 hover:underline'
+                                    ? 'text-gray-400 cursor-wait dark:text-gray-500'
+                                    : 'text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400 dark:hover:text-blue-300'
                                   }`}
                               >
                                 {request.task}
                               </button>
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-700">
+                            <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
                               {request.requested_by}
                             </td>
                             <td className="px-6 py-4 text-center">
-                              <span className="text-sm font-mono font-semibold text-blue-600">
+                              <span className="text-sm font-mono font-semibold text-blue-600 dark:text-blue-400">
                                 {request.requested_formatted || '00:00:00'}
                               </span>
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-700">
+                            <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
                               {request.reason}
                             </td>
                             <td className="px-6 py-4">
@@ -2515,14 +2515,14 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
               <div className="p-6">
                 {/* Filter Controls */}
                 <div className="mb-4 flex items-center gap-3">
-                  <label className="text-sm font-medium text-gray-700">Filter by Status:</label>
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Filter by Status:</label>
                   <select
                     value={historyFilter}
                     onChange={(e) => {
                       setHistoryFilter(e.target.value as any);
                       fetchRequestHistory(e.target.value === 'all' ? undefined : e.target.value as any);
                     }}
-                    className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
                   >
                     <option value="all">All</option>
                     <option value="approved">Approved</option>
@@ -2536,49 +2536,49 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                   </div>
                 ) : requestHistory.length === 0 ? (
                   <div className="text-center py-12">
-                    <p className="text-gray-500">No history found</p>
+                    <p className="text-gray-500 dark:text-gray-400">No history found</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
-                        <tr className="bg-gray-50 border-b border-gray-200">
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        <tr className="bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-800">
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             ID
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Task
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Requested By
                           </th>
-                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Requested Time
                           </th>
-                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Previous Time
                           </th>
-                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Approved Time
                           </th>
-                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Status
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Reviewed By
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Reviewed At
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
                             Reason
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-100">
+                      <tbody className="bg-white divide-y divide-gray-100 dark:bg-gray-900 dark:divide-gray-800">
                         {requestHistory.map((record) => (
-                          <tr key={record.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-6 py-4 text-sm text-gray-900">
+                          <tr key={record.id} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
+                            <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
                               #{record.id}
                             </td>
                             <td className="px-6 py-4">
@@ -2590,46 +2590,46 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                 }}
                                 disabled={!record.task_id || isLoadingTaskDetails}
                                 className={`text-sm font-semibold transition-colors text-left ${!record.task_id || isLoadingTaskDetails
-                                    ? 'text-gray-400 cursor-not-allowed'
-                                    : 'text-blue-600 hover:text-blue-800 hover:underline'
+                                    ? 'text-gray-400 cursor-not-allowed dark:text-gray-500'
+                                    : 'text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400 dark:hover:text-blue-300'
                                   }`}
                               >
                                 {record.task}
                               </button>
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-700">
+                            <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
                               {record.requested_by}
                             </td>
                             <td className="px-6 py-4 text-center">
-                              <span className="text-sm font-mono font-semibold text-blue-600">
+                              <span className="text-sm font-mono font-semibold text-blue-600 dark:text-blue-400">
                                 {record.requested_formatted || '00:00:00'}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-center">
-                              <span className="text-sm font-mono text-gray-600">
+                              <span className="text-sm font-mono text-gray-600 dark:text-gray-300">
                                 {record.previous_allocated_formatted || '00:00:00'}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-center">
-                              <span className="text-sm font-mono font-semibold text-green-600">
+                              <span className="text-sm font-mono font-semibold text-green-600 dark:text-green-400">
                                 {record.approved_allocated_formatted || '-'}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-center">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${record.status === 'approved'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-100 text-red-800'
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300'
+                                  : 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300'
                                 }`}>
                                 {record.status}
                               </span>
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-700">
+                            <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
                               {record.reviewed_by}
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-600">
+                            <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
                               {new Date(record.reviewed_at).toLocaleString()}
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-700">
+                            <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
                               {record.reason || '-'}
                             </td>
                           </tr>
@@ -2683,16 +2683,16 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
       {/* Task Details Modal for Request Review */}
       {showTaskDetailsModal && selectedTaskDetails && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto dark:bg-gray-900 dark:shadow-black/40">
             {/* Modal Header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-gray-900">Task Details</h2>
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between dark:bg-gray-900 dark:border-gray-800">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Task Details</h2>
               <button
                 onClick={() => {
                   setShowTaskDetailsModal(false);
                   setSelectedTaskDetails(null);
                 }}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors dark:hover:bg-gray-800"
               >
                 <X size={20} />
               </button>
@@ -2702,11 +2702,11 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
             <div className="p-6 space-y-6">
               {/* Task Title */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">{selectedTaskDetails.title}</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">{selectedTaskDetails.title}</h3>
                 <div className="flex items-center gap-2">
                   <StatusBadge status={selectedTaskDetails.status} />
                   {selectedTaskDetails.needs_extra_hours && (
-                    <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded">
+                    <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded dark:bg-red-500/15 dark:text-red-300">
                       Needs Extra Hours
                     </span>
                   )}
@@ -2715,27 +2715,27 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
               {/* Time Information Grid */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <p className="text-xs text-blue-600 font-semibold mb-1">Allocated Hours</p>
-                  <p className="text-2xl font-bold text-blue-900 font-mono">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 dark:bg-blue-500/10 dark:border-blue-500/30">
+                  <p className="text-xs text-blue-600 font-semibold mb-1 dark:text-blue-400">Allocated Hours</p>
+                  <p className="text-2xl font-bold text-blue-900 font-mono dark:text-blue-300">
                     {selectedTaskDetails.allocated_formatted || `${selectedTaskDetails.allocated_hours}h`}
                   </p>
                 </div>
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <p className="text-xs text-green-600 font-semibold mb-1">Consumed Hours</p>
-                  <p className="text-2xl font-bold text-green-900 font-mono">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 dark:bg-green-500/10 dark:border-green-500/30">
+                  <p className="text-xs text-green-600 font-semibold mb-1 dark:text-green-400">Consumed Hours</p>
+                  <p className="text-2xl font-bold text-green-900 font-mono dark:text-green-300">
                     {selectedTaskDetails.consumed_formatted || `${selectedTaskDetails.consumed_hours.toFixed(2)}h`}
                   </p>
                 </div>
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <p className="text-xs text-purple-600 font-semibold mb-1">Remaining Hours</p>
-                  <p className="text-2xl font-bold text-purple-900 font-mono">
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 dark:bg-purple-500/10 dark:border-purple-500/30">
+                  <p className="text-xs text-purple-600 font-semibold mb-1 dark:text-purple-400">Remaining Hours</p>
+                  <p className="text-2xl font-bold text-purple-900 font-mono dark:text-purple-300">
                     {selectedTaskDetails.remaining_formatted_hms || selectedTaskDetails.remaining_formatted || `${selectedTaskDetails.remaining_hours.toFixed(2)}h`}
                   </p>
                 </div>
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <p className="text-xs text-red-600 font-semibold mb-1">Exceeded By</p>
-                  <p className="text-2xl font-bold text-red-900 font-mono">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 dark:bg-red-500/10 dark:border-red-500/30">
+                  <p className="text-xs text-red-600 font-semibold mb-1 dark:text-red-400">Exceeded By</p>
+                  <p className="text-2xl font-bold text-red-900 font-mono dark:text-red-300">
                     {selectedTaskDetails.exceeded_formatted || '00:00:00'}
                   </p>
                 </div>
@@ -2745,31 +2745,31 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs text-gray-500 font-semibold mb-1">Project</p>
-                    <p className="text-sm text-gray-900">{selectedTaskDetails.project_name || 'N/A'}</p>
+                    <p className="text-xs text-gray-500 font-semibold mb-1 dark:text-gray-400">Project</p>
+                    <p className="text-sm text-gray-900 dark:text-gray-100">{selectedTaskDetails.project_name || 'N/A'}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 font-semibold mb-1">Assigned To</p>
-                    <p className="text-sm text-gray-900">
+                    <p className="text-xs text-gray-500 font-semibold mb-1 dark:text-gray-400">Assigned To</p>
+                    <p className="text-sm text-gray-900 dark:text-gray-100">
                       {selectedTaskDetails.assigned_to?.username || 'Unassigned'}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 font-semibold mb-1">Created By</p>
-                    <p className="text-sm text-gray-900">{selectedTaskDetails.created_by || 'N/A'}</p>
+                    <p className="text-xs text-gray-500 font-semibold mb-1 dark:text-gray-400">Created By</p>
+                    <p className="text-sm text-gray-900 dark:text-gray-100">{selectedTaskDetails.created_by || 'N/A'}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 font-semibold mb-1">Due Date</p>
-                    <p className="text-sm text-gray-900">{selectedTaskDetails.due_date || 'No due date'}</p>
+                    <p className="text-xs text-gray-500 font-semibold mb-1 dark:text-gray-400">Due Date</p>
+                    <p className="text-sm text-gray-900 dark:text-gray-100">{selectedTaskDetails.due_date || 'No due date'}</p>
                   </div>
                 </div>
               </div>
 
               {/* Timer Status */}
               {selectedTaskDetails.is_stopped && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <p className="text-sm font-semibold text-yellow-900 mb-1">Timer Status</p>
-                  <p className="text-sm text-yellow-800">
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 dark:bg-amber-500/10 dark:border-amber-500/30">
+                  <p className="text-sm font-semibold text-yellow-900 mb-1 dark:text-amber-300">Timer Status</p>
+                  <p className="text-sm text-yellow-800 dark:text-amber-200">
                     Stopped ({selectedTaskDetails.stop_reason === 'AUTO' ? 'Automatically' : 'Manually'})
                     {selectedTaskDetails.stopped_at && ` at ${new Date(selectedTaskDetails.stopped_at).toLocaleString()}`}
                   </p>
@@ -2778,8 +2778,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
 
               {/* Additional Request Status */}
               {selectedTaskDetails.has_extra_hours_request && (
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                  <p className="text-sm font-semibold text-orange-900">
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 dark:bg-orange-500/10 dark:border-orange-500/30">
+                  <p className="text-sm font-semibold text-orange-900 dark:text-orange-300">
                     ⚠️ This task has a pending additional hours request
                   </p>
                 </div>
@@ -2787,7 +2787,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
             </div>
 
             {/* Modal Footer */}
-            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end">
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end dark:bg-gray-800 dark:border-gray-800">
               <button
                 onClick={() => {
                   setShowTaskDetailsModal(false);

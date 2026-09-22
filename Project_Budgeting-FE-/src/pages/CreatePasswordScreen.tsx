@@ -72,14 +72,14 @@ const CreatePasswordScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-white flex overflow-hidden relative">
+    <div className="min-h-screen w-full bg-white flex overflow-hidden relative dark:bg-gray-950">
       {/* Blur overlay when navigating */}
       {isNavigating && (
-        <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-50 pointer-events-auto" />
+        <div className="absolute inset-0 bg-white/40 dark:bg-gray-950/40 backdrop-blur-[2px] z-50 pointer-events-auto" />
       )}
-      
+
       {/* Left Side - Illustration (Hidden on Mobile) */}
-      <div className="hidden lg:flex lg:w-1/2 bg-indigo-50 relative items-center justify-center p-12 overflow-hidden">
+      <div className="hidden lg:flex lg:w-1/2 bg-indigo-50 relative items-center justify-center p-12 overflow-hidden dark:bg-gray-900">
         {/* Abstract Background Shapes */}
         <div className="absolute top-0 left-0 w-full h-full">
           <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-200/30 rounded-full blur-3xl" />
@@ -115,10 +115,10 @@ const CreatePasswordScreen: React.FC = () => {
         <div className="w-full max-w-md space-y-8">
           {/* Header */}
           <div className="space-y-3">
-            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight dark:text-white">
               Create New Password
             </h1>
-            <p className="text-gray-500 text-base leading-relaxed">
+            <p className="text-gray-500 text-base leading-relaxed dark:text-gray-400">
               Your new password needs to be different from the password you used
               before.
             </p>

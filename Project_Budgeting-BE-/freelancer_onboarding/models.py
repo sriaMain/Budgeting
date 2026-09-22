@@ -1,7 +1,7 @@
 from datetime import date
 
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from cloudinary.models import CloudinaryField
 
 from core.app_constants import CURRENCY_CHOICES
@@ -29,6 +29,13 @@ class Freelancer(models.Model):
         ('active', 'Active'),
         ('inactive', 'Inactive'),
         ('blocked', 'Blocked'),
+        # Added for project-staffing visibility (business partner enhancement)
+        # - the original 7 values above are unchanged so existing onboarding
+        # transitions (ensure_onboarding_status, etc.) keep working as-is.
+        ('available', 'Available'),
+        ('assigned', 'Assigned'),
+        ('on_hold', 'On Hold'),
+        ('offboarded', 'Offboarded'),
     ]
 
     AVAILABILITY_CHOICES = [
@@ -37,11 +44,52 @@ class Freelancer(models.Model):
         ('not_available', 'Not Available'),
     ]
 
+    # Human-readable identifier (FRL-0001, FRL-0002, ...) - assigned once,
+    # automatically, the first time a freelancer is saved (see save() /
+    # assign_freelancer_code() below). Sequential, not year-scoped, per the
+    # business requirement's own examples.
+    freelancer_code = models.CharField(
+        max_length=20, unique=True, null=True, blank=True, editable=False, db_index=True
+    )
+
     # Basic Details
     full_name = models.CharField(max_length=150)
     email = models.EmailField()
     phone = models.CharField(max_length=20, blank=True)
+    alternate_phone = models.CharField(max_length=20, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    gender = models.CharField(max_length=20, blank=True)
+    profile_photo = CloudinaryField(
+        "freelancer_profile_photo", folder="freelancer_profile_photos",
+        resource_type="image", type="upload", null=True, blank=True,
+    )
     location = models.CharField(max_length=150, blank=True)
+
+    # Permanent Address
+    permanent_address_line1 = models.CharField(max_length=255, blank=True)
+    permanent_address_line2 = models.CharField(max_length=255, blank=True)
+    permanent_city = models.CharField(max_length=100, blank=True)
+    permanent_state = models.CharField(max_length=100, blank=True)
+    permanent_country = models.CharField(max_length=100, blank=True)
+    permanent_pincode = models.CharField(max_length=20, blank=True)
+
+    # Temporary Address - temp_same_as_permanent just records the user's
+    # checkbox choice at save time (copy-on-submit); the temp_* fields below
+    # still hold their own values so every other query/report can read a
+    # freelancer's temporary address the same way regardless of how it got
+    # there, without needing to resolve the permanent address every time.
+    temp_same_as_permanent = models.BooleanField(default=False)
+    temp_address_line1 = models.CharField(max_length=255, blank=True)
+    temp_address_line2 = models.CharField(max_length=255, blank=True)
+    temp_city = models.CharField(max_length=100, blank=True)
+    temp_state = models.CharField(max_length=100, blank=True)
+    temp_country = models.CharField(max_length=100, blank=True)
+    temp_pincode = models.CharField(max_length=20, blank=True)
+
+    # Emergency Contact
+    emergency_contact_name = models.CharField(max_length=150, blank=True)
+    emergency_contact_phone = models.CharField(max_length=20, blank=True)
+    emergency_contact_relationship = models.CharField(max_length=100, blank=True)
 
     # Professional Details
     professional_title = models.CharField(max_length=150, blank=True)
@@ -76,6 +124,12 @@ class Freelancer(models.Model):
     # `status` workflow state (mirrors Vendor.is_archived).
     is_archived = models.BooleanField(default=False)
 
+    # Visible to whoever can see the freelancer profile.
+    notes = models.TextField(blank=True)
+    # Staff-only - kept as a separate field (rather than overloading `notes`)
+    # so a future permission gate can restrict it without touching `notes`.
+    internal_remarks = models.TextField(blank=True)
+
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='freelancers_created',
@@ -85,6 +139,40 @@ class Freelancer(models.Model):
 
     def __str__(self):
         return f"{self.full_name} ({self.get_status_display()})"
+
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        super().save(*args, **kwargs)
+        if is_new and not self.freelancer_code:
+            self.assign_freelancer_code()
+            super().save(update_fields=['freelancer_code'])
+
+    def assign_freelancer_code(self):
+        """Atomically assigns FRL-0001, FRL-0002, ... the first time a
+        freelancer is saved - same convention as accounts.Vendor
+        .assign_reference_number() / employee_onboarding's
+        assign_employee_code(), but sequential (no year segment), per the
+        business requirement's own examples. Called from save() itself
+        (rather than from each creation call site, as the Vendor/Employee
+        precedents do) so every creation path - manual add, invite, or any
+        future one - gets a code with no risk of a missed call site."""
+        if self.freelancer_code:
+            return self.freelancer_code
+        with transaction.atomic():
+            seq, _ = FreelancerCodeSequence.objects.select_for_update().get_or_create(pk=1)
+            seq.last_number += 1
+            seq.save(update_fields=['last_number'])
+            self.freelancer_code = f"FRL-{seq.last_number:04d}"
+        return self.freelancer_code
+
+
+class FreelancerCodeSequence(models.Model):
+    """Singleton counter backing Freelancer.assign_freelancer_code()."""
+
+    last_number = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f"Last freelancer code: {self.last_number}"
 
 
 class FreelancerAccessToken(models.Model):
@@ -288,9 +376,19 @@ class FreelancerProjectAssignment(models.Model):
     end_date = models.DateField(null=True, blank=True)
     estimated_hours = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     allocated_hours = models.DecimalField(max_digits=8, decimal_places=2)
+    allocation_percent = models.PositiveIntegerField(default=100)
+    # Planned quantity for the budgeting formula (Cost Rate x Planned Units):
+    # days for a 'daily' rate card, hours for 'hourly', months for a
+    # 'retainer'/monthly arrangement, or the agreed lump sum count (1) for a
+    # 'fixed'/project-based card. Left blank when the PM hasn't estimated
+    # this yet - planned_freelancer_cost then has nothing to multiply from.
+    planned_units = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     # Rate snapshot - see class docstring. Populated server-side in
-    # FreelancerProjectAssignmentSerializer.create(), never via client input.
+    # FreelancerProjectAssignmentSerializer.create(), either auto-pulled from
+    # the freelancer's active rate card (default) or, when the caller passes
+    # an explicit cost_rate/billing_rate, from that override instead - either
+    # way this is a point-in-time snapshot, never touched again after create.
     pricing_model_snapshot = models.CharField(max_length=20, blank=True)
     cost_rate_snapshot = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     billing_rate_snapshot = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -313,6 +411,14 @@ class FreelancerProjectAssignment(models.Model):
         if self.billing_rate_snapshot is None or self.cost_rate_snapshot is None:
             return None
         return self.billing_rate_snapshot - self.cost_rate_snapshot
+
+    @property
+    def planned_freelancer_cost(self):
+        """Cost Rate x Planned Units (Section 13's formula) - not stored, so
+        it always reflects the current planned_units even if edited later."""
+        if self.cost_rate_snapshot is None or self.planned_units is None:
+            return None
+        return self.cost_rate_snapshot * self.planned_units
 
     def __str__(self):
         return f"{self.freelancer.full_name} on {self.project.project_name}"
@@ -458,6 +564,12 @@ class FreelancerBankDetail(models.Model):
         ('on_hold', 'On Hold'),
     ]
 
+    PAN_VERIFICATION_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    ]
+
     freelancer = models.OneToOneField(Freelancer, on_delete=models.CASCADE, related_name='bank_detail')
 
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, blank=True)
@@ -469,6 +581,11 @@ class FreelancerBankDetail(models.Model):
     # (FreelancerDocument category='pan') is the India-specific piece.
     tax_type = models.CharField(max_length=50, blank=True)
     tax_number = models.CharField(max_length=50, blank=True)
+    # Distinct from payment_status (which covers the whole bank/KYC record) -
+    # PAN can be verified independently of whether banking details are.
+    pan_verification_status = models.CharField(
+        max_length=20, choices=PAN_VERIFICATION_STATUS_CHOICES, default='pending'
+    )
 
     account_holder_name = models.CharField(max_length=150, blank=True)
     bank_name = models.CharField(max_length=150, blank=True)
@@ -483,5 +600,97 @@ class FreelancerBankDetail(models.Model):
             return self.account_number
         return "X" * (len(self.account_number) - 4) + self.account_number[-4:]
 
+    def mask_tax_number(self):
+        """Masks a PAN-shaped tax number as ABCDE****F (Section 7's example);
+        for a non-PAN-shaped tax_number, falls back to the same
+        first-5/last-1-visible convention so it degrades gracefully."""
+        value = self.tax_number
+        if not value or len(value) < 6:
+            return value
+        return f"{value[:5]}{'*' * (len(value) - 6)}{value[-1:]}"
+
     def __str__(self):
         return f"Bank detail for {self.freelancer.full_name}"
+
+
+class FreelancerEquipment(models.Model):
+    """Laptop/equipment tracking - optional satellite table, same
+    OneToOne-per-freelancer shape as FreelancerBankDetail. Never required:
+    a freelancer who brings their own equipment (the common case) can have
+    no row here at all, or a row with just `ownership` set."""
+
+    OWNERSHIP_CHOICES = [
+        ('freelancer_owned', 'Freelancer Owned'),
+        ('company_provided', 'Company Provided'),
+        ('client_provided', 'Client Provided'),
+        ('other', 'Other'),
+    ]
+
+    CONDITION_CHOICES = [
+        ('new', 'New'),
+        ('good', 'Good'),
+        ('fair', 'Fair'),
+        ('poor', 'Poor'),
+        ('damaged', 'Damaged'),
+    ]
+
+    freelancer = models.OneToOneField(Freelancer, on_delete=models.CASCADE, related_name='equipment')
+
+    ownership = models.CharField(max_length=20, choices=OWNERSHIP_CHOICES, blank=True)
+
+    brand = models.CharField(max_length=100, blank=True)
+    model = models.CharField(max_length=100, blank=True)
+    serial_number = models.CharField(max_length=100, blank=True)
+    processor = models.CharField(max_length=100, blank=True)
+    ram = models.CharField(max_length=50, blank=True)
+    storage = models.CharField(max_length=50, blank=True)
+    operating_system = models.CharField(max_length=100, blank=True)
+    # Only meaningful when ownership='company_provided'.
+    asset_id = models.CharField(max_length=100, blank=True)
+    issue_date = models.DateField(null=True, blank=True)
+    return_date = models.DateField(null=True, blank=True)
+    condition = models.CharField(max_length=20, choices=CONDITION_CHOICES, blank=True)
+    remarks = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Equipment for {self.freelancer.full_name}"
+
+
+class FreelancerAuditLog(models.Model):
+    """Tracks changes to a freelancer's sensitive/business-critical fields
+    (Section 22): rate changes, bank-detail updates, PAN verification
+    changes, status changes, project assignment create/remove. No generic
+    audit/history framework exists elsewhere in this codebase to extend, so
+    this is deliberately scoped to Freelancer alone rather than a new
+    app-wide system. Sensitive values (bank/PAN) are stored already-masked -
+    never the raw value - so the log itself is safe to display broadly."""
+
+    ACTION_CHOICES = [
+        ('rate_changed', 'Pay Rate Changed'),
+        ('bank_detail_updated', 'Bank Details Updated'),
+        ('pan_verification_changed', 'PAN Verification Changed'),
+        ('status_changed', 'Status Changed'),
+        ('project_assigned', 'Project Assigned'),
+        ('project_removed', 'Project Removed'),
+    ]
+
+    freelancer = models.ForeignKey(Freelancer, on_delete=models.CASCADE, related_name='audit_logs')
+    action = models.CharField(max_length=30, choices=ACTION_CHOICES)
+    field_name = models.CharField(max_length=100, blank=True)
+    old_value = models.CharField(max_length=255, blank=True)
+    new_value = models.CharField(max_length=255, blank=True)
+
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='freelancer_audit_logs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.freelancer.full_name}: {self.get_action_display()} @ {self.created_at}"

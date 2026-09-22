@@ -67,12 +67,12 @@ export const ProjectHealthCard: React.FC<ProjectHealthCardProps> = ({
           onClick();
         }
       }}
-      className={`bg-white rounded-xl border border-gray-200 shadow-sm p-4 transition-colors ${
+      className={`bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm p-4 transition-colors ${
         onClick ? 'cursor-pointer hover:border-teal-200 hover:shadow-md' : ''
       }`}
     >
       <div className="flex items-start justify-between gap-3 mb-2">
-        <h3 className="text-sm font-semibold text-gray-900 leading-snug">{name}</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white leading-snug">{name}</h3>
         {statusControl ? (
           <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
             {statusControl}
@@ -83,52 +83,55 @@ export const ProjectHealthCard: React.FC<ProjectHealthCardProps> = ({
       </div>
 
       {(engagementType || owner) && (
-        <p className="text-xs text-gray-500 mb-3">
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
           {[engagementType, owner ? `Owner: ${owner}` : null].filter(Boolean).join(' · ')}
         </p>
       )}
 
-      <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${meta.bar}`} style={{ width: `${clampedPct}%` }} />
+      <div className="h-1.5 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-[width] duration-700 ease-out ${meta.bar}`}
+          style={{ width: `${clampedPct}%` }}
+        />
       </div>
 
       <div className="flex items-center justify-between mt-2 text-xs">
-        <span className="text-gray-600">
-          Budget used <b className="text-gray-900">{clampedPct.toFixed(0)}%</b>
+        <span className="text-gray-600 dark:text-gray-400">
+          Budget used <b className="text-gray-900 dark:text-white">{clampedPct.toFixed(0)}%</b>
         </span>
-        <span className="text-gray-500">{nextMilestone ?? statusLabel ?? ''}</span>
+        <span className="text-gray-500 dark:text-gray-400">{nextMilestone ?? statusLabel ?? ''}</span>
       </div>
 
       {(totalBudget || totalHours || startDate || endDate) && (
-        <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
           {totalBudget && (
             <div>
-              <p className="text-gray-500">Total Budget</p>
-              <p className="font-semibold text-gray-900">{totalBudget}</p>
+              <p className="text-gray-500 dark:text-gray-400">Total Budget</p>
+              <p className="font-semibold text-gray-900 dark:text-white">{totalBudget}</p>
             </div>
           )}
           {totalHours && (
             <div>
-              <p className="text-gray-500">Hours Allocated</p>
-              <p className="font-semibold text-gray-900">{totalHours}</p>
+              <p className="text-gray-500 dark:text-gray-400">Hours Allocated</p>
+              <p className="font-semibold text-gray-900 dark:text-white">{totalHours}</p>
             </div>
           )}
           {startDate && (
             <div>
-              <p className="text-gray-500">Start Date</p>
-              <p className="font-semibold text-gray-900">{startDate}</p>
+              <p className="text-gray-500 dark:text-gray-400">Start Date</p>
+              <p className="font-semibold text-gray-900 dark:text-white">{startDate}</p>
             </div>
           )}
           {endDate && (
             <div>
-              <p className="text-gray-500">End Date</p>
-              <p className="font-semibold text-gray-900">{endDate}</p>
+              <p className="text-gray-500 dark:text-gray-400">End Date</p>
+              <p className="font-semibold text-gray-900 dark:text-white">{endDate}</p>
             </div>
           )}
         </div>
       )}
 
-      {healthReason && <p className="mt-2 text-xs text-gray-500">{healthReason}</p>}
+      {healthReason && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{healthReason}</p>}
     </div>
   );
 };

@@ -212,7 +212,7 @@ export const FreelancerTasksTab: React.FC<Props> = ({ freelancerId, taskAssignme
             accessor: (a) => (
                 <button
                     onClick={() => openLogTime(a)}
-                    className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    className="text-blue-600 hover:text-blue-800 text-sm font-medium dark:text-blue-400 dark:hover:text-blue-300"
                 >
                     + Log Time
                 </button>
@@ -221,10 +221,10 @@ export const FreelancerTasksTab: React.FC<Props> = ({ freelancerId, taskAssignme
     ];
 
     const statusBadgeClass: Record<string, string> = {
-        draft: 'bg-gray-100 text-gray-600',
-        submitted: 'bg-blue-100 text-blue-700',
-        approved: 'bg-green-100 text-green-700',
-        rejected: 'bg-red-100 text-red-700',
+        draft: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
+        submitted: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+        approved: 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300',
+        rejected: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300',
     };
 
     const timeEntryColumns: Column<FreelancerTimeEntry>[] = [
@@ -245,16 +245,16 @@ export const FreelancerTasksTab: React.FC<Props> = ({ freelancerId, taskAssignme
             accessor: (e) => (
                 <div className="flex gap-2">
                     {e.status === 'draft' && (
-                        <button onClick={() => handleSubmitTimeEntry(e)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Submit</button>
+                        <button onClick={() => handleSubmitTimeEntry(e)} className="text-blue-600 hover:text-blue-800 text-xs font-medium dark:text-blue-400 dark:hover:text-blue-300">Submit</button>
                     )}
                     {e.status === 'submitted' && (
                         <>
-                            <button onClick={() => handleApproveTimeEntry(e)} className="text-green-600 hover:text-green-800 text-xs font-medium">Approve</button>
-                            <button onClick={() => handleRejectTimeEntry(e)} className="text-red-600 hover:text-red-800 text-xs font-medium">Reject</button>
+                            <button onClick={() => handleApproveTimeEntry(e)} className="text-green-600 hover:text-green-800 text-xs font-medium dark:text-green-400 dark:hover:text-green-300">Approve</button>
+                            <button onClick={() => handleRejectTimeEntry(e)} className="text-red-600 hover:text-red-800 text-xs font-medium dark:text-red-400 dark:hover:text-red-300">Reject</button>
                         </>
                     )}
                     {e.status !== 'approved' && (
-                        <button onClick={() => handleDeleteTimeEntry(e)} className="text-gray-500 hover:text-gray-700 text-xs font-medium">Delete</button>
+                        <button onClick={() => handleDeleteTimeEntry(e)} className="text-gray-500 hover:text-gray-700 text-xs font-medium dark:text-gray-400 dark:hover:text-gray-300">Delete</button>
                     )}
                 </div>
             ),
@@ -265,13 +265,13 @@ export const FreelancerTasksTab: React.FC<Props> = ({ freelancerId, taskAssignme
         <div className="space-y-8">
             <div>
                 <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-base font-semibold text-gray-900">Task Assignments</h3>
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-white">Task Assignments</h3>
                     <Button className="!w-auto px-6" onClick={openAssignTask} disabled={projectAssignments.length === 0}>
                         Assign to Task
                     </Button>
                 </div>
                 {projectAssignments.length === 0 && (
-                    <p className="text-sm text-gray-500 mb-3">Assign this freelancer to a project first (see the Projects tab).</p>
+                    <p className="text-sm text-gray-500 mb-3 dark:text-gray-400">Assign this freelancer to a project first (see the Projects tab).</p>
                 )}
                 <ReusableTable
                     data={assignments}
@@ -284,7 +284,7 @@ export const FreelancerTasksTab: React.FC<Props> = ({ freelancerId, taskAssignme
             </div>
 
             <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-3">Time Entries</h3>
+                <h3 className="text-base font-semibold text-gray-900 mb-3 dark:text-white">Time Entries</h3>
                 <ReusableTable
                     data={timeEntries}
                     columns={timeEntryColumns}
@@ -349,15 +349,15 @@ export const FreelancerTasksTab: React.FC<Props> = ({ freelancerId, taskAssignme
                 </div>
                 <Checkbox label="Billable" checked={!!timeValues.is_billable} onChange={setTimeField('is_billable')} />
                 <div className="mt-4">
-                    <label className="block text-base font-medium text-gray-900 mb-2">Description</label>
+                    <label className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">Description</label>
                     <textarea
                         value={timeValues.description}
                         onChange={setTimeField('description')}
                         rows={3}
-                        className="w-full px-4 py-3 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white transition-all"
+                        className="w-full px-4 py-3 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white transition-all dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:shadow-none dark:focus:bg-gray-800 dark:focus:ring-violet-500"
                     />
                 </div>
-                <p className="text-xs text-gray-400 mt-2">Provide either Hours directly, or both Start/End Time (break will be subtracted).</p>
+                <p className="text-xs text-gray-400 mt-2 dark:text-gray-500">Provide either Hours directly, or both Start/End Time (break will be subtracted).</p>
             </Modal>
         </div>
     );

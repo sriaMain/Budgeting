@@ -110,19 +110,19 @@ export default function InvoiceDetailsScreen({
     const getStatusColor = (status: string) => {
         const statusLower = status.toLowerCase();
         if (statusLower.includes('paid') && !statusLower.includes('partially')) {
-            return 'bg-green-100 text-green-700 border-green-200';
+            return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-500/15 dark:text-green-300 dark:border-green-900';
         } else if (statusLower.includes('issued') || statusLower.includes('sent')) {
-            return 'bg-blue-100 text-blue-700 border-blue-200';
+            return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-900';
         } else if (statusLower.includes('draft') || statusLower.includes('unpaid')) {
-            return 'bg-red-100 text-red-700 border-red-200';
+            return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-900';
         } else if (statusLower.includes('overdue')) {
-            return 'bg-orange-100 text-orange-700 border-orange-200';
+            return 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/15 dark:text-orange-300 dark:border-orange-900';
         } else if (statusLower.includes('partially')) {
-            return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+            return 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-900';
         } else if (statusLower.includes('cancel')) {
-            return 'bg-gray-100 text-gray-700 border-gray-200';
+            return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
         }
-        return 'bg-gray-100 text-gray-700 border-gray-200';
+        return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
     };
 
     const handleSaveChanges = async () => {
@@ -272,7 +272,7 @@ export default function InvoiceDetailsScreen({
         return (
             <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
                 <div className="flex items-center justify-center min-h-screen">
-                    <div className="text-gray-500">Invoice not found</div>
+                    <div className="text-gray-500 dark:text-gray-400">Invoice not found</div>
                 </div>
             </Layout>
         );
@@ -286,20 +286,20 @@ export default function InvoiceDetailsScreen({
                     <div className="flex items-center gap-3">
                         <button
                             onClick={handleBack}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-800"
                             title="Go back"
                         >
-                            <ArrowLeft className="w-5 h-5 text-gray-600" />
+                            <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                         </button>
-                        <h1 className="text-2xl font-bold text-gray-900">Invoice Details</h1>
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Invoice Details</h1>
                     </div>
                     <div className="flex items-center gap-3">
                         <button
                             onClick={() => setIsEditMode(!isEditMode)}
-                            className={`p-2 hover:bg-gray-100 rounded-lg transition-colors ${isEditMode ? 'bg-blue-50' : ''}`}
+                            className={`p-2 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-800 ${isEditMode ? 'bg-blue-50 dark:bg-blue-500/15' : ''}`}
                             title={isEditMode ? "Cancel Edit" : "Edit Invoice"}
                         >
-                            <Edit className={`w-5 h-5 ${isEditMode ? 'text-blue-600' : 'text-gray-600'}`} />
+                            <Edit className={`w-5 h-5 ${isEditMode ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`} />
                         </button>
                         {isEditMode && (
                             <>
@@ -325,58 +325,58 @@ export default function InvoiceDetailsScreen({
                 </div>
 
                 {/* Invoice Information Card */}
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6 dark:bg-gray-900 dark:border-gray-800">
                     <div className="grid grid-cols-2 gap-x-12 gap-y-6">
                         {/* Left Column */}
                         <div>
                             <div className="mb-4">
-                                <label className="text-sm text-gray-500 block mb-1">Invoice No:</label>
-                                <p className="text-base font-medium text-gray-900">{invoiceData.invoice_no}</p>
+                                <label className="text-sm text-gray-500 block mb-1 dark:text-gray-400">Invoice No:</label>
+                                <p className="text-base font-medium text-gray-900 dark:text-white">{invoiceData.invoice_no}</p>
                             </div>
                             <div className="mb-4">
-                                <label className="text-sm text-gray-500 block mb-1">Date of Issue:</label>
+                                <label className="text-sm text-gray-500 block mb-1 dark:text-gray-400">Date of Issue:</label>
                                 {isEditMode ? (
                                     <input
                                         type="date"
                                         value={invoiceData.issue_date}
                                         onChange={(e) => setInvoiceData({ ...invoiceData, issue_date: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                     />
                                 ) : (
-                                    <p className="text-base font-medium text-gray-900">{invoiceData.issue_date}</p>
+                                    <p className="text-base font-medium text-gray-900 dark:text-white">{invoiceData.issue_date}</p>
                                 )}
                             </div>
                             <div className="mb-4">
-                                <label className="text-sm text-gray-500 block mb-1">Reference Quote No:</label>
-                                <p className="text-base font-medium text-gray-900">{invoiceData.quote_no}</p>
+                                <label className="text-sm text-gray-500 block mb-1 dark:text-gray-400">Reference Quote No:</label>
+                                <p className="text-base font-medium text-gray-900 dark:text-white">{invoiceData.quote_no}</p>
                             </div>
                             <div>
-                                <label className="text-sm text-gray-500 block mb-1">Client:</label>
-                                <p className="text-base font-medium text-gray-900">{invoiceData.client_name}</p>
+                                <label className="text-sm text-gray-500 block mb-1 dark:text-gray-400">Client:</label>
+                                <p className="text-base font-medium text-gray-900 dark:text-white">{invoiceData.client_name}</p>
                             </div>
                         </div>
 
                         {/* Right Column */}
                         <div>
                             <div className="mb-4">
-                                <label className="text-sm text-gray-500 block mb-1">Author:</label>
-                                <p className="text-base font-medium text-gray-900">{invoiceData.created_by_name}</p>
+                                <label className="text-sm text-gray-500 block mb-1 dark:text-gray-400">Author:</label>
+                                <p className="text-base font-medium text-gray-900 dark:text-white">{invoiceData.created_by_name}</p>
                             </div>
                             <div className="mb-4">
-                                <label className="text-sm text-gray-500 block mb-1">Due Date:</label>
+                                <label className="text-sm text-gray-500 block mb-1 dark:text-gray-400">Due Date:</label>
                                 {isEditMode ? (
                                     <input
                                         type="date"
                                         value={invoiceData.due_date}
                                         onChange={(e) => setInvoiceData({ ...invoiceData, due_date: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                     />
                                 ) : (
-                                    <p className="text-base font-medium text-gray-900">{invoiceData.due_date}</p>
+                                    <p className="text-base font-medium text-gray-900 dark:text-white">{invoiceData.due_date}</p>
                                 )}
                             </div>
                             <div>
-                                <label className="text-sm text-gray-500 block mb-1">Status:</label>
+                                <label className="text-sm text-gray-500 block mb-1 dark:text-gray-400">Status:</label>
                                 <span
                                     className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(status)}`}
                                     title="Status is calculated automatically from recorded payments"
@@ -389,25 +389,25 @@ export default function InvoiceDetailsScreen({
                 </div>
 
                 {/* Products Table */}
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6 dark:bg-gray-900 dark:border-gray-800">
                     <div className="overflow-x-auto">
                         <table className="w-full">
-                            <thead className="bg-gray-50 border-b border-gray-200">
+                            <thead className="bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700">
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product Group</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product Name</th>
-                                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Quantity</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Unit</th>
-                                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Unit Price</th>
-                                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-300">Product Group</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-300">Product Name</th>
+                                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-300">Quantity</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-300">Unit</th>
+                                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-300">Unit Price</th>
+                                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-300">Amount</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-100">
+                            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                                 {productRows.map((row) => (
-                                    <tr key={row.id} className="hover:bg-gray-50">
-                                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{row.product_group}</td>
-                                        <td className="px-4 py-3 text-sm text-gray-900">{row.product_name}</td>
-                                        <td className="px-4 py-3 text-sm text-gray-900 text-center">
+                                    <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                                        <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">{row.product_group}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">{row.product_name}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-900 text-center dark:text-gray-100">
                                             {isEditMode ? (
                                                 <input
                                                     type="number"
@@ -423,14 +423,14 @@ export default function InvoiceDetailsScreen({
                                                         );
                                                         setProductRows(newRows);
                                                     }}
-                                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                                 />
                                             ) : (
                                                 row.quantity
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-900">{row.unit}</td>
-                                        <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">{row.unit}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-900 text-right dark:text-gray-100">
                                             {isEditMode ? (
                                                 <input
                                                     type="number"
@@ -446,13 +446,13 @@ export default function InvoiceDetailsScreen({
                                                         );
                                                         setProductRows(newRows);
                                                     }}
-                                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    className="w-24 px-2 py-1 border border-gray-300 rounded text-right focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                                 />
                                             ) : (
                                                 row.unit_price
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-900 text-right">{row.amount}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-900 text-right dark:text-gray-100">{row.amount}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -460,54 +460,54 @@ export default function InvoiceDetailsScreen({
                     </div>
 
                     {/* Totals Section */}
-                    <div className="border-t border-gray-200 p-6">
+                    <div className="border-t border-gray-200 p-6 dark:border-gray-800">
                         <div className="flex justify-end">
                             <div className="w-full max-w-2xl space-y-3">
                                 <div className="grid grid-cols-3 gap-4 text-sm">
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600">Subtotal</span>
-                                        <span className="font-medium text-gray-900">{totals.subtotal}</span>
+                                        <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
+                                        <span className="font-medium text-gray-900 dark:text-gray-100">{totals.subtotal}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600">Total</span>
-                                        <span className="font-medium text-gray-900">{totals.total}</span>
-                                    </div>
-                                    <div></div>
-                                </div>
-                                <div className="grid grid-cols-3 gap-4 text-sm">
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Tax (%)</span>
-                                        <span className="font-medium text-gray-900">{totals.tax}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">In-house</span>
-                                        <span className="font-medium text-gray-900">{totals.in_house}</span>
+                                        <span className="text-gray-600 dark:text-gray-400">Total</span>
+                                        <span className="font-medium text-gray-900 dark:text-gray-100">{totals.total}</span>
                                     </div>
                                     <div></div>
                                 </div>
                                 <div className="grid grid-cols-3 gap-4 text-sm">
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600">Total(INR)</span>
-                                        <span className="font-medium text-gray-900">{totals.total}</span>
+                                        <span className="text-gray-600 dark:text-gray-400">Tax (%)</span>
+                                        <span className="font-medium text-gray-900 dark:text-gray-100">{totals.tax}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600">Out-Sourced</span>
-                                        <span className="font-medium text-gray-900">{totals.out_sourced}</span>
+                                        <span className="text-gray-600 dark:text-gray-400">In-house</span>
+                                        <span className="font-medium text-gray-900 dark:text-gray-100">{totals.in_house}</span>
                                     </div>
                                     <div></div>
                                 </div>
                                 <div className="grid grid-cols-3 gap-4 text-sm">
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600">Invoiced Sum(INR)</span>
-                                        <span className="font-medium text-gray-900">{totals.invoiced_sum}</span>
+                                        <span className="text-gray-600 dark:text-gray-400">Total(INR)</span>
+                                        <span className="font-medium text-gray-900 dark:text-gray-100">{totals.total}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">Out-Sourced</span>
+                                        <span className="font-medium text-gray-900 dark:text-gray-100">{totals.out_sourced}</span>
+                                    </div>
+                                    <div></div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">Invoiced Sum(INR)</span>
+                                        <span className="font-medium text-gray-900 dark:text-gray-100">{totals.invoiced_sum}</span>
                                     </div>
                                     <div></div>
                                     <div></div>
                                 </div>
                                 <div className="grid grid-cols-3 gap-4 text-sm">
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600">To be Voiced (INR)</span>
-                                        <span className="font-medium text-gray-900">{totals.to_be_voiced}</span>
+                                        <span className="text-gray-600 dark:text-gray-400">To be Voiced (INR)</span>
+                                        <span className="font-medium text-gray-900 dark:text-gray-100">{totals.to_be_voiced}</span>
                                     </div>
                                     <div></div>
                                     <div></div>
@@ -522,7 +522,7 @@ export default function InvoiceDetailsScreen({
                     <button
                         onClick={handleDownloadPDF}
                         disabled={isActionLoading}
-                        className="flex items-center gap-2 px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex items-center gap-2 px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-300"
                     >
                         <FileText size={18} />
                         <span>PDF</span>

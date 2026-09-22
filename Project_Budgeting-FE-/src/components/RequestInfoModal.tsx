@@ -62,22 +62,22 @@ export const RequestInfoModal: React.FC<RequestInfoModalProps> = ({ isOpen, onCl
           onChange={(e) => setSection(e.target.value as ChangeRequestSection)}
         />
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Required Changes *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Required Changes *</label>
           <textarea
             value={requiredChanges}
             onChange={(e) => setRequiredChanges(e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 dark:focus:border-violet-500"
             placeholder="Be specific about what the vendor needs to change"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Comments</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">Comments</label>
           <textarea
             value={comments}
             onChange={(e) => setComments(e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 dark:focus:border-violet-500"
           />
         </div>
       </div>

@@ -9,16 +9,16 @@ export const Step2Address: React.FC = () => {
   return (
     <div className="space-y-8">
       <section>
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Current Address</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Current Address</h3>
         <div>
-          <label className="block text-base font-medium text-gray-900 mb-2">Current Address *</label>
+          <label className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">Current Address *</label>
           <textarea
             {...register('step2.current_address')}
             rows={3}
-            className="w-full px-4 py-3 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white transition-all"
+            className="w-full px-4 py-3 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white transition-all dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:shadow-none dark:focus:bg-gray-800 dark:focus:ring-violet-500"
           />
           {errors.step2?.current_address?.message && (
-            <p className="mt-1.5 text-sm text-red-600">{errors.step2.current_address.message}</p>
+            <p className="mt-1.5 text-sm text-red-600 dark:text-red-400">{errors.step2.current_address.message}</p>
           )}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 mt-2">

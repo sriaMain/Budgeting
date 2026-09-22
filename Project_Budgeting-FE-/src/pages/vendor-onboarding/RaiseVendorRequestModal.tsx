@@ -71,7 +71,7 @@ export const RaiseVendorRequestModal: React.FC<RaiseVendorRequestModalProps> = (
       }
     >
       <div className="space-y-1">
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
           Send the vendor a secure link to complete their own onboarding. You only need to provide the basics -
           the vendor fills in everything else.
         </p>
@@ -90,20 +90,20 @@ export const RaiseVendorRequestModal: React.FC<RaiseVendorRequestModalProps> = (
           <InputField label="Contact Person Name *" value={values.contact_person_name} onChange={set('contact_person_name')} error={errors.contact_person_name} />
         </div>
 
-        <div className="border-t pt-4 mt-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Optional</p>
+        <div className="border-t pt-4 mt-2 dark:border-gray-800">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 dark:text-gray-400">Optional</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
             <InputField label="Company Code" value={values.company_code} onChange={set('company_code')} />
             <InputField label="Plant" value={values.plant} onChange={set('plant')} />
             <InputField label="Internal Requester" value={values.internal_requester} onChange={set('internal_requester')} />
           </div>
           <div>
-            <label className="block text-base font-medium text-gray-900 mb-2">Initial Comments</label>
+            <label className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-100">Initial Comments</label>
             <textarea
               value={values.initial_comments}
               onChange={set('initial_comments')}
               rows={3}
-              className="w-full px-4 py-3 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white transition-all"
+              className="w-full px-4 py-3 bg-input-bg rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white transition-all dark:bg-gray-800 dark:border dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 dark:focus:bg-gray-800"
             />
           </div>
         </div>

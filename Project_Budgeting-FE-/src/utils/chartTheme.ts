@@ -16,7 +16,31 @@ export const CHART_CHROME = {
   axis: '#898781',
   textPrimary: '#0b0b0b',
   textSecondary: '#52514e',
+  tooltipBg: '#ffffff',
+  tooltipBorder: '#e1e0d9',
+  tooltipText: '#0b0b0b',
+  sliceStroke: '#ffffff',
 };
+
+// Same roles, re-tuned for a dark chart canvas: grid/axis lines lighten just
+// enough to read against gray-900 card backgrounds without glowing, and the
+// tooltip becomes a dark surface instead of recharts' default white popup.
+export const CHART_CHROME_DARK = {
+  grid: '#30333d',
+  axis: '#8a90a2',
+  textPrimary: '#f5f7fa',
+  textSecondary: '#a5adbd',
+  tooltipBg: '#1a1d27',
+  tooltipBorder: '#30333d',
+  tooltipText: '#f5f7fa',
+  sliceStroke: '#111318',
+};
+
+/** Pass the current `useTheme()` value so chart chrome (grid/axis/tooltip)
+ * flips instantly with the rest of the app instead of staying light-mode-only. */
+export function getChartChrome(theme: 'light' | 'dark') {
+  return theme === 'dark' ? CHART_CHROME_DARK : CHART_CHROME;
+}
 
 export const CHART_STATUS = {
   good: '#0ca30c',

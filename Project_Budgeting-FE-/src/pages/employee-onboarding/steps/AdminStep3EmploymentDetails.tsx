@@ -27,7 +27,7 @@ export const AdminStep3EmploymentDetails: React.FC<Props> = ({ employmentTypeOpt
   return (
     <div className="space-y-8">
       <section>
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Employment Details</h3>
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Employment Details</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           <InputField label="Employee ID" {...register('step3.employee_code')} error={errors.step3?.employee_code?.message} />
           <InputField label="Department" {...register('step3.department')} error={errors.step3?.department?.message} />
@@ -49,8 +49,8 @@ export const AdminStep3EmploymentDetails: React.FC<Props> = ({ employmentTypeOpt
           />
           <InputField label="Work Location" {...register('step3.work_location')} error={errors.step3?.work_location?.message} />
         </div>
-        <label className="flex items-center gap-2 mt-2 text-sm text-gray-700">
-          <input type="checkbox" {...register('step3.pf_applicable')} className="rounded border-gray-300" />
+        <label className="flex items-center gap-2 mt-2 text-sm text-gray-700 dark:text-gray-300">
+          <input type="checkbox" {...register('step3.pf_applicable')} className="rounded border-gray-300 dark:border-gray-700 dark:bg-gray-800" />
           PF Applicable (makes UAN mandatory for the employee)
         </label>
       </section>

@@ -21,6 +21,9 @@ class CompanySerializer(serializers.ModelSerializer):
     country_code = serializers.CharField(write_only=True)
     mobile_number = serializers.CharField(write_only=True)
 
+    # Backward-compatible combined address for read-only consumers (PDFs, listings)
+    street_address = serializers.CharField(read_only=True)
+
     class Meta:
         model = Company
         fields = [
@@ -30,10 +33,11 @@ class CompanySerializer(serializers.ModelSerializer):
             "mobile_number",
             "email",
             "gstin",
+            "address1",
+            "address2",
             "street_address",
             "city",
             "postal_code",
-            "municipality",
             "state",
             "country",
             "tags",
@@ -43,6 +47,8 @@ class CompanySerializer(serializers.ModelSerializer):
 
         extra_kwargs = {
             "gstin": {"required": False},
+            "address1": {"required": False},
+            "address2": {"required": False},
             "country": {"required": True},
             "state": {"required": True},
         }
@@ -185,12 +191,19 @@ class PointOfContactSerializer(serializers.ModelSerializer):
     # Proper read field for model
     poc_mobile = PhoneNumberField(read_only=True)
 
+    # Auto-derived full name, kept for consumers that only display it
+    poc_name = serializers.CharField(read_only=True)
+
     class Meta:
         model = POC
         fields = [
             "id",
             "company",
             "company_name",
+            "salutation",
+            "first_name",
+            "middle_name",
+            "last_name",
             "poc_name",
             "designation",
             "poc_email",
@@ -199,7 +212,10 @@ class PointOfContactSerializer(serializers.ModelSerializer):
             "poc_mobile",
         ]
         extra_kwargs = {
-            "company": {"write_only": True}
+            "company": {"write_only": True},
+            "salutation": {"required": True},
+            "first_name": {"required": True},
+            "last_name": {"required": True},
         }
 
     def validate(self, attrs):

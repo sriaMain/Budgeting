@@ -140,6 +140,12 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
         decimal_places=2,
         read_only=True
     )
+    # The actual execution/cost budget - in_house + outsourced cost from the
+    # linked quote(s), with tax and profit margin excluded (unlike
+    # total_budget, which mirrors the client-facing quote total_amount,
+    # sub_total + tax, and therefore still includes both). This is what the
+    # UI's budget/"used" stat cards should be measured against.
+    cost_budget = serializers.SerializerMethodField()
     difference_from_quote = serializers.SerializerMethodField()
 
     billable_hours = serializers.SerializerMethodField()
@@ -166,6 +172,8 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
             "quoted_amount",
             "manual_budget",
             "total_budget",
+            "cost_budget",
+            "actual_expenses",
             "forecasted_profit",
             "difference_from_quote",
             "billable_hours",
@@ -325,6 +333,12 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
 
 
     # ---------------------------
+    # 🔹 Cost Budget (execution budget, tax/profit excluded)
+    # ---------------------------
+    def get_cost_budget(self, obj):
+        return obj.cost_budget
+
+    # ---------------------------
     # 🔹 Used Budget (Actual Cost) — labor cost (live hours × rate) plus any
     # real logged expenses, so this, Remaining Budget and Profit/Loss all
     # agree on what "actual cost" means instead of each using a different
@@ -352,13 +366,13 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
 
 
     # ---------------------------
-    # 🔹 Remaining Budget
+    # 🔹 Remaining Budget - measured against cost_budget (tax/profit
+    # excluded), the same basis _total_actual_cost() is on, rather than
+    # total_budget (which still includes both) so this isn't an
+    # apples-to-oranges subtraction.
     # ---------------------------
     def get_remaining_budget(self, obj):
-        if obj.total_budget is None:
-            return None
-
-        return obj.total_budget - self._total_actual_cost(obj)
+        return self.get_cost_budget(obj) - self._total_actual_cost(obj)
 
     # ---------------------------
     # 🔹 Profit or Loss (REAL LOGIC)
@@ -517,9 +531,12 @@ class ResourceAssignmentSerializer(serializers.ModelSerializer):
                 if not Account.objects.filter(pk=resource_id).exists():
                     raise serializers.ValidationError({"resource_id": "No employee found with this ID."})
             else:
-                from accounts.models import Vendor
-                if not Vendor.objects.filter(pk=resource_id).exists():
-                    raise serializers.ValidationError({"resource_id": "No freelancer/vendor found with this ID."})
+                # Freelancers are their own model (freelancer_onboarding.Freelancer),
+                # not an accounts.Vendor row - matches ProjectPOCOptionsAPIView,
+                # which already sources its freelancer picker options from there.
+                from freelancer_onboarding.models import Freelancer
+                if not Freelancer.objects.filter(pk=resource_id).exists():
+                    raise serializers.ValidationError({"resource_id": "No freelancer found with this ID."})
 
         return data
 

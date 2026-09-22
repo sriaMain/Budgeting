@@ -21,16 +21,16 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, size = 'md
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50" onClick={onClose} />
 
       <div className="flex min-h-full items-center justify-center p-4">
         <div
-          className={`relative bg-white rounded-xl shadow-2xl w-full ${sizeClasses[size]} max-h-[90vh] overflow-y-auto transform transition-all`}
+          className={`relative bg-white rounded-xl shadow-2xl w-full ${sizeClasses[size]} max-h-[90vh] overflow-y-auto transform transition-all dark:bg-gray-900 dark:shadow-black/40`}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-            <h3 className="text-xl font-bold text-gray-900">{title}</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 dark:bg-gray-900 dark:border-gray-800">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors dark:text-gray-500 dark:hover:text-gray-300">
               <X size={24} />
             </button>
           </div>
@@ -38,7 +38,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, size = 'md
           <div className="p-6">{children}</div>
 
           {footer && (
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-end gap-3 dark:bg-gray-900 dark:border-gray-800">
               {footer}
             </div>
           )}

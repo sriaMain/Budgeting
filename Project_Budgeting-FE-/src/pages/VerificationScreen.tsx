@@ -148,22 +148,22 @@ const handleResendOtp = async () => {
     <div className="max-w-md w-full flex flex-col items-center text-center animate-fade-in relative">
       {/* Blur overlay when navigating */}
       {isNavigating && (
-        <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-10 pointer-events-auto rounded-lg" />
+        <div className="absolute inset-0 bg-white/40 dark:bg-gray-950/40 backdrop-blur-[2px] z-10 pointer-events-auto rounded-lg" />
       )}
-      
+
       {/* Header Section */}
-      <h1 className="text-[2rem] font-bold text-gray-900 mb-4 tracking-tight">
+      <h1 className="text-[2rem] font-bold text-gray-900 mb-4 tracking-tight dark:text-white">
         Check Your email
       </h1>
 
-      <p className="text-gray-500 text-lg leading-relaxed max-w-xs mx-auto mb-2">
+      <p className="text-gray-500 text-lg leading-relaxed max-w-xs mx-auto mb-2 dark:text-gray-400">
         Please enter the four digit verification code we sent to
       </p>
-      <p className="text-gray-900 font-bold text-lg mb-6">{email}</p>
+      <p className="text-gray-900 font-bold text-lg mb-6 dark:text-white">{email}</p>
 
       {/* General error alert (invalid/expired OTP etc.) */}
       {errors.general && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center max-w-md mx-auto">
+        <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center max-w-md mx-auto dark:bg-red-500/10 dark:border-red-900/40 dark:text-red-400">
           <svg
             className="w-5 h-5 mr-2 flex-shrink-0"
             fill="none"
@@ -205,7 +205,7 @@ const handleResendOtp = async () => {
       </button>
 
       {/* Resend Timer */}
-    <div className="mt-6 text-gray-400 font-medium text-[15px] flex items-center gap-1">
+    <div className="mt-6 text-gray-400 font-medium text-[15px] flex items-center gap-1 dark:text-gray-500">
   <span>Didn't get the email? </span>
 
   <button
@@ -213,15 +213,15 @@ const handleResendOtp = async () => {
     disabled={remaining > 0 || isResending}
     className={`
       flex items-center gap-2
-      ${remaining === 0 && !isResending 
-        ? "text-blue-700 hover:underline cursor-pointer" 
-        : "text-gray-400 cursor-default"
+      ${remaining === 0 && !isResending
+        ? "text-blue-700 hover:underline cursor-pointer dark:text-violet-400"
+        : "text-gray-400 cursor-default dark:text-gray-500"
       }
     `}
   >
     {isResending ? (
       <>
-        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+        <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-violet-400" />
         <span>Resending...</span>
       </>
     ) : remaining > 0 ? (
@@ -234,7 +234,7 @@ const handleResendOtp = async () => {
 
       {/* Back Button */}
       <button
-        className="mt-8 flex items-center gap-2 text-gray-900 font-bold text-lg hover:text-gray-700 transition-colors group"
+        className="mt-8 flex items-center gap-2 text-gray-900 font-bold text-lg hover:text-gray-700 transition-colors group dark:text-gray-200 dark:hover:text-gray-400"
         onClick={goBack}
       >
         <ArrowLeft className="w-6 h-6 stroke-[3px] group-hover:-translate-x-1 transition-transform duration-200" />

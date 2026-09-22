@@ -437,6 +437,10 @@ class CompanyPOCListView(APIView):
                 poc_list.append({
                     "id": poc.id,
                     "company_name": company.company_name,
+                    "salutation": poc.salutation,
+                    "first_name": poc.first_name,
+                    "middle_name": poc.middle_name,
+                    "last_name": poc.last_name,
                     "poc_name": getattr(poc, 'name', getattr(poc, 'poc_name', None)),
                     "designation": poc.designation,
                     "poc_mobile": str(getattr(poc, 'mobile', getattr(poc, 'poc_mobile', ""))) if getattr(poc, 'mobile', getattr(poc, 'poc_mobile', None)) else None,
@@ -531,6 +535,10 @@ class CompanyPOCListView(APIView):
             company_data["pocs"] = [
                 {
                     "id": poc.id,
+                    "salutation": poc.salutation,
+                    "first_name": poc.first_name,
+                    "middle_name": poc.middle_name,
+                    "last_name": poc.last_name,
                     "poc_name": getattr(poc, 'name', getattr(poc, 'poc_name', None)),
                     "designation": poc.designation,
                     "poc_mobile": str(getattr(poc, 'mobile', getattr(poc, 'poc_mobile', ""))) if getattr(poc, 'mobile', getattr(poc, 'poc_mobile', None)) else None,

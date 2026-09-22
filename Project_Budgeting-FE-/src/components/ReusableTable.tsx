@@ -132,7 +132,7 @@ export const ReusableTable = <T extends any>({
                         <button
                           type="button"
                           onClick={() => onSortChange!(key!, isActive && sortDirection === 'asc' ? 'desc' : 'asc')}
-                          className="inline-flex items-center gap-1 font-semibold hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-600 rounded"
+                          className="inline-flex items-center gap-1 font-semibold hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-600 rounded dark:hover:text-white"
                         >
                           {col.header}
                           {isActive ? (
@@ -171,7 +171,7 @@ export const ReusableTable = <T extends any>({
                         {onEdit && (
                           <button
                             onClick={() => onEdit(item)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors dark:text-blue-400 dark:hover:bg-blue-500/10"
                             title="Edit"
                           >
                             <Edit3 size={16} />
@@ -180,7 +180,7 @@ export const ReusableTable = <T extends any>({
                         {onDelete && (
                           <button
                             onClick={() => onDelete(item)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors dark:text-red-400 dark:hover:bg-red-500/10"
                             title="Delete"
                           >
                             <Trash2 size={16} />
@@ -229,7 +229,7 @@ export const ReusableTable = <T extends any>({
                             {onEdit && (
                               <button
                                 onClick={() => onEdit(item)}
-                                className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+                                className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-500/10"
                                 title="Edit"
                               >
                                 <Edit3 size={18} />
@@ -238,7 +238,7 @@ export const ReusableTable = <T extends any>({
                             {onDelete && (
                               <button
                                 onClick={() => onDelete(item)}
-                                className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+                                className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-500/10"
                                 title="Delete"
                               >
                                 <Trash2 size={18} />

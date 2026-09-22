@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from datetime import datetime, date
 from .models import Invoice, InvoiceItem, InvoicePayment, ProjectAttachment
 from Project.models import Project
-from .models import Expense, ExpensePayment, OutgoingPayment
+from .models import Expense, ExpensePayment, OutgoingPayment, FinancialAuditLog
 from rest_framework.exceptions import ValidationError
 
 
@@ -821,36 +821,15 @@ class ExpensePaymentSerializer(serializers.ModelSerializer):
         return attrs
 
 
-# class ExpenseSerializer(serializers.ModelSerializer):
-#     total_paid = serializers.SerializerMethodField()
-#     balance_amount = serializers.SerializerMethodField()
-#     is_fully_paid = serializers.SerializerMethodField()
-#     payment_count = serializers.SerializerMethodField()
-#     payments = ExpensePaymentSerializer(many=True, read_only=True)
-
-#     class Meta:
-#         model = Expense
-#         fields = '__all__'
-#         read_only_fields = ('expense_no', 'created_by', 'created_at')
-
-#     def get_total_paid(self, obj):
-#         return obj.total_paid()
-
-#     def get_balance_amount(self, obj):
-#         return obj.balance_amount()
-
-#     def get_is_fully_paid(self, obj):
-#         return obj.is_fully_paid()
-
-#     def get_payment_count(self, obj):
-#         return obj.payments.count()
-
 class ExpenseSerializer(serializers.ModelSerializer):
     total_paid = serializers.SerializerMethodField()
     balance_amount = serializers.SerializerMethodField()
     is_fully_paid = serializers.SerializerMethodField()
     payment_count = serializers.SerializerMethodField()
     payments = ExpensePaymentSerializer(many=True, read_only=True)
+    freelancer_name = serializers.CharField(source='freelancer.full_name', read_only=True, default=None)
+    employee_name = serializers.CharField(source='employee.get_full_name', read_only=True, default=None)
+    vendor_name = serializers.CharField(source='vendor.name', read_only=True, default=None)
 
     class Meta:
         model = Expense
@@ -859,6 +838,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'expense_no',
             'created_by',
             'created_at',
+            # Derived purely from payments via update_payment_status() - never
+            # settable directly, or it could drift out of sync with them.
+            'status',
         )
 
     def get_total_paid(self, obj):
@@ -874,12 +856,29 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return obj.payments.count()
 
 
+class FinancialAuditLogSerializer(serializers.ModelSerializer):
+    """Read-only - entries are written internally by the views that perform
+    the actual mutation (see views._log_financial_audit), never via a
+    client-facing create/update path."""
 
-# class ExpensePaymentSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = ExpensePayment
-#         fields = '__all__'
-#         read_only_fields = ('expense', 'created_at')
+    entity_type_display = serializers.CharField(source="get_entity_type_display", read_only=True)
+    action_display = serializers.CharField(source="get_action_display", read_only=True)
+    performed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FinancialAuditLog
+        fields = (
+            "id", "entity_type", "entity_type_display", "entity_id", "project",
+            "action", "action_display", "field_name", "old_value", "new_value",
+            "performed_by_name", "created_at",
+        )
+        read_only_fields = fields
+
+    def get_performed_by_name(self, obj):
+        user = obj.performed_by
+        if not user:
+            return "System"
+        return getattr(user, "get_full_name", lambda: None)() or getattr(user, "username", None) or str(user)
 
 
 class ProjectExpenseListSerializer(serializers.ModelSerializer):

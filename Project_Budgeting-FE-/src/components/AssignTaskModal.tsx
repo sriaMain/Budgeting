@@ -184,23 +184,23 @@ export function AssignTaskModal({
         <div className="fixed inset-0 z-50 overflow-y-auto">
             {/* Backdrop */}
             <div
-                className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all"
+                className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50"
                 onClick={handleClose}
             />
 
             {/* Modal */}
             <div className="flex min-h-full items-center justify-center p-4">
                 <div
-                    className="relative bg-white rounded-xl shadow-2xl w-full max-w-md transform transition-all"
+                    className="relative bg-white rounded-xl shadow-2xl w-full max-w-md transform transition-all dark:bg-gray-900 dark:shadow-black/40"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {/* Header */}
-                    <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 rounded-t-xl">
-                        <h4 className="text-lg font-bold text-gray-900">Assign Task</h4>
+                    <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 rounded-t-xl dark:bg-gray-900 dark:border-gray-800">
+                        <h4 className="text-lg font-bold text-gray-900 dark:text-white">Assign Task</h4>
                         <button
                             onClick={handleClose}
                             disabled={isAssigning}
-                            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-300"
                             aria-label="Close modal"
                         >
                             <X size={24} />
@@ -210,13 +210,13 @@ export function AssignTaskModal({
                     {/* Content */}
                     <div className="p-6">
                         {/* Task Info */}
-                        <div className="mb-6 p-3 bg-blue-50 border border-blue-100 rounded-lg">
-                            <p className="text-xs text-blue-600 font-medium mb-1">Task</p>
-                            <p className="text-sm text-gray-900 font-semibold">{task.title}</p>
+                        <div className="mb-6 p-3 bg-blue-50 border border-blue-100 rounded-lg dark:bg-blue-500/10 dark:border-blue-500/20">
+                            <p className="text-xs text-blue-600 font-medium mb-1 dark:text-blue-400">Task</p>
+                            <p className="text-sm text-gray-900 font-semibold dark:text-gray-100">{task.title}</p>
                         </div>
 
                         {errors.general && (
-                            <div className="mb-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center">
+                            <div className="mb-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400">
                                 <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path>
                                 </svg>
@@ -227,13 +227,13 @@ export function AssignTaskModal({
                         <div className="space-y-5">
                             {/* Assign To Label */}
                             <div>
-                                <label className="block text-sm font-semibold text-gray-900 mb-4">
+                                <label className="block text-sm font-semibold text-gray-900 mb-4 dark:text-white">
                                     Assign to
                                 </label>
 
                                 {/* Service Type Selector */}
                                 <div className="space-y-2 mb-4">
-                                    <label className="block text-xs font-medium text-gray-700">
+                                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
                                         <span className="text-red-500 mr-1">*</span>Select Type
                                     </label>
                                     <div className="relative">
@@ -245,7 +245,7 @@ export function AssignTaskModal({
                                                 setSelectedUserId(null);
                                                 setErrors(prev => ({ ...prev, service: '', user: '' }));
                                             }}
-                                            className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white ${errors.service ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                                            className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.service ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'
                                                 }`}
                                             disabled={isLoadingServices}
                                         >
@@ -258,7 +258,7 @@ export function AssignTaskModal({
                                                 </option>
                                             ))}
                                         </select>
-                                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
                                     </div>
                                     {errors.service && (
                                         <p className="text-xs text-red-600 mt-1">{errors.service}</p>
@@ -266,7 +266,7 @@ export function AssignTaskModal({
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="block text-xs font-medium text-gray-700">
+                                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
                                         <span className="text-red-500 mr-1">*</span>Select User
                                     </label>
                                     <div className="relative">
@@ -277,7 +277,7 @@ export function AssignTaskModal({
                                                 setSelectedUserId(value);
                                                 setErrors(prev => ({ ...prev, user: '' }));
                                             }}
-                                            className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white ${errors.user ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                                            className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.user ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'
                                                 }`}
                                             disabled={!selectedService}
                                         >
@@ -296,7 +296,7 @@ export function AssignTaskModal({
                                                 </option>
                                             ))}
                                         </select>
-                                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
                                     </div>
                                     {errors.user && (
                                         <p className="text-xs text-red-600 mt-1">{errors.user}</p>
@@ -306,12 +306,12 @@ export function AssignTaskModal({
                         </div>
 
                         {/* Footer */}
-                        <div className="flex justify-end gap-3 pt-6 mt-6 border-t">
+                        <div className="flex justify-end gap-3 pt-6 mt-6 border-t dark:border-gray-800">
                             <button
                                 type="button"
                                 onClick={handleClose}
                                 disabled={isAssigning}
-                                className="px-6 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+                                className="px-6 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                             >
                                 Cancel
                             </button>

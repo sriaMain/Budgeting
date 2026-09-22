@@ -162,7 +162,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
         <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
             <div className="max-w-6xl mx-auto">
                 <div className="flex items-center justify-between mb-8">
-                    <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Profile</h1>
                     {!isEditing && (
                         <button
                             onClick={() => setIsEditing(true)}
@@ -173,11 +173,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                     )}
                 </div>
 
-                <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                <div className="bg-white rounded-lg shadow-md overflow-hidden dark:bg-gray-900">
                     {/* Profile Header */}
                     <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-8">
                         <div className="flex items-center gap-4">
-                            <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center overflow-hidden">
+                            <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center overflow-hidden dark:bg-gray-900">
                                 {formData.profile_picture ? (
                                     <img src={formData.profile_picture} alt="Profile" className="w-full h-full object-cover" />
                                 ) : (
@@ -206,7 +206,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                             type="text"
                                             value={formData.first_name}
                                             onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                                            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm"
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                                             placeholder="First Name"
                                         />
                                     </FormRow>
@@ -218,7 +218,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                             type="text"
                                             value={formData.last_name}
                                             onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                                            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm"
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                                             placeholder="Last Name"
                                         />
                                     </FormRow>
@@ -230,7 +230,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                             type="email"
                                             value={formData.email}
                                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm"
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                                             placeholder="E-mail"
                                         />
                                     </FormRow>
@@ -242,7 +242,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                             type="text"
                                             value={formData.position}
                                             onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-                                            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm"
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                                             placeholder="Position"
                                         />
                                     </FormRow>
@@ -254,7 +254,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                                 required
                                                 value={formData.module}
                                                 onChange={(e) => setFormData({ ...formData, module: e.target.value })}
-                                                className={`w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm bg-white cursor-pointer appearance-none ${!formData.module ? 'text-gray-400' : 'text-gray-900'}`}
+                                                className={`w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm bg-white cursor-pointer appearance-none dark:bg-gray-800 dark:border-gray-700 dark:focus:ring-violet-500 ${!formData.module ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}
                                             >
                                                 <option value="" disabled>Select Module</option>
                                                 {modules.map((mod: any) => (
@@ -263,7 +263,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                                     </option>
                                                 ))}
                                             </select>
-                                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500">
+                                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500 dark:text-gray-400">
                                                 <ChevronDown size={14} />
                                             </div>
                                         </div>
@@ -275,13 +275,13 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                             type="number"
                                             value={formData.charges_per_hour}
                                             onChange={(e) => setFormData({ ...formData, charges_per_hour: e.target.value })}
-                                            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm"
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
                                         />
                                     </FormRow>
 
                                     {/* Language Checkboxes */}
                                     <div className="pt-4">
-                                        <div className="text-sm font-bold text-gray-700 mb-2">Language</div>
+                                        <div className="text-sm font-bold text-gray-700 mb-2 dark:text-gray-300">Language</div>
                                         <div className="flex gap-6">
                                             {['English', 'German', 'Spanish'].map((lang) => (
                                                 <label key={lang} className="flex items-center gap-2 cursor-pointer">
@@ -289,9 +289,9 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                                         type="checkbox"
                                                         checked={formData.languages.includes(lang.toLowerCase())}
                                                         onChange={() => handleLanguageChange(lang.toLowerCase())}
-                                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
                                                     />
-                                                    <span className="text-sm text-gray-600">{lang}</span>
+                                                    <span className="text-sm text-gray-600 dark:text-gray-400">{lang}</span>
                                                 </label>
                                             ))}
                                         </div>
@@ -302,7 +302,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                 <div className="w-full lg:w-64 flex flex-col items-center">
                                     <div
                                         onClick={() => fileInputRef.current?.click()}
-                                        className="w-64 h-64 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 hover:border-blue-400 transition-all group overflow-hidden"
+                                        className="w-64 h-64 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 hover:border-blue-400 transition-all group overflow-hidden dark:border-gray-700 dark:hover:bg-gray-800"
                                     >
                                         {formData.profile_picture ? (
                                             <div className="relative w-full h-full">
@@ -313,11 +313,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                             </div>
                                         ) : (
                                             <>
-                                                <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center text-gray-400 mb-4">
+                                                <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center text-gray-400 mb-4 dark:bg-gray-800 dark:text-gray-500">
                                                     <User size={40} />
                                                 </div>
-                                                <p className="text-xs text-center text-gray-500 font-medium px-4">
-                                                    Drag a file or <span className="text-blue-600">browse</span> to upload
+                                                <p className="text-xs text-center text-gray-500 font-medium px-4 dark:text-gray-400">
+                                                    Drag a file or <span className="text-blue-600 dark:text-violet-400">browse</span> to upload
                                                 </p>
                                             </>
                                         )}
@@ -340,7 +340,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                                         setIsEditing(false);
                                         fetchUserProfile();
                                     }}
-                                    className="px-8 py-2.5 border border-gray-300 text-gray-700 font-bold rounded hover:bg-gray-50 transition-all"
+                                    className="px-8 py-2.5 border border-gray-300 text-gray-700 font-bold rounded hover:bg-gray-50 transition-all dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                                 >
                                     Cancel
                                 </button>
@@ -362,45 +362,45 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
                         <div className="p-6 space-y-6">
                             {/* Username */}
                             <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                                    <User size={20} className="text-blue-600" />
+                                <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 dark:bg-blue-500/15">
+                                    <User size={20} className="text-blue-600 dark:text-blue-300" />
                                 </div>
                                 <div className="flex-1">
-                                    <label className="text-sm font-medium text-gray-500">Name</label>
-                                    <p className="text-lg text-gray-900 mt-1">{formData.first_name} {formData.last_name}</p>
+                                    <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Name</label>
+                                    <p className="text-lg text-gray-900 mt-1 dark:text-white">{formData.first_name} {formData.last_name}</p>
                                 </div>
                             </div>
 
                             {/* Email */}
                             <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
-                                    <Mail size={20} className="text-green-600" />
+                                <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0 dark:bg-green-500/15">
+                                    <Mail size={20} className="text-green-600 dark:text-green-300" />
                                 </div>
                                 <div className="flex-1">
-                                    <label className="text-sm font-medium text-gray-500">Email</label>
-                                    <p className="text-lg text-gray-900 mt-1">{formData.email}</p>
+                                    <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Email</label>
+                                    <p className="text-lg text-gray-900 mt-1 dark:text-white">{formData.email}</p>
                                 </div>
                             </div>
 
                             {/* Position */}
                             <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
-                                    <Briefcase size={20} className="text-orange-600" />
+                                <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0 dark:bg-orange-500/15">
+                                    <Briefcase size={20} className="text-orange-600 dark:text-orange-300" />
                                 </div>
                                 <div className="flex-1">
-                                    <label className="text-sm font-medium text-gray-500">Position</label>
-                                    <p className="text-lg text-gray-900 mt-1">{formData.position || 'N/A'}</p>
+                                    <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Position</label>
+                                    <p className="text-lg text-gray-900 mt-1 dark:text-white">{formData.position || 'N/A'}</p>
                                 </div>
                             </div>
 
                             {/* Module */}
                             <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
-                                    <Briefcase size={20} className="text-indigo-600" />
+                                <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0 dark:bg-indigo-500/15">
+                                    <Briefcase size={20} className="text-indigo-600 dark:text-indigo-300" />
                                 </div>
                                 <div className="flex-1">
-                                    <label className="text-sm font-medium text-gray-500">Module</label>
-                                    <p className="text-lg text-gray-900 mt-1">
+                                    <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Module</label>
+                                    <p className="text-lg text-gray-900 mt-1 dark:text-white">
                                         {modules.find(m => String(m.id) === formData.module)?.product_service_name || 'N/A'}
                                     </p>
                                 </div>
@@ -408,12 +408,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userRole, currentPage, onNavi
 
                             {/* Role */}
                             <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
-                                    <Shield size={20} className="text-purple-600" />
+                                <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0 dark:bg-purple-500/15">
+                                    <Shield size={20} className="text-purple-600 dark:text-purple-300" />
                                 </div>
                                 <div className="flex-1">
-                                    <label className="text-sm font-medium text-gray-500">Role</label>
-                                    <p className="text-lg text-gray-900 mt-1 capitalize">{role || 'N/A'}</p>
+                                    <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Role</label>
+                                    <p className="text-lg text-gray-900 mt-1 capitalize dark:text-white">{role || 'N/A'}</p>
                                 </div>
                             </div>
                         </div>

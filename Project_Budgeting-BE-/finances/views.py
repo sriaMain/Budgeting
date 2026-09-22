@@ -14,12 +14,14 @@ from io import BytesIO
 from datetime import timedelta, datetime
 from decimal import Decimal
 
-from .models import Invoice, InvoiceItem, InvoicePayment, PurchaseOrder, Vendor, VendorBill, OutgoingPayment,Expense,ExpensePayment
+from .models import Invoice, InvoiceItem, InvoicePayment, PurchaseOrder, Vendor, VendorBill, OutgoingPayment,Expense,ExpensePayment, FinancialAuditLog
+from roles.permission import HasPermissionCode
 from .serializers import (
     InvoiceListSerializer, InvoiceDetailSerializer, InvoiceItemSerializer,
     InvoicePaymentSerializer,
     GenerateInvoiceSerializer, RecordPaymentSerializer,
-    SendInvoiceEmailSerializer, CancelInvoiceSerializer, InvoiceStatsSerializer, PurchaseOrderSerializer,ProjectAttachmentSerializer,ExpenseSerializer, ExpensePaymentSerializer,ProjectExpenseListSerializer
+    SendInvoiceEmailSerializer, CancelInvoiceSerializer, InvoiceStatsSerializer, PurchaseOrderSerializer,ProjectAttachmentSerializer,ExpenseSerializer, ExpensePaymentSerializer,ProjectExpenseListSerializer,
+    FinancialAuditLogSerializer,
 )
 from .services import InvoiceService
 from django.core.exceptions import ValidationError
@@ -49,6 +51,39 @@ from .serializers import (
 from product_group.models import Quote, QuoteItem   
 from accounts.models import Account,Vendor
 from .models import ProjectAttachment
+
+
+def _log_financial_audit(entity_type, entity_id, action, request, project=None, field_name="", old_value="", new_value=""):
+    """Section 25 audit trail - mirrors freelancer_onboarding's
+    _log_freelancer_audit(). Never pass a raw sensitive value in
+    old_value/new_value; callers should pass only amounts/statuses/
+    references, never full bank/payment details."""
+    user = getattr(request, "user", None)
+    FinancialAuditLog.objects.create(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        project=project,
+        action=action,
+        field_name=field_name,
+        old_value=str(old_value) if old_value is not None else "",
+        new_value=str(new_value) if new_value is not None else "",
+        performed_by=user if user and user.is_authenticated else None,
+    )
+
+
+class FinancialAuditLogListView(APIView):
+    """Section 25's financial activity log for one project - read-only,
+    entries are written internally by _log_financial_audit() at each
+    mutation point below."""
+
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    authentication_classes = [JWTAuthentication]
+    permission_code = "finances.audit_log.view"
+
+    def get(self, request, project_id):
+        project = get_object_or_404(Project, id=project_id)
+        logs = project.financial_audit_logs.all()
+        return Response(FinancialAuditLogSerializer(logs, many=True).data)
 
 
 class QuotationDetailView(APIView):
@@ -272,6 +307,11 @@ class GenerateInvoiceView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        _log_financial_audit(
+            "invoice", invoice.id, "created", request, project=invoice.project,
+            field_name="total_amount", new_value=invoice.total_amount,
+        )
+
         return Response(
             {
                 "message": f"Invoice {invoice.invoice_no} generated successfully",
@@ -329,6 +369,16 @@ class RecordPaymentView(APIView):
             invoice=invoice,
             created_by=request.user
         )
+
+        _log_financial_audit(
+            "payment", payment.id, "payment_recorded", request, project=invoice.project,
+            field_name="invoice", new_value=f"{payment.amount} against invoice {invoice.invoice_no}",
+        )
+        if invoice.status in ("Paid", "Partially Paid"):
+            _log_financial_audit(
+                "invoice", invoice.id, "status_changed", request, project=invoice.project,
+                field_name="status", new_value=invoice.status,
+            )
 
         return Response(
             {
@@ -1264,13 +1314,30 @@ class OutgoingPaymentCreateAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        payment = OutgoingPayment.objects.create(
-            vendor_bill=bill,
-            vendor=bill.vendor,
-            payment_date=payment_date,
-            amount=amount,
-            payment_method=payment_method,
-            reference_no=reference_no
+        if reference_no and OutgoingPayment.objects.filter(
+            vendor_bill=bill, reference_no=reference_no
+        ).exists():
+            return Response(
+                {"error": "A payment with this reference number already exists for this bill"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            payment = OutgoingPayment.objects.create(
+                vendor_bill=bill,
+                vendor=bill.vendor,
+                payment_date=payment_date,
+                amount=amount,
+                payment_method=payment_method,
+                reference_no=reference_no
+            )
+        except ValidationError as exc:
+            return Response({"error": exc.messages}, status=status.HTTP_400_BAD_REQUEST)
+
+        _log_financial_audit(
+            "payment", payment.id, "payment_recorded", request,
+            project=bill.purchase_order.project,
+            field_name="vendor_bill", new_value=f"{payment.amount} against bill {bill.bill_no}",
         )
 
         return Response(
@@ -1718,13 +1785,20 @@ class ExpenseAPIView(APIView):
     def post(self, request):
         serializer = ExpenseSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(created_by=request.user)
+        expense = serializer.save(created_by=request.user)
+        _log_financial_audit(
+            "expense", expense.id, "created", request, project=expense.project,
+            field_name="amount", new_value=expense.amount,
+        )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     def put(self, request, pk):
         expense = get_object_or_404(Expense, pk=pk)
         serializer = ExpenseSerializer(expense, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        _log_financial_audit(
+            "expense", expense.id, "updated", request, project=expense.project,
+        )
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
@@ -1762,7 +1836,21 @@ class ExpensePaymentAPIView(APIView):
         )
 
         serializer.is_valid(raise_exception=True)
-        serializer.save(expense=expense)
+
+        try:
+            payment = serializer.save(expense=expense)
+        except ValidationError as e:
+            raise DRFValidationError({"error": e.messages})
+
+        _log_financial_audit(
+            "payment", payment.id, "payment_recorded", request, project=expense.project,
+            field_name="expense", new_value=f"{payment.amount} against expense {expense.expense_no}",
+        )
+        if expense.is_fully_paid():
+            _log_financial_audit(
+                "expense", expense.id, "status_changed", request, project=expense.project,
+                field_name="status", new_value="paid",
+            )
 
         return Response(
             {

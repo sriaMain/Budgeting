@@ -92,7 +92,7 @@ export const SendEmployeeOnboardingModal: React.FC<SendEmployeeOnboardingModalPr
       }
     >
       <div className="space-y-1">
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
           Enter {employeeName}'s employment details, then send a secure link so they can complete the rest of
           their onboarding themselves.
         </p>
@@ -119,12 +119,12 @@ export const SendEmployeeOnboardingModal: React.FC<SendEmployeeOnboardingModalPr
           />
           <InputField label="Work Location *" value={values.work_location} onChange={set('work_location')} error={errors.work_location} />
         </div>
-        <label className="flex items-center gap-2 mt-2 mb-4 text-sm text-gray-700">
+        <label className="flex items-center gap-2 mt-2 mb-4 text-sm text-gray-700 dark:text-gray-300">
           <input
             type="checkbox"
             checked={!!values.pf_applicable}
             onChange={set('pf_applicable')}
-            className="rounded border-gray-300"
+            className="rounded border-gray-300 dark:border-gray-700 dark:bg-gray-800"
           />
           PF Applicable (makes UAN mandatory for the employee)
         </label>

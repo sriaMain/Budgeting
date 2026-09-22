@@ -23,10 +23,10 @@ interface TaskBoardViewProps {
 const COLUMNS: BoardTask['status'][] = ['Planned', 'In Progress', 'Completed', 'Needs Attention'];
 
 const COLUMN_COLORS: Record<BoardTask['status'], string> = {
-    'Planned': 'bg-purple-50 border-purple-200',
-    'In Progress': 'bg-green-50 border-green-200',
-    'Completed': 'bg-blue-50 border-blue-200',
-    'Needs Attention': 'bg-red-50 border-red-200',
+    'Planned': 'bg-purple-50 border-purple-200 dark:bg-purple-500/10 dark:border-purple-500/30',
+    'In Progress': 'bg-green-50 border-green-200 dark:bg-green-500/10 dark:border-green-500/30',
+    'Completed': 'bg-blue-50 border-blue-200 dark:bg-blue-500/10 dark:border-blue-500/30',
+    'Needs Attention': 'bg-red-50 border-red-200 dark:bg-red-500/10 dark:border-red-500/30',
 };
 
 const BADGE_COLORS: Record<BoardTask['status'], string> = {
@@ -44,21 +44,21 @@ const TaskCard: React.FC<{ task: BoardTask; index: number; onClick?: (task: Boar
                 {...provided.draggableProps}
                 {...provided.dragHandleProps}
                 onClick={() => onClick?.(task)}
-                className={`bg-white rounded-lg p-3 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer ${snapshot.isDragging ? 'shadow-lg ring-2 ring-blue-500 ring-opacity-50' : ''
+                className={`bg-white rounded-lg p-3 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer dark:bg-gray-900 dark:border-gray-800 dark:hover:shadow-black/40 ${snapshot.isDragging ? 'shadow-lg ring-2 ring-blue-500 ring-opacity-50' : ''
                     }`}
             >
                 <div className="flex items-start justify-between gap-2 mb-2">
-                    <p className="text-sm font-medium text-gray-900 line-clamp-2">{task.title}</p>
+                    <p className="text-sm font-medium text-gray-900 line-clamp-2 dark:text-white">{task.title}</p>
                     <div
-                        className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-medium shrink-0 ${task.assignee !== 'Unassigned' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400 border border-dashed border-gray-300'
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-medium shrink-0 ${task.assignee !== 'Unassigned' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400 border border-dashed border-gray-300 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700'
                             }`}
                         title={task.assignee}
                     >
                         {task.assigneeAvatar}
                     </div>
                 </div>
-                <p className="text-xs text-gray-500 mb-2">{task.activityType}</p>
-                <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
+                <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">{task.activityType}</p>
+                <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100 dark:text-gray-400 dark:border-gray-800">
                     <span>{task.consumedHours} / {task.allocatedHours}</span>
                     <span>{task.dueDate}</span>
                 </div>
@@ -76,7 +76,7 @@ export const TaskBoardView: React.FC<TaskBoardViewProps> = ({ tasks, onDragEnd, 
                     return (
                         <div key={column} className="flex-1 min-w-[260px]">
                             <div className={`${COLUMN_COLORS[column]} rounded-t-lg border-2 border-b-0 px-4 py-3 flex items-center justify-between`}>
-                                <h3 className="font-semibold text-gray-900 text-sm">{column}</h3>
+                                <h3 className="font-semibold text-gray-900 text-sm dark:text-white">{column}</h3>
                                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${BADGE_COLORS[column]}`}>
                                     {columnTasks.length}
                                 </span>
@@ -94,7 +94,7 @@ export const TaskBoardView: React.FC<TaskBoardViewProps> = ({ tasks, onDragEnd, 
                                                 <TaskCard key={task.id} task={task} index={index} onClick={onTaskClick} />
                                             ))
                                         ) : (
-                                            <div className="text-center text-gray-400 text-xs py-8">No tasks</div>
+                                            <div className="text-center text-gray-400 text-xs py-8 dark:text-gray-500">No tasks</div>
                                         )}
                                         {provided.placeholder}
                                     </div>
