@@ -290,7 +290,7 @@ SIMPLE_JWT = {
     'USER_ID_CLAIM': 'user_id',
 }
 
-FRONTEND_BASE_URL = "http://localhost:5173"
+FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "http://localhost:5173").rstrip("/")
 
 # Public URL the Vendor Onboarding portal is reachable at - used only to build
 # the secure onboarding link sent in the invite/request-changes emails. Never
