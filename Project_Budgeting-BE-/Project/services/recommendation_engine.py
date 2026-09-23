@@ -10,7 +10,7 @@ class UserRecommendationEngine:
         self.project = project
         self.quote = project.quote
 
-    # ------------------------------
+    # ------------------------------free
     # Get product groups from quote
     # ------------------------------
     def _get_product_groups(self):
