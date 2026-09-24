@@ -2,7 +2,9 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
 from django.contrib.auth.hashers import make_password
-from django.core.mail import send_mail
+from django.core.mail import send_mail, EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
@@ -14,8 +16,10 @@ from rest_framework.validators import UniqueValidator
 from roles.models import Role
 from product_group.models import Product_Services
 import uuid
+import logging
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 class LoginSerializer(serializers.Serializer):
     identifier = serializers.CharField(required=True)
@@ -110,10 +114,18 @@ class OTPRequestSerializer(serializers.Serializer):
         minutes = getattr(settings, "PASSWORD_RESET_OTP_EXPIRY_MINUTES", 2)
         msg = f"Your OTP is {raw_code}. Expires in {minutes} minutes."
         from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None)
-        send_mail(subject, msg, from_email, [self.validated_data["email"]], fail_silently=False)
+        try:
+            send_mail(subject, msg, from_email, [self.validated_data["email"]], fail_silently=False)
+        except Exception as mail_err:
+            # Sending failed server-side (e.g. bad SMTP credentials) - don't
+            # hold the caller to the 60s rate limit for an OTP they never
+            # received, and surface a clean error instead of a raw 500.
+            cache.delete(rate_key)
+            logger.warning(f"Failed to send OTP email to {self.validated_data['email']}: {mail_err}")
+            raise serializers.ValidationError({"error": "Failed to send OTP email. Please try again shortly or contact support."})
         ist = pytz.timezone('Asia/Kolkata')
         otp_sent_at_ist = otp_obj.created_at.astimezone(ist)
-        
+
         return {
             "sent": True,
             "otp_sent_at": otp_sent_at_ist.isoformat()
@@ -249,11 +261,15 @@ class ResendOTPSerializer(serializers.Serializer):
         minutes = getattr(settings, "PASSWORD_RESET_OTP_EXPIRY_MINUTES", 2)
         msg = f"Your OTP is {raw_code}. Expires in {minutes} minutes."
         from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None)
-        send_mail(subject, msg, from_email, [self.validated_data["gmail"]], fail_silently=False)
-        
+        try:
+            send_mail(subject, msg, from_email, [self.validated_data["gmail"]], fail_silently=False)
+        except Exception as mail_err:
+            logger.warning(f"Failed to send OTP resend email to {self.validated_data['gmail']}: {mail_err}")
+            raise serializers.ValidationError({"error": "Failed to send OTP email. Please try again shortly or contact support."})
+
         ist = pytz.timezone('Asia/Kolkata')
         otp_sent_at_ist = otp_obj.created_at.astimezone(ist)
-        
+
         return {
             "resent": True,
             "otp_sent_at": otp_sent_at_ist.isoformat()
@@ -325,14 +341,15 @@ class UserDetailSerializer(serializers.ModelSerializer):
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
-    # Only email is required - a bare invite (just an email address) defaults
-    # to the Employee role in create() below, and the employee fills in
-    # everything else (name, position, department, ...) themselves via the
-    # self-onboarding link, the same way vendors do.
     roles = serializers.PrimaryKeyRelatedField(
-        queryset=Role.objects.all(),
+        queryset=Role.objects.all(),   # allow lookup
         many=True,
-        required=False,
+        required=True,
+        allow_empty=False,
+        error_messages={
+            'required': 'The roles field is required.',
+            'allow_empty': 'At least one role must be selected.',
+        }
     )
 
     email = serializers.EmailField(
@@ -345,21 +362,25 @@ class UserCreateSerializer(serializers.ModelSerializer):
         ]
     )
 
-    first_name = serializers.CharField(required=False, allow_blank=True)
-    position = serializers.CharField(required=False, allow_blank=True)
+    first_name = serializers.CharField(required=True)
+    position = serializers.CharField(required=True)
 
     modules = serializers.PrimaryKeyRelatedField(
         queryset=Product_Services.objects.all(),
         many=True,
-        required=False,
+        required=True,
+        allow_empty=False,
+        error_messages={
+            "required": "At least one module must be selected.",
+            "allow_empty": "At least one module must be selected.",
+        }
     )
 
 
     charges_per_hour = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
-        required=False,
-        allow_null=True,
+        required=True
     )
     currency = serializers.ChoiceField(
         choices=[("INR", "INR"), ("USD", "USD"), ("EUR", "EUR")],
@@ -396,7 +417,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return roles
 
     def validate_charges_per_hour(self, value):
-        if value is not None and value < 0:
+        if value < 0:
             raise serializers.ValidationError(
                 "Charges per hour must be positive."
             )
@@ -404,11 +425,10 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         import random
-        import re
         import string
 
-        roles = validated_data.pop("roles", [])
-        modules = validated_data.pop("modules", [])
+        roles = validated_data.pop("roles")
+        modules = validated_data.pop("modules")
         email = validated_data.pop("email").lower().strip()
 
         # 🔥 create username from first + last name
@@ -416,10 +436,6 @@ class UserCreateSerializer(serializers.ModelSerializer):
         last_name = validated_data.get("last_name", "").strip().lower()
 
         base_username = f"{first_name}{last_name}".replace(" ", "")
-        if not base_username:
-            # Bare email-only invite - no name to build a username from yet,
-            # so fall back to the email's local part.
-            base_username = re.sub(r"[^a-z0-9]", "", email.split("@")[0]) or "user"
         username = base_username
 
         # Ensure username uniqueness (VERY IMPORTANT)
@@ -440,13 +456,6 @@ class UserCreateSerializer(serializers.ModelSerializer):
             **validated_data
         )
 
-        # A bare invite (no role chosen) always defaults to Employee - the
-        # quick "just an email" self-onboarding flow never asks for a role.
-        if not roles:
-            default_role = Role.objects.filter(role_name__iexact="employee").first()
-            if default_role:
-                roles = [default_role]
-
         # Assign ManyToMany fields
         user.roles.set(roles)
         user.modules.set(modules)
@@ -455,19 +464,40 @@ class UserCreateSerializer(serializers.ModelSerializer):
         user.is_staff = any(role.role_name == "Admin" for role in roles)
         user.save(update_fields=["is_staff"])
 
-        # Send Email
-        send_mail(
-            subject="Your Account Registration",
-            message=(
-                f"Hello {user.get_full_name() or user.username},\n\n"
-                f"Your account has been created.\n"
-                f"Password: {password}\n\n"
-                f"Please change your password after logging in."
-            ),
+        # Send Email - professional HTML welcome email with the production
+        # login URL (never localhost) built from EMPLOYEE_PORTAL_URL, the
+        # same env var already used for Employee Onboarding invite links.
+        context = {
+            "company_name": settings.COMPANY_NAME,
+            "company_logo": settings.COMPANY_LOGO_URL,
+            "company_email": settings.COMPANY_EMAIL,
+            "company_phone": settings.COMPANY_PHONE,
+            "company_website": settings.COMPANY_WEBSITE,
+            "employee_name": user.get_full_name() or user.username,
+            "employee_id": user.id,
+            "position": user.position,
+            "department": "",
+            "username_or_email": user.email or user.username,
+            "temporary_password": password,
+            "production_login_url": settings.EMPLOYEE_PORTAL_URL,
+        }
+        html_message = render_to_string("emails/accounts/employee_account_created.html", context)
+        plain_message = strip_tags(html_message)
+        email = EmailMultiAlternatives(
+            subject=f"Welcome to {settings.COMPANY_NAME} – Your Employee Account Details",
+            body=plain_message,
             from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False
+            to=[user.email],
         )
+        email.attach_alternative(html_message, "text/html")
+        try:
+            email.send(fail_silently=False)
+        except Exception as mail_err:
+            # The account is already created at this point; a mail-server
+            # failure (e.g. bad SMTP credentials) shouldn't turn a
+            # successful creation into a 500 with an orphaned, credential-less
+            # account. Surface it as a warning instead of raising.
+            logger.warning(f"Failed to send welcome email to {user.email}: {mail_err}")
 
         return user
 

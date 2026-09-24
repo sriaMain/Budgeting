@@ -4,9 +4,11 @@ from rest_framework import status, permissions
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from urllib3 import request
-from .models import Project, ProjectBudget, Task, Timesheet, TimesheetEntry, TaskTimerLog, TaskExtraHoursRequest
-from .serializers import (ProjectCreateSerializer, ProjectBudgetSerializer, TaskSerializer,
- TimesheetEntrySerializer, TimesheetSerializer, TaskTimerLogSerializer, 
+from .models import (Project, ProjectBudget, BudgetLine, Milestone, ResourceAssignment, Task, Timesheet,
+                      TimesheetEntry, TaskTimerLog, TaskExtraHoursRequest)
+from .serializers import (ProjectCreateSerializer, ProjectBudgetSerializer, BudgetLineSerializer,
+ MilestoneSerializer, ResourceAssignmentSerializer, TaskSerializer,
+ TimesheetEntrySerializer, TimesheetSerializer, TaskTimerLogSerializer,
  TaskExtraHoursRequestSerializer, TaskExtraHoursReviewSerializer, ProjectListSerializer)
 from accounts.models import Account
 from django.utils import timezone
@@ -16,6 +18,7 @@ from django.db.models import Sum
 from django.db.models import F
 from django.shortcuts import get_object_or_404
 from .tasks import send_task_assignment_email
+from core.notifications import notify
 from .utils.timer import format_seconds
 from django.db.models import Q
 from datetime import timedelta, datetime
@@ -297,6 +300,84 @@ class ProjectBudgetCRUDAPIView(APIView):
         )
 
 
+class ProjectManagerOptionsAPIView(APIView):
+    """Employees eligible to be assigned as a project's Project Manager -
+    matched on their job title/designation (Account.position), which is
+    what's actually populated for people today; also matches the
+    'Project Manager' RBAC role for anyone set up that way instead."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        accounts = (
+            Account.objects.filter(
+                Q(position__iexact="Project Manager") | Q(roles__role_name="Project Manager"),
+                is_active=True,
+            )
+            .distinct()
+            .order_by("first_name", "last_name")
+        )
+        data = [
+            {
+                "id": account.id,
+                "name": account.display_name,
+                "designation": account.position,
+            }
+            for account in accounts
+        ]
+        return Response(data)
+
+
+class ProjectPOCOptionsAPIView(APIView):
+    """Combined list of possible Points of Contact for a project - active
+    employees, approved vendors, and freelancers who have finished (or been
+    manually marked ready in) the Freelancer Onboarding module. Freelancers
+    are their own model now (freelancer_onboarding.Freelancer) - no longer a
+    Vendor row with vendor_type='freelancer'."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from accounts.models import Vendor
+        from freelancer_onboarding.models import Freelancer
+
+        options = []
+
+        employees = (
+            Account.objects.filter(is_active=True)
+            .prefetch_related("modules")
+            .order_by("first_name", "last_name")
+        )
+        for account in employees:
+            modules = ", ".join(m.product_service_name for m in account.modules.all())
+            options.append({
+                "id": account.id,
+                "type": "employee",
+                "name": account.display_name,
+                "subtitle": modules,
+            })
+
+        vendors = Vendor.objects.filter(status="approved").order_by("name")
+        for vendor in vendors:
+            options.append({
+                "id": vendor.id,
+                "type": "vendor",
+                "name": vendor.name,
+                "subtitle": vendor.get_vendor_type_display(),
+            })
+
+        freelancers = Freelancer.objects.filter(status__in=["completed", "active"]).order_by("full_name")
+        for freelancer in freelancers:
+            options.append({
+                "id": freelancer.id,
+                "type": "freelancer",
+                "name": freelancer.full_name,
+                "subtitle": freelancer.professional_title or "Freelancer",
+            })
+
+        return Response(options)
+
+
 class ProjectBudgetAPIView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -367,7 +448,601 @@ class ProjectBudgetAPIView(APIView):
             status=status.HTTP_204_NO_CONTENT
         )
 
-from django.shortcuts import get_object_or_404
+
+class BudgetLineListCreateAPIView(APIView):
+    """
+    GL-Account-tagged budget lines (Description / GL Account / Planned
+    Amount) that make up a single project's budget.
+
+    GET  /projects/<project_no>/budget/lines/  -> list this project's lines
+    POST /projects/<project_no>/budget/lines/  -> add a new line
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        project = get_object_or_404(Project, project_no=project_no)
+        budget = getattr(project, 'budget', None)
+        if budget is None:
+            return Response([], status=status.HTTP_200_OK)
+
+        lines = budget.lines.select_related('gl_account').all()
+        return Response(
+            BudgetLineSerializer(lines, many=True).data,
+            status=status.HTTP_200_OK
+        )
+
+    def post(self, request, project_no):
+        project = get_object_or_404(Project, project_no=project_no)
+        # Same get_or_create behaviour as ProjectBudgetAPIView.post, so a
+        # budget line can be added even before a full budget has been saved.
+        budget, _ = ProjectBudget.objects.get_or_create(project=project)
+
+        serializer = BudgetLineSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        line = serializer.save(budget=budget)
+
+        return Response(
+            BudgetLineSerializer(line).data,
+            status=status.HTTP_201_CREATED
+        )
+
+
+class BudgetLineDetailAPIView(APIView):
+    """Retrieve / update / delete a single budget line under a project."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def _get_line(self, project_no, line_id):
+        return get_object_or_404(
+            BudgetLine, id=line_id, budget__project__project_no=project_no
+        )
+
+    def get(self, request, project_no, line_id):
+        line = self._get_line(project_no, line_id)
+        return Response(BudgetLineSerializer(line).data, status=status.HTTP_200_OK)
+
+    def put(self, request, project_no, line_id):
+        line = self._get_line(project_no, line_id)
+        serializer = BudgetLineSerializer(line, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        line = serializer.save()
+        return Response(BudgetLineSerializer(line).data, status=status.HTTP_200_OK)
+
+    def patch(self, request, project_no, line_id):
+        return self.put(request, project_no, line_id)
+
+    def delete(self, request, project_no, line_id):
+        line = self._get_line(project_no, line_id)
+        line.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class BudgetLineSummaryAPIView(APIView):
+    """
+    Budget-vs-Actual rolled up by GL Account, for the Budget Summary screen
+    (grouping/filtering budget lines by GL Account across one or all
+    projects), so Finance can see, per GL Account: planned, actual,
+    remaining, variance and whether it's over budget.
+
+    Query params (all optional):
+      project_no=<id>     restrict to a single project
+      gl_account=<id>     restrict to a single GL Account
+      over_budget=true    only GL Accounts where actual > planned
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        lines = BudgetLine.objects.select_related('gl_account', 'budget__project')
+
+        project_no = request.query_params.get('project_no')
+        if project_no:
+            lines = lines.filter(budget__project__project_no=project_no)
+
+        gl_account_id = request.query_params.get('gl_account')
+        if gl_account_id:
+            lines = lines.filter(gl_account_id=gl_account_id)
+
+        by_account = {}
+        for line in lines:
+            acc = line.gl_account
+            entry = by_account.setdefault(acc.id, {
+                "gl_account": acc.id,
+                "gl_account_code": acc.code,
+                "gl_account_name": acc.name,
+                "gl_account_type": acc.account_type,
+                "planned_amount": Decimal("0.00"),
+                "actual_amount": Decimal("0.00"),
+            })
+            entry["planned_amount"] += line.planned_amount or Decimal("0.00")
+            entry["actual_amount"] += line.actual_amount
+
+        over_budget_only = str(request.query_params.get('over_budget', '')).lower() == 'true'
+
+        results = []
+        for entry in by_account.values():
+            entry["remaining_amount"] = entry["planned_amount"] - entry["actual_amount"]
+            entry["variance"] = entry["planned_amount"] - entry["actual_amount"]
+            entry["is_over_budget"] = entry["actual_amount"] > entry["planned_amount"]
+            if over_budget_only and not entry["is_over_budget"]:
+                continue
+            results.append(entry)
+
+        results.sort(key=lambda r: r["gl_account_code"])
+        return Response(results, status=status.HTTP_200_OK)
+
+
+class MilestoneListCreateAPIView(APIView):
+    """
+    Milestones (phases) of a Fixed Budget / Milestone-Based project.
+    GET  /projects/<project_no>/milestones/  -> list this project's milestones
+    POST /projects/<project_no>/milestones/  -> add a new milestone
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        project = get_object_or_404(Project, project_no=project_no)
+        milestones = project.milestones.filter(is_active=True)
+        return Response(
+            MilestoneSerializer(milestones, many=True).data,
+            status=status.HTTP_200_OK
+        )
+
+    def post(self, request, project_no):
+        project = get_object_or_404(Project, project_no=project_no)
+        serializer = MilestoneSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        milestone = serializer.save(project=project, created_by=request.user, updated_by=request.user)
+        return Response(MilestoneSerializer(milestone).data, status=status.HTTP_201_CREATED)
+
+
+class MilestoneDetailAPIView(APIView):
+    """Retrieve / update / archive a single milestone under a project."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def _get_milestone(self, project_no, milestone_id):
+        return get_object_or_404(Milestone, id=milestone_id, project__project_no=project_no)
+
+    def get(self, request, project_no, milestone_id):
+        milestone = self._get_milestone(project_no, milestone_id)
+        return Response(MilestoneSerializer(milestone).data, status=status.HTTP_200_OK)
+
+    def put(self, request, project_no, milestone_id):
+        milestone = self._get_milestone(project_no, milestone_id)
+        serializer = MilestoneSerializer(milestone, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        milestone = serializer.save(updated_by=request.user)
+        return Response(MilestoneSerializer(milestone).data, status=status.HTTP_200_OK)
+
+    def patch(self, request, project_no, milestone_id):
+        return self.put(request, project_no, milestone_id)
+
+    def delete(self, request, project_no, milestone_id):
+        # Section 12: archive (soft delete) rather than hard-delete a
+        # financial structure that may already have invoices/expenses
+        # linked to it.
+        milestone = self._get_milestone(project_no, milestone_id)
+        milestone.is_active = False
+        milestone.updated_by = request.user
+        milestone.save(update_fields=['is_active', 'updated_by', 'updated_at'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MilestoneCreateInvoiceAPIView(APIView):
+    """
+    Milestone billing (Section: Milestone Billing). Creates a Draft invoice
+    for the milestone's billing amount (or an explicit partial amount),
+    reusing the existing Invoice/InvoiceItem infrastructure rather than a
+    separate billing system - the invoice's own Draft -> Sent -> Partially
+    Paid -> Paid -> Overdue lifecycle IS the milestone's billing/payment
+    status (see Milestone.billing_status/payment_status).
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request, project_no, milestone_id):
+        milestone = get_object_or_404(Milestone, id=milestone_id, project__project_no=project_no)
+
+        if milestone.status == 'cancelled':
+            return Response(
+                {"error": "Cannot bill a cancelled milestone."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        project = milestone.project
+        if not project.client_id:
+            return Response(
+                {"error": "Project has no client to bill."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        raw_amount = request.data.get('amount')
+        try:
+            amount = Decimal(str(raw_amount)) if raw_amount not in (None, '') else milestone.billing_amount
+        except InvalidOperation:
+            return Response({"error": "Invalid amount."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if amount <= 0:
+            return Response(
+                {"error": "Invoice amount must be greater than 0."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Billing amount cannot exceed the milestone's billing amount.
+        if milestone.billing_amount and (milestone.billed_amount + amount) > milestone.billing_amount:
+            return Response({
+                "error": (
+                    f"Invoice amount would bring total billed "
+                    f"({milestone.billed_amount + amount}) above this milestone's "
+                    f"billing amount ({milestone.billing_amount})."
+                )
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            due_days = int(request.data.get('due_days', 30))
+        except (TypeError, ValueError):
+            due_days = 30
+
+        from finances.models import Invoice, InvoiceItem
+        from finances.services import InvoiceService
+        from finances.serializers import InvoiceListSerializer
+
+        invoice = Invoice.objects.create(
+            invoice_no=InvoiceService.generate_invoice_number(),
+            quote=None,
+            client=project.client,
+            project=project,
+            milestone=milestone,
+            status='Draft',
+            issue_date=timezone.now().date(),
+            due_date=timezone.now().date() + timedelta(days=due_days),
+            created_by=request.user,
+            updated_by=request.user,
+        )
+        InvoiceItem.objects.create(
+            invoice=invoice,
+            product_service=None,
+            description=f"Milestone billing: {milestone.name}",
+            quantity=Decimal('1'),
+            unit='Milestone',
+            price_per_unit=amount,
+        )
+        invoice.calculate_totals()
+        invoice.save(update_fields=['sub_total', 'tax_amount', 'total_amount', 'paid_amount', 'balance_amount'])
+
+        return Response(InvoiceListSerializer(invoice).data, status=status.HTTP_201_CREATED)
+
+
+class ResourceAssignmentListCreateAPIView(APIView):
+    """
+    Resources staffed on a Time & Material project.
+    GET  /projects/<project_no>/resources/  -> list this project's assignments
+    POST /projects/<project_no>/resources/  -> add a new assignment
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        project = get_object_or_404(Project, project_no=project_no)
+        assignments = project.resource_assignments.filter(is_active=True)
+        return Response(
+            ResourceAssignmentSerializer(assignments, many=True).data,
+            status=status.HTTP_200_OK
+        )
+
+    def post(self, request, project_no):
+        project = get_object_or_404(Project, project_no=project_no)
+        serializer = ResourceAssignmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        assignment = serializer.save(project=project, created_by=request.user, updated_by=request.user)
+        return Response(ResourceAssignmentSerializer(assignment).data, status=status.HTTP_201_CREATED)
+
+
+class ResourceAssignmentDetailAPIView(APIView):
+    """Retrieve / update / archive a single resource assignment."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def _get_assignment(self, project_no, assignment_id):
+        return get_object_or_404(
+            ResourceAssignment, id=assignment_id, project__project_no=project_no
+        )
+
+    def get(self, request, project_no, assignment_id):
+        assignment = self._get_assignment(project_no, assignment_id)
+        return Response(ResourceAssignmentSerializer(assignment).data, status=status.HTTP_200_OK)
+
+    def put(self, request, project_no, assignment_id):
+        assignment = self._get_assignment(project_no, assignment_id)
+        serializer = ResourceAssignmentSerializer(assignment, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        assignment = serializer.save(updated_by=request.user)
+        return Response(ResourceAssignmentSerializer(assignment).data, status=status.HTTP_200_OK)
+
+    def patch(self, request, project_no, assignment_id):
+        return self.put(request, project_no, assignment_id)
+
+    def delete(self, request, project_no, assignment_id):
+        assignment = self._get_assignment(project_no, assignment_id)
+        assignment.is_active = False
+        assignment.updated_by = request.user
+        assignment.save(update_fields=['is_active', 'updated_by', 'updated_at'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProjectGenerateTMInvoiceAPIView(APIView):
+    """
+    Time & Material period billing (Section: T&M Financial Flow). Creates a
+    Draft invoice for one billing period, reusing the same Invoice
+    infrastructure as milestone billing (see MilestoneCreateInvoiceAPIView).
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request, project_no):
+        project = get_object_or_404(Project, project_no=project_no)
+
+        if project.engagement_type != 'time_and_material':
+            return Response(
+                {"error": "This project is not Time & Material."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not project.client_id:
+            return Response(
+                {"error": "Project has no client to bill."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        raw_amount = request.data.get('amount')
+        try:
+            amount = Decimal(str(raw_amount)) if raw_amount not in (None, '') else (project.monthly_billing_amount or Decimal("0.00"))
+        except InvalidOperation:
+            return Response({"error": "Invalid amount."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if amount <= 0:
+            return Response(
+                {"error": "Invoice amount must be greater than 0."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        period_start = request.data.get('period_start') or None
+        period_end = request.data.get('period_end') or None
+
+        try:
+            due_days = int(request.data.get('due_days', 30))
+        except (TypeError, ValueError):
+            due_days = 30
+
+        from finances.models import Invoice, InvoiceItem
+        from finances.services import InvoiceService
+        from finances.serializers import InvoiceListSerializer
+
+        invoice = Invoice.objects.create(
+            invoice_no=InvoiceService.generate_invoice_number(),
+            quote=None,
+            client=project.client,
+            project=project,
+            billing_period_start=period_start,
+            billing_period_end=period_end,
+            status='Draft',
+            issue_date=timezone.now().date(),
+            due_date=timezone.now().date() + timedelta(days=due_days),
+            created_by=request.user,
+            updated_by=request.user,
+        )
+        label = "T&M billing"
+        if period_start and period_end:
+            label += f" ({period_start} to {period_end})"
+        InvoiceItem.objects.create(
+            invoice=invoice,
+            product_service=None,
+            description=label,
+            quantity=Decimal('1'),
+            unit='Period',
+            price_per_unit=amount,
+        )
+        invoice.calculate_totals()
+        invoice.save(update_fields=['sub_total', 'tax_amount', 'total_amount', 'paid_amount', 'balance_amount'])
+
+        return Response(InvoiceListSerializer(invoice).data, status=status.HTTP_201_CREATED)
+
+
+class ProjectFinancialSummaryAPIView(APIView):
+    """
+    Type-aware financial summary (Section 5/8): one shape for Fixed Budget
+    projects, a different shape for Time & Material - the two engagement
+    types share the same underlying Invoice/InvoicePayment/Expense/GLAccount
+    records (Section 13), this endpoint just rolls them up differently.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    # Expense categories that represent a resource's cost (freelancer or
+    # employee) rather than a miscellaneous project cost. Their amount is
+    # already counted once via the resource-cost figure below (from active
+    # FreelancerProjectAssignment/ResourceAssignment rows), so they're
+    # excluded from the "expenses" side of the total to avoid double-counting
+    # the same person's cost twice (Section 11).
+    RESOURCE_COST_CATEGORIES = {'freelancer', 'employee_cost'}
+
+    def get(self, request, project_no):
+        project = get_object_or_404(Project, project_no=project_no)
+
+        if project.engagement_type == 'time_and_material':
+            return Response(self._tm_summary(project), status=status.HTTP_200_OK)
+        return Response(self._fixed_summary(project), status=status.HTTP_200_OK)
+
+    def _cost_budget_for_project(self, project):
+        """Tax AND profit excluded - see ProjectBudget.cost_budget."""
+        pb = getattr(project, 'budget', None)
+        return pb.cost_budget if pb else Decimal("0.00")
+
+    def _freelancer_assignment_cost(self, project):
+        """Freelancer resource cost (Section 3): Cost Rate x Planned Units,
+        summed across the project's active freelancer_onboarding assignments
+        - not from Expense rows, so it's counted once even if the same
+        freelancer's actual payment is *also* logged as an Expense
+        (category='freelancer') for GL/budget tracking."""
+        assignments = project.freelancer_assignments.filter(status='active')
+        return sum(
+            (a.planned_freelancer_cost or Decimal("0.00") for a in assignments),
+            Decimal("0.00"),
+        )
+
+    def _outgoing_payments(self, project):
+        """Actual money paid out for this project so far - vendor bill
+        payments plus expense payments (Section 5/13). Distinct from
+        actual_cost/total_cost, which is obligation-based, not cash-based."""
+        from finances.models import ExpensePayment, OutgoingPayment
+        expense_paid = ExpensePayment.objects.filter(expense__project=project) \
+            .aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
+        vendor_paid = OutgoingPayment.objects.filter(vendor_bill__purchase_order__project=project) \
+            .aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
+        return expense_paid + vendor_paid
+
+    def _cost_breakdown(self, expense_queryset, resource_cost, employee_cost, freelancer_cost):
+        """Section 15's Cost Breakdown: resource cost split by type, plus
+        non-resource ("miscellaneous") expenses, both in total and by GL
+        Account. Returns the non-resource expense total too, so callers don't
+        need to recompute it separately."""
+        non_resource = expense_queryset.exclude(category__in=self.RESOURCE_COST_CATEGORIES)
+        miscellaneous = non_resource.aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
+        by_gl = non_resource.exclude(gl_account__isnull=True) \
+            .values('gl_account__code', 'gl_account__name') \
+            .annotate(total=Sum('amount')) \
+            .order_by('gl_account__code')
+
+        return {
+            "resource_cost": resource_cost,
+            "employee_cost": employee_cost,
+            "freelancer_cost": freelancer_cost,
+            "miscellaneous": miscellaneous,
+            "by_gl_account": [
+                {"gl_account": f"{row['gl_account__code']} - {row['gl_account__name']}", "amount": row['total']}
+                for row in by_gl
+            ],
+        }, miscellaneous
+
+    def _invoice_breakdown(self, project):
+        invoices = project.invoice_set.exclude(status='Cancelled')
+        return [
+            {
+                "invoice_no": inv.invoice_no,
+                "amount": inv.total_amount,
+                "paid": inv.paid_amount,
+                "outstanding": inv.balance_amount,
+            }
+            for inv in invoices
+        ]
+
+    def _fixed_summary(self, project):
+        milestones = project.milestones.filter(is_active=True)
+
+        # Tax and profit excluded, same as the "budget"/remaining/variance
+        # figures below - see _cost_budget_for_project().
+        contract_value = self._cost_budget_for_project(project)
+
+        # Fixed Budget projects had no resource-cost figure at all before -
+        # this is additive (freelancer cost via active assignments; there is
+        # no employee-resource-cost channel available for Fixed Budget
+        # projects yet, same as before this change).
+        resource_cost = self._freelancer_assignment_cost(project)
+        employee_cost = Decimal("0.00")
+        freelancer_cost = resource_cost
+
+        if milestones.exists():
+            budget = milestones.aggregate(total=Sum('budget_amount'))['total'] or Decimal("0.00")
+            expense_qs = project.expenses.filter(milestone__in=milestones)
+            billed_amount = sum((m.billed_amount for m in milestones), Decimal("0.00"))
+            received_amount = sum((m.received_amount for m in milestones), Decimal("0.00"))
+        else:
+            # No milestones yet - fall back to the project's overall budget
+            # and invoices/expenses linked straight to the project.
+            budget = self._cost_budget_for_project(project)
+            expense_qs = project.expenses.all()
+            direct_invoices = project.invoice_set.exclude(status='Cancelled')
+            billed_amount = direct_invoices.aggregate(total=Sum('total_amount'))['total'] or Decimal("0.00")
+            received_amount = direct_invoices.aggregate(total=Sum('paid_amount'))['total'] or Decimal("0.00")
+
+        cost_breakdown, expense_cost = self._cost_breakdown(
+            expense_qs, resource_cost, employee_cost, freelancer_cost
+        )
+        actual_cost = resource_cost + expense_cost
+
+        outstanding_amount = billed_amount - received_amount
+        remaining_budget = budget - actual_cost
+        variance = budget - actual_cost
+        gross_margin = billed_amount - actual_cost
+        margin_percent = float(gross_margin / billed_amount * 100) if billed_amount else None
+        outgoing_payments = self._outgoing_payments(project)
+
+        return {
+            "engagement_type": "fixed",
+            "contract_value": contract_value,
+            "budget": budget,
+            "resource_cost": resource_cost,
+            "actual_cost": actual_cost,
+            "billed_amount": billed_amount,
+            "received_amount": received_amount,
+            "outstanding_amount": outstanding_amount,
+            "remaining_budget": remaining_budget,
+            "variance": variance,
+            "gross_margin": gross_margin,
+            "margin_percent": margin_percent,
+            "is_over_budget": actual_cost > budget,
+            "outgoing_payments": outgoing_payments,
+            "net_cash_position": received_amount - outgoing_payments,
+            "cost_breakdown": cost_breakdown,
+            "invoice_breakdown": self._invoice_breakdown(project),
+        }
+
+    def _tm_summary(self, project):
+        assignments = project.resource_assignments.filter(is_active=True, status='active')
+
+        monthly_revenue = project.monthly_billing_amount or Decimal("0.00")
+        resource_cost = sum((ra.monthly_cost for ra in assignments), Decimal("0.00"))
+        employee_cost = sum(
+            (ra.monthly_cost for ra in assignments if ra.resource_type == 'employee'),
+            Decimal("0.00"),
+        )
+        freelancer_cost = resource_cost - employee_cost
+
+        cost_breakdown, misc_expenses = self._cost_breakdown(
+            project.expenses.all(), resource_cost, employee_cost, freelancer_cost
+        )
+        total_cost = resource_cost + misc_expenses
+        gross_margin = monthly_revenue - resource_cost
+        net_profit = monthly_revenue - total_cost
+        margin_percent = float(gross_margin / monthly_revenue * 100) if monthly_revenue else None
+
+        invoices = project.invoice_set.exclude(status='Cancelled')
+        billed_amount = invoices.aggregate(total=Sum('total_amount'))['total'] or Decimal("0.00")
+        received_amount = invoices.aggregate(total=Sum('paid_amount'))['total'] or Decimal("0.00")
+        outstanding_amount = billed_amount - received_amount
+        outgoing_payments = self._outgoing_payments(project)
+
+        return {
+            "engagement_type": "time_and_material",
+            "monthly_revenue": monthly_revenue,
+            "resource_cost": resource_cost,
+            "misc_expenses": misc_expenses,
+            "total_cost": total_cost,
+            "gross_margin": gross_margin,
+            "net_profit": net_profit,
+            "margin_percent": margin_percent,
+            "billed_amount": billed_amount,
+            "received_amount": received_amount,
+            "outstanding_amount": outstanding_amount,
+            "outgoing_payments": outgoing_payments,
+            "net_cash_position": received_amount - outgoing_payments,
+            "cost_breakdown": cost_breakdown,
+            "invoice_breakdown": self._invoice_breakdown(project),
+        }
+
+
 class TaskAPIView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -381,6 +1056,13 @@ class TaskAPIView(APIView):
         # Notify assignee if provided
         if task.assigned_to_id:
             send_task_assignment_email.delay(task.id, task.assigned_to_id)
+            notify(
+                task.assigned_to,
+                title=f"New task assigned: {task.title}",
+                message=f"You were assigned \"{task.title}\".",
+                category="task",
+                link=f"/task-management?taskId={task.id}",
+            )
 
         return Response(
             {
@@ -532,6 +1214,14 @@ class TaskAPIView(APIView):
         task.status = "planned"
         task.save()
 
+        notify(
+            user,
+            title=f"Task assigned: {task.title}",
+            message=f"You were assigned \"{task.title}\".",
+            category="task",
+            link=f"/task-management?taskId={task.id}",
+        )
+
         first_module = user.modules.first()
 
         return Response({
@@ -600,6 +1290,13 @@ class TaskAPIView(APIView):
         new_assigned_to = serializer.instance.assigned_to_id
         if new_assigned_to and new_assigned_to != old_assigned_to:
             send_task_assignment_email.delay(task.id, new_assigned_to)
+            notify(
+                serializer.instance.assigned_to,
+                title=f"Task assigned: {serializer.instance.title}",
+                message=f"You were assigned \"{serializer.instance.title}\".",
+                category="task",
+                link=f"/task-management?taskId={task.id}",
+            )
 
         return Response({
             "message": "Task updated successfully (partial)",
@@ -2072,12 +2769,20 @@ class TimesheetWeeklySummaryAPIView(APIView):
         # Get all timesheet entries within the week range (more flexible)
         # Use raw query to avoid decimal conversion errors
         from django.db import connection
-        
+
+        # Table names are mixed-case ("Project_timesheetentry" etc., since the
+        # app label "Project" is capitalized), so on Postgres they must be
+        # double-quoted - an unquoted reference gets case-folded to lowercase
+        # by Postgres and fails with "relation ... does not exist" even
+        # though the (quoted, mixed-case) table is right there.
+        entry_table = connection.ops.quote_name(TimesheetEntry._meta.db_table)
+        timesheet_table = connection.ops.quote_name(Timesheet._meta.db_table)
+
         with connection.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT te.id, te.hours, t.user_id, t.status, t.submitted_at
-                FROM Project_timesheetentry te
-                INNER JOIN Project_timesheet t ON te.timesheet_id = t.id
+                FROM {entry_table} te
+                INNER JOIN {timesheet_table} t ON te.timesheet_id = t.id
                 WHERE te.date >= %s AND te.date <= %s
                 AND te.task_id IS NOT NULL
                 AND te.hours IS NOT NULL

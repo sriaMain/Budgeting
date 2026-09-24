@@ -320,3 +320,18 @@ def user_is_authorized_for_level(user, level):
     if level.approver_role_id:
         return level.approver_role in user.roles.all()
     return False
+
+
+def level_recipient_accounts(level):
+    """
+    Same resolution as tasks.py's _level_recipients() (specific approver_user,
+    else everyone with approver_role), but returns Account instances instead
+    of email strings - for the in-app notification channel alongside email.
+    """
+    if not level:
+        return []
+    if level.approver_user:
+        return [level.approver_user]
+    if level.approver_role:
+        return list(level.approver_role.users.all())
+    return []

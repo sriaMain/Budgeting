@@ -31,7 +31,7 @@ company, created = Company.objects.get_or_create(
     defaults={
         'mobile_number': '1234567890',
         'email': 'testcompany@example.com',
-        'street_address': '123 Test St',
+        'address1': '123 Test St',
         'city': 'Test City',
         'state': 'Test State',
         'country': 'Test Country'
@@ -42,8 +42,10 @@ print(f"   {'Created' if created else 'Found'} company: {company.company_name}")
 # Get or create a POC
 poc, created = POC.objects.get_or_create(
     company=company,
-    poc_name="Test POC",
+    first_name="Test",
+    last_name="POC",
     defaults={
+        'salutation': 'Mr.',
         'designation': 'Manager',
         'poc_mobile': '9876543210',
         'poc_email': 'testpoc@example.com'  # Change this to your test email

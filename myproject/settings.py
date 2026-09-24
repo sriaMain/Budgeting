@@ -33,13 +33,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-CHANGE-ME-for-local-d
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "False") == "True"
-# ALLOWED_HOSTS = [
-#     "localhost",
-#     "127.0.0.1",
-#     # "t847rjkh-3000.inc1.devtunnels.ms",
-#     # 't847rjkh-5173.inc1.devtunnels.ms'
-# ]
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:8000",
@@ -82,6 +76,7 @@ INSTALLED_APPS = [
     'phonenumber_field',
     'vendor_onboarding',
     'employee_onboarding',
+    'freelancer_onboarding',
 
 
 ]
@@ -90,7 +85,7 @@ ASGI_APPLICATION = "myproject.asgi.application"
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "LOCATION": os.environ.get("REDIS_CACHE_URL", "redis://127.0.0.1:6379/4"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         }
@@ -106,7 +101,7 @@ CHANNEL_LAYERS = {
         # group_send (no point-to-point channel_layer.send), which PubSub fully supports.
         "BACKEND": "channels_redis.pubsub.RedisPubSubChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [os.environ.get("CHANNEL_LAYERS_REDIS_URL", "redis://127.0.0.1:6379/5")],
         },
     },
 }
@@ -146,28 +141,25 @@ WSGI_APPLICATION = 'myproject.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-        "OPTIONS": {
-            "timeout": 30,
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if DATABASE_URL:
+    import dj_database_url
+
+    DATABASES = {
+        "default": dj_database_url.config(default=DATABASE_URL, conn_max_age=600),
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+            "OPTIONS": {
+                "timeout": 30,
+            }
         }
     }
-}
 
 CONN_MAX_AGE = 0
-
-# import dj_database_url
-# import os
-
-# DATABASES = {
-#     "default": dj_database_url.config(
-#         default=os.getenv("DATABASE_URL"),
-#         conn_max_age=600,
-#         ssl_require=True,
-#     )
-# }
 
 
 
@@ -235,6 +227,9 @@ REST_FRAMEWORK = {
         # per-minute instead of per-hour so a legitimate burst has headroom
         # and an accidental trip recovers in seconds, not up to an hour.
         "employee_onboarding_public": "300/min",
+        # Freelancer onboarding is a short, 5-section form - lighter than
+        # employee's but still needs headroom above the tight vendor rate.
+        "freelancer_onboarding_public": "120/min",
     },
 }
 
@@ -244,25 +239,28 @@ VENDOR_ONBOARDING_TOKEN_TTL_DAYS = 90
 # Employee Self-Service Onboarding
 EMPLOYEE_ONBOARDING_TOKEN_TTL_DAYS = 30
 
+# Freelancer Self-Service Onboarding
+FREELANCER_ONBOARDING_TOKEN_TTL_DAYS = 30
 
 
+
+
+# Flip HTTPS_ENABLED once Certbot/TLS is live (see deployment doc) - keeping
+# it False lets HTTP-only testing work before the certificate exists.
+_https_enabled = os.environ.get("HTTPS_ENABLED", "False") == "True"
 
 SESSION_COOKIE_AGE = 60 * 60 * 24   # 1 day
-SESSION_COOKIE_SECURE = False       # True in production (HTTPS)
+SESSION_COOKIE_SECURE = _https_enabled
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 
-CSRF_COOKIE_SECURE = False          # True in production
+CSRF_COOKIE_SECURE = _https_enabled
 CSRF_COOKIE_SAMESITE = "Lax"
 
 
     
 
 # DEFAULT_FROM_EMAIL = "Your App <no-reply@yourdomain.com>"
-
-
-# Email settings for development (prints emails to console)
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 
 PASSWORD_RESET_OTP_EXPIRY_MINUTES = 2
@@ -292,7 +290,7 @@ SIMPLE_JWT = {
     'USER_ID_CLAIM': 'user_id',
 }
 
-FRONTEND_BASE_URL = "http://localhost:5173"
+FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "https://project.nxsys.in").rstrip("/")
 
 # Public URL the Vendor Onboarding portal is reachable at - used only to build
 # the secure onboarding link sent in the invite/request-changes emails. Never
@@ -321,12 +319,24 @@ EMPLOYEE_PORTAL_URL = os.environ.get("EMPLOYEE_PORTAL_URL", FRONTEND_BASE_URL).r
 if EMPLOYEE_PORTAL_URL not in CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS.append(EMPLOYEE_PORTAL_URL)
 
+# Public URL the Freelancer Onboarding portal is reachable at - same idea as
+# VENDOR_PORTAL_URL/EMPLOYEE_PORTAL_URL above.
+FREELANCER_PORTAL_URL = os.environ.get("FREELANCER_PORTAL_URL", FRONTEND_BASE_URL).rstrip("/")
+
+if FREELANCER_PORTAL_URL not in CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS.append(FREELANCER_PORTAL_URL)
+
 # Branding used in Vendor Onboarding emails. COMPANY_LOGO_URL must be a full
 # https:// URL to a hosted image (email clients can't load relative/local
 # paths) - leave it blank to fall back to a text-only header, which is the
 # same convention this codebase's other email templates already use.
 COMPANY_NAME = os.environ.get("COMPANY_NAME", "SRIA INFOTECH PRIVATE LTD")
 COMPANY_LOGO_URL = os.environ.get("COMPANY_LOGO_URL", "")
+COMPANY_WEBSITE = os.environ.get("COMPANY_WEBSITE", "www.sriainfotech.com")
+# Shown in the account-created email footer when set - blank hides the line,
+# same convention as COMPANY_LOGO_URL above.
+COMPANY_EMAIL = os.environ.get("COMPANY_EMAIL", "")
+COMPANY_PHONE = os.environ.get("COMPANY_PHONE", "")
 # print("Cloud Name:", os.environ.get("CLOUDINARY_CLOUD_NAME"))
 # print("APiKey", os.environ.get("CLOUDINARY_API_KEY"))
 CLOUDINARY_STORAGE = {
@@ -355,7 +365,18 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 # STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# --- Email (SMTP) ---
+# Resend was tried and removed - back to plain SMTP. In DEBUG (local dev)
+# emails print to the console instead of sending for real, so OTP/welcome
+# emails work without needing valid Gmail credentials. Override via
+# EMAIL_BACKEND in .env to force real SMTP sending even in local dev -
+# DEBUG also gates unrelated things (security settings, Celery's eager-task
+# mode, error pages), so it shouldn't be toggled just to test email delivery.
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND",
+    'django.core.mail.backends.console.EmailBackend' if DEBUG
+    else 'django.core.mail.backends.smtp.EmailBackend'
+)
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
@@ -363,12 +384,15 @@ EMAIL_USE_TLS = True
 # file is committed to a public repo.
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = "teerdavenigedela@gmail.com"
+# Gmail SMTP requires the From address to be the authenticated mailbox (or a
+# verified alias of it), so default to EMAIL_HOST_USER rather than a
+# different hard-coded address - which would also silently fail to send.
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 
 
 
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/3")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/3")
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'

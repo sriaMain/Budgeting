@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invoice - {{ quote_no }}</title>
+    <title>Quotation {{ quote_reference }}</title>
     <style>
         * {
             margin: 0;
@@ -11,282 +11,379 @@
         }
 
         body {
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 12px;
-            color: #333;
+            font-family: Helvetica, Arial, sans-serif;
+            font-size: 10.5px;
+            color: #2d3340;
             line-height: 1.5;
             background-color: #fff;
         }
 
-        .header {
-            background-color: #3366cc;
-            color: #fff;
-            padding: 15px 20px;
-            margin-bottom: 20px;
-            display: table;
-            width: 100%;
-        }
-
-        .header-left {
-            display: table-cell;
-            width: 30%;
-            vertical-align: middle;
-            font-size: 28px;
-            font-weight: bold;
-        }
-
-        .header-right {
-            display: table-cell;
-            width: 70%;
-            text-align: right;
-            vertical-align: middle;
-            font-size: 11px;
-            line-height: 1.4;
-        }
-
-        .billed-to {
-            padding: 0 20px;
-            margin-bottom: 10px;
-            font-size: 12px;
-        }
-
-        .billed-to strong {
-            display: block;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .invoice-details {
-            padding: 0 20px;
-            margin-bottom: 15px;
-            font-size: 11px;
-            color: #666;
-        }
-
-        .invoice-details-row {
-            margin-bottom: 3px;
-        }
-
-        .invoice-details-row strong {
-            color: #333;
-        }
-
-        .items-table {
-            width: 100%;
+        table {
             border-collapse: collapse;
-            margin: 20px 0;
-            font-size: 11px;
         }
 
-        .items-table th {
-            background-color: #e8f0f8;
-            color: #0066cc;
-            padding: 8px;
-            text-align: left;
-            font-weight: bold;
-            border: 1px solid #ccc;
-        }
-
-        .items-table td {
-            padding: 8px;
-            border: 1px solid #ccc;
-        }
-
-        .items-table tbody tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-
-        .amount-right {
-            text-align: right;
-        }
-
-        .summary-section {
-            padding: 0 20px;
-            margin: 20px 0;
-            font-size: 11px;
-        }
-
-        .summary-row {
-            display: table;
+        /* ---------- Letterhead ---------- */
+        .letterhead {
             width: 100%;
-            margin-bottom: 5px;
-            line-height: 1.8;
         }
 
-        .summary-label {
-            display: table-cell;
-            width: 40%;
-            text-align: left;
-            color: #666;
+        .company-name {
+            font-size: 19px;
+            font-weight: bold;
+            color: #16233f;
+            letter-spacing: 0.5px;
         }
 
-        .summary-value {
-            display: table-cell;
-            width: 20%;
-            text-align: right;
-            color: #333;
+        .company-meta {
+            margin-top: 6px;
+            font-size: 9.5px;
+            color: #6b7280;
+            line-height: 1.6;
         }
 
-        .summary-label-right {
-            display: table-cell;
-            width: 20%;
-            text-align: left;
-            color: #666;
-            padding-left: 20px;
+        .doc-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1d4ed8;
+            letter-spacing: 2px;
         }
 
-        .summary-value-right {
-            display: table-cell;
-            width: 20%;
-            text-align: right;
-            color: #333;
-        }
-
-        .terms-section {
-            padding: 0 20px;
-            margin: 15px 0;
-            font-size: 11px;
-            color: #333;
-        }
-
-        .terms-section strong {
+        .doc-ref {
+            margin-top: 6px;
+            font-size: 10.5px;
+            color: #16233f;
             font-weight: bold;
         }
 
-        .footer {
-            padding: 10px 20px;
-            border-top: 1px solid #ddd;
-            font-size: 10px;
-            color: #666;
-            text-align: center;
+        .accent-bar {
+            height: 5px;
+            background-color: #1d4ed8;
+            font-size: 1px;
+            line-height: 5px;
+        }
+
+        /* ---------- Info panels ---------- */
+        .info-panels {
+            width: 100%;
             margin-top: 20px;
         }
 
-        .items-section {
-            padding: 0 20px;
+        .info-label {
+            font-size: 8.5px;
+            font-weight: bold;
+            color: #9aa1ae;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            padding-bottom: 6px;
         }
 
-        .col-desc {
-            width: 35%;
+        .info-value-main {
+            font-size: 12.5px;
+            font-weight: bold;
+            color: #16233f;
+            padding-bottom: 3px;
         }
 
-        .col-qty {
-            width: 12%;
-            text-align: center;
+        .info-line {
+            font-size: 9.5px;
+            color: #4b5563;
+            padding-bottom: 2px;
         }
 
-        .col-unit {
-            width: 12%;
-            text-align: center;
+        .info-line strong {
+            color: #16233f;
         }
 
-        .col-price {
-            width: 15%;
+        /* ---------- Items table ---------- */
+        .items-table {
+            width: 100%;
+            margin-top: 22px;
+        }
+
+        .items-table thead th {
+            background-color: #16233f;
+            color: #fff;
+            font-size: 9px;
+            font-weight: bold;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            padding: 9px 10px;
+            text-align: left;
+        }
+
+        .items-table tbody td {
+            padding: 9px 10px;
+            font-size: 10px;
+            border-bottom: 1px solid #e6e8ec;
+            color: #2d3340;
+        }
+
+        .items-table tbody tr.alt {
+            background-color: #f7f8fa;
+        }
+
+        .col-desc { width: 32%; }
+        .col-qty { width: 11%; text-align: center; }
+        .col-unit { width: 11%; text-align: center; }
+        .col-price { width: 15%; text-align: right; }
+        .col-taxes { width: 16%; text-align: center; }
+        .col-amount { width: 15%; text-align: right; }
+
+        /* ---------- Totals ---------- */
+        .totals-outer {
+            width: 100%;
+            margin-top: 14px;
+        }
+
+        .totals-table {
+            width: 100%;
+        }
+
+        .totals-table td {
+            padding: 4px 0;
+            font-size: 10px;
+        }
+
+        .totals-label {
+            color: #6b7280;
+            text-align: left;
+        }
+
+        .totals-value {
+            color: #16233f;
             text-align: right;
         }
 
-        .col-taxes {
-            width: 13%;
-            text-align: center;
+        .totals-grand-row td {
+            background-color: #16233f;
+            color: #fff;
+            padding: 10px 12px;
         }
 
-        .col-amount {
-            width: 13%;
+        .totals-grand-label {
+            font-size: 11.5px;
+            font-weight: bold;
+            text-align: left;
+        }
+
+        .totals-grand-value {
+            font-size: 14px;
+            font-weight: bold;
             text-align: right;
+        }
+
+        /* ---------- Internal reference ---------- */
+        .internal-ref-wrap {
+            margin-top: 20px;
+            padding: 10px 14px;
+            background-color: #fafafa;
+            border: 1px solid #edeef1;
+        }
+
+        .internal-ref-title {
+            font-size: 8px;
+            font-weight: bold;
+            color: #9aa1ae;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            padding-bottom: 8px;
+        }
+
+        .internal-ref-table {
+            width: 100%;
+        }
+
+        .internal-ref-table td {
+            font-size: 9px;
+            color: #6b7280;
+            vertical-align: top;
+            width: 25%;
+        }
+
+        .internal-ref-table strong {
+            display: block;
+            color: #374151;
+            font-size: 10px;
+            margin-top: 2px;
+        }
+
+        /* ---------- Terms ---------- */
+        .terms-section {
+            margin-top: 20px;
+            font-size: 9.5px;
+            color: #4b5563;
+        }
+
+        .terms-title {
+            font-size: 9px;
+            font-weight: bold;
+            color: #16233f;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            padding-bottom: 6px;
+        }
+
+        .terms-section p {
+            padding-bottom: 8px;
+        }
+
+        .terms-section a {
+            color: #1d4ed8;
+        }
+
+        /* ---------- Signature ---------- */
+        .signature-table {
+            width: 100%;
+            margin-top: 30px;
+        }
+
+        .signature-table td {
+            width: 50%;
+            vertical-align: top;
+            font-size: 9px;
+            color: #6b7280;
+            border-top: 1px solid #cbd2dc;
+            padding-top: 6px;
+        }
+
+        /* ---------- Footer ---------- */
+        .footer {
+            margin-top: 26px;
+            padding-top: 12px;
+            border-top: 1px solid #e6e8ec;
+            font-size: 9px;
+            color: #9aa1ae;
+            text-align: center;
         }
     </style>
 </head>
 <body>
-    <!-- HEADER -->
-    <div class="header">
-        <div class="header-left">INV-</div>
-        <div class="header-right">
-            <strong>SRIA INFOTECH PRIVATE LTD</strong><br/>
-            1ST FLOOR, 1-121/S3, SURVEY NO.63 PART<br/>
-            BEHIND HOTEL SITARA GRAND MIYAPUR<br/>
-            RANGAREDDI, Hyderabad, Telangana, India, 500049
-        </div>
-    </div>
 
-    <!-- BILLED TO -->
-    <div class="billed-to">
-        <strong>Billed To:</strong>
-        {{ client_name }}
-    </div>
+    <!-- LETTERHEAD -->
+    <table class="letterhead">
+        <tr>
+            <td style="width:58%; vertical-align:top;">
+                <div class="company-name">SRIA INFOTECH PRIVATE LTD</div>
+                <div class="company-meta">
+                    1st Floor, 1-121/S3, Survey No.63 Part, Behind Hotel Sitara Grand Miyapur<br/>
+                    Rangareddi, Hyderabad, Telangana, India, 500049<br/>
+                    hr@sriainfotech.com &nbsp;&middot;&nbsp; www.sriainfotech.com
+                </div>
+            </td>
+            <td style="width:42%; vertical-align:top; text-align:right;">
+                <div class="doc-title">QUOTATION</div>
+                <div class="doc-ref">{{ quote_reference }}</div>
+            </td>
+        </tr>
+    </table>
 
-    <!-- INVOICE DETAILS -->
-    <div class="invoice-details">
-        <div class="invoice-details-row"><strong>Invoice Date:</strong></div>
-        <div class="invoice-details-row"><strong>Due Date:</strong> {{ due_date }}</div>
-        <div class="invoice-details-row"><strong>GSTIN:</strong> 36ABICS3346M1ZV</div>
-    </div>
+    <div class="accent-bar">&nbsp;</div>
 
-    <!-- ITEMS TABLE -->
-    <div class="items-section">
-        <table class="items-table">
-            <thead>
-                <tr>
-                    <th class="col-desc">Description</th>
-                    <th class="col-qty">Quantity</th>
-                    <th class="col-unit">Unit</th>
-                    <th class="col-price">Unit Price</th>
-                    <th class="col-taxes">Taxes</th>
-                    <th class="col-amount">Amount</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in items %}
-                <tr>
-                    <td>{{ item.description }}</td>
-                    <td class="col-qty">{{ item.quantity }}</td>
-                    <td class="col-unit">{{ item.unit }}</td>
-                    <td class="col-price">{{ item.price_per_unit }}</td>
-                    <td class="col-taxes">SGST 9%, CGST 9%</td>
-                    <td class="col-amount">{{ item.amount }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
+    <!-- PREPARED FOR / QUOTE DETAILS -->
+    <table class="info-panels">
+        <tr>
+            <td style="width:50%; vertical-align:top;">
+                <div class="info-label">Prepared For</div>
+                <div class="info-value-main">{{ client_name }}</div>
+                {% if client_address %}<div class="info-line">{{ client_address }}</div>{% endif %}
+                {% if client_email %}<div class="info-line">{{ client_email }}</div>{% endif %}
+                {% if client_phone %}<div class="info-line">{{ client_phone }}</div>{% endif %}
+                {% if client_gstin %}<div class="info-line">GSTIN: {{ client_gstin }}</div>{% endif %}
+            </td>
+            <td style="width:50%; vertical-align:top; padding-left:24px;">
+                <div class="info-label">Quote Details</div>
+                <div class="info-line">Date of Issue: <strong>{{ date_of_issue }}</strong></div>
+                <div class="info-line">Valid Until: <strong>{{ due_date }}</strong></div>
+                {% if author %}<div class="info-line">Prepared By: <strong>{{ author }}</strong></div>{% endif %}
+                <div class="info-line">Status: <strong style="color:#1d4ed8;">{{ status }}</strong></div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- ITEMS -->
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th class="col-desc">Description</th>
+                <th class="col-qty">Qty</th>
+                <th class="col-unit">Unit</th>
+                <th class="col-price">Unit Price</th>
+                <th class="col-taxes">Taxes</th>
+                <th class="col-amount">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr{% if forloop.counter|divisibleby:2 %} class="alt"{% endif %}>
+                <td class="col-desc">{{ item.description }}</td>
+                <td class="col-qty">{{ item.quantity }}</td>
+                <td class="col-unit">{{ item.unit }}</td>
+                <td class="col-price">{{ item.price_per_unit }}</td>
+                <td class="col-taxes">SGST 9%, CGST 9%</td>
+                <td class="col-amount">{{ item.amount }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- TOTALS -->
+    <table class="totals-outer">
+        <tr>
+            <td style="width:58%;">&nbsp;</td>
+            <td style="width:42%; vertical-align:top;">
+                <table class="totals-table">
+                    <tr>
+                        <td class="totals-label">Subtotal</td>
+                        <td class="totals-value">{{ currency }} {{ sub_total }}</td>
+                    </tr>
+                    <tr>
+                        <td class="totals-label">Tax ({{ tax_percentage }}%)</td>
+                        <td class="totals-value">{{ currency }} {{ tax_amount }}</td>
+                    </tr>
+                </table>
+                <table class="totals-table" style="margin-top:6px;">
+                    <tr class="totals-grand-row">
+                        <td class="totals-grand-label">Total ({{ currency }})</td>
+                        <td class="totals-grand-value">{{ total_amount }}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- INTERNAL REFERENCE (staff tracking, not part of the client-facing total) -->
+    <div class="internal-ref-wrap">
+        <div class="internal-ref-title">Internal Reference &mdash; Not Part of Quoted Amount</div>
+        <table class="internal-ref-table">
+            <tr>
+                <td>In-house Cost<strong>{{ currency }} {{ in_house_cost }}</strong></td>
+                <td>Outsourced Cost<strong>{{ currency }} {{ outsourced_cost }}</strong></td>
+                <td>Invoiced So Far<strong>{{ currency }} {{ invoiced_sum }}</strong></td>
+                <td>Remaining to Invoice<strong>{{ currency }} {{ to_be_invoiced_sum }}</strong></td>
+            </tr>
         </table>
     </div>
 
-    <!-- SUMMARY SECTION -->
-    <div class="summary-section">
-        <div class="summary-row">
-            <div class="summary-label">Subtotal</div>
-            <div class="summary-value">{{ sub_total }}</div>
-            <div class="summary-label-right">Total</div>
-            <div class="summary-value-right">{{ total_amount }}</div>
-        </div>
-        <div class="summary-row">
-            <div class="summary-label">Tax (%)</div>
-            <div class="summary-value">{{ tax_percentage }}</div>
-            <div class="summary-label-right">In-house</div>
-            <div class="summary-value-right">{{ in_house_cost }}</div>
-        </div>
-        <div class="summary-row">
-            <div class="summary-label">Total(INR)</div>
-            <div class="summary-value">{{ total_amount }}</div>
-            <div class="summary-label-right">Out-Sourced</div>
-            <div class="summary-value-right">{{ outsourced_cost }}</div>
-        </div>
-        <div class="summary-row">
-            <div class="summary-label">Invoiced Sum(INR)</div>
-            <div class="summary-value">{{ invoiced_sum }}</div>
-            <div class="summary-label-right">To be Invoiced (INR)</div>
-            <div class="summary-value-right">{{ to_be_invoiced_sum }}</div>
-        </div>
+    <!-- TERMS -->
+    <div class="terms-section">
+        <div class="terms-title">Terms &amp; Validity</div>
+        <p>This quotation ({{ quote_reference }}) is valid until <strong>{{ due_date }}</strong>. Prices, taxes and availability are subject to change after this date.</p>
+        <p>This is a price quotation only and does not constitute a tax invoice or a demand for payment.</p>
+        <p>Full terms &amp; conditions: <a href="https://www.sriainfotech.com/">https://www.sriainfotech.com/</a></p>
     </div>
 
-    <!-- TERMS & CONDITIONS -->
-    <div class="terms-section">
-        <strong>Payment terms:</strong> Immediate Payment<br/><br/>
-        <strong>Payment Communication:</strong> INV-{{ quote_no|stringformat:"06d" }}<br/><br/>
-        <strong>Terms &amp; Conditions:</strong> <a href="https://www.sriainfotech.com/">https://www.sriainfotech.com/</a>
-    </div>
+    <!-- SIGNATURE -->
+    <table class="signature-table">
+        <tr>
+            <td>Authorized Signatory &mdash; For SRIA INFOTECH PRIVATE LTD</td>
+            <td>Client Acceptance</td>
+        </tr>
+    </table>
 
     <!-- FOOTER -->
     <div class="footer">
-        hr@sriainfotech.com &nbsp; | &nbsp; <a href="https://www.sriainfotech.com/">www.sriainfotech.com</a> Page 1 / 1
+        hr@sriainfotech.com &nbsp;&middot;&nbsp; www.sriainfotech.com &nbsp;&middot;&nbsp; Page 1 of 1
     </div>
+
 </body>
 </html>

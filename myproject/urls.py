@@ -21,6 +21,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/accounts/', include('accounts.urls')),
     # path('api/', include('module.urls')),
+    path('api/', include('core.urls')),
     path('api/', include('product_group.urls')),
     path('api/roles/', include('roles.urls')),
     path('api/', include('client.urls')),
@@ -29,6 +30,7 @@ urlpatterns = [
     path('api/', include('Reports.urls')),
     path('api/vendor-onboarding/', include('vendor_onboarding.urls')),
     path('api/employee-onboarding/', include('employee_onboarding.urls')),
+    path('api/freelancer-onboarding/', include('freelancer_onboarding.urls')),
 ]
 
 from django.conf import settings

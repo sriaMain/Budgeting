@@ -16,7 +16,6 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from accounts.models import Account
-from roles.permission import HasPermissionCode
 
 from .models import EmployeeOnboardingRequest, EmployeeDocument, EmployeeChangeRequest, EmployeePersonalDetail
 from .serializers import (
@@ -62,9 +61,8 @@ class EmployeeOnboardingChoicesView(APIView):
 
 
 class EmployeeOnboardingListView(APIView):
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_code = "employee_onboarding.view"
 
     def get(self, request):
         qs = EmployeeOnboardingRequest.objects.select_related(
@@ -95,10 +93,13 @@ class EmployeeOnboardingListView(APIView):
 class EmployeeSendInviteView(APIView):
     """Admin 'Send Onboarding Invite' action - works for both the first send
     and any resend, without ever creating a duplicate request for the same
-    account (see services.send_or_resend_invite)."""
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    account (see services.send_or_resend_invite).
+
+    Unlike vendor onboarding, employee onboarding is self-service to create -
+    any authenticated admin user can raise one, so this isn't gated behind a
+    role permission code."""
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_code = "employee_onboarding.invite"
 
     def post(self, request, account_id):
         account = get_object_or_404(Account, pk=account_id)
@@ -124,9 +125,8 @@ class EmployeeSendInviteView(APIView):
 
 
 class EmployeeOnboardingDetailView(APIView):
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_map = {"GET": "employee_onboarding.view", "PATCH": "employee_onboarding.edit"}
 
     def get(self, request, account_id):
         onboarding_request = get_object_or_404(EmployeeOnboardingRequest, account_id=account_id)
@@ -150,9 +150,8 @@ class EmployeeOnboardingDetailView(APIView):
 
 class _EmployeeStepDetailView(APIView):
     """Base class for the admin per-step PATCH endpoints."""
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_code = "employee_onboarding.edit"
 
     serializer_class = None
     related_name = None
@@ -197,9 +196,8 @@ class EmployeeEmergencyContactStepView(_EmployeeStepDetailView):
 
 
 class EmployeeDocumentListView(APIView):
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_map = {"GET": "employee_onboarding.document.view", "POST": "employee_onboarding.document.upload"}
 
     def get(self, request, account_id):
         onboarding_request = get_object_or_404(EmployeeOnboardingRequest, account_id=account_id)
@@ -224,9 +222,8 @@ class EmployeeDocumentListView(APIView):
 
 
 class EmployeeDocumentDetailView(APIView):
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_code = "employee_onboarding.document.delete"
 
     def delete(self, request, account_id, doc_id):
         onboarding_request = get_object_or_404(EmployeeOnboardingRequest, account_id=account_id)
@@ -238,9 +235,8 @@ class EmployeeDocumentDetailView(APIView):
 
 
 class EmployeeDocumentDownloadView(APIView):
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_code = "employee_onboarding.document.view"
 
     def get(self, request, account_id, doc_id):
         onboarding_request = get_object_or_404(EmployeeOnboardingRequest, account_id=account_id)
@@ -258,9 +254,8 @@ class EmployeeDocumentDownloadView(APIView):
 class EmployeeSubmitView(APIView):
     """Only reachable if an admin fills the form out on the employee's behalf
     - kept for parity with the public submit endpoint."""
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_code = "employee_onboarding.edit"
 
     def post(self, request, account_id):
         onboarding_request = get_object_or_404(EmployeeOnboardingRequest, account_id=account_id)
@@ -283,9 +278,8 @@ class EmployeeSubmitView(APIView):
 
 
 class EmployeeApproveView(APIView):
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_code = "employee_onboarding.approve"
 
     def post(self, request, account_id):
         onboarding_request = get_object_or_404(EmployeeOnboardingRequest, account_id=account_id)
@@ -301,9 +295,8 @@ class EmployeeApproveView(APIView):
 
 
 class EmployeeRequestChangesView(APIView):
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_code = "employee_onboarding.request_changes"
 
     def post(self, request, account_id):
         onboarding_request = get_object_or_404(EmployeeOnboardingRequest, account_id=account_id)
@@ -326,9 +319,8 @@ class EmployeeRequestChangesView(APIView):
 
 
 class EmployeeOnboardingHistoryView(APIView):
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_code = "employee_onboarding.approval_history.view"
 
     def get(self, request, account_id):
         onboarding_request = get_object_or_404(EmployeeOnboardingRequest, account_id=account_id)
@@ -337,9 +329,8 @@ class EmployeeOnboardingHistoryView(APIView):
 
 
 class EmployeeSubmissionVersionListView(APIView):
-    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    permission_code = "employee_onboarding.view"
 
     def get(self, request, account_id):
         onboarding_request = get_object_or_404(EmployeeOnboardingRequest, account_id=account_id)

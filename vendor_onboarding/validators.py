@@ -1,5 +1,9 @@
 from django.core.validators import RegexValidator
-from client.models import gstin_validator  # re-exported for convenience
+
+gstin_validator = RegexValidator(
+    regex=r"^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$",
+    message="Enter a valid GSTIN (15 characters)."
+)
 
 pan_validator = RegexValidator(
     regex=r"^[A-Z]{5}[0-9]{4}[A-Z]$",

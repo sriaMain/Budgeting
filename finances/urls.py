@@ -10,7 +10,8 @@ from .views import (DownloadAttachmentView, ProjectAttachmentView, QuotationDeta
                     ProjectPaymentAPIView, ProjectPaymentSummaryAPIView, ProjectPaymentsListAPIView,
                     PurchaseOrderCreateAPIView, QuotePurchaseOrderListAPIView, PurchaseOrderDetailAPIView,ProjectPurchaseOrderListAPIView,SendPurchaseOrderEmailView,DownloadPurchaseOrderView,
                     PurchaseOrderStatusUpdateAPIView, VendorBillCreateAPIView, VendorBillListAPIView,VendorBillByNumberAPIView,
-                    OutgoingPaymentCreateAPIView, VendorBillPaymentListAPIView, ProjectOutgoingPaymentsAPIView, ExpenseAPIView, ProjectExpenseListAPIView, ExpenseCategoryAPIView,ExpensePaymentAPIView)
+                    OutgoingPaymentCreateAPIView, VendorBillPaymentListAPIView, ProjectOutgoingPaymentsAPIView, ExpenseAPIView, ProjectExpenseListAPIView, ExpenseCategoryAPIView,ExpensePaymentAPIView,
+                    FinancialAuditLogListView)
 
 urlpatterns = [
 path("test/", lambda r: HttpResponse("FINANCES OK")),
@@ -54,4 +55,5 @@ path('expenses/<int:pk>/', ExpenseAPIView.as_view(),name='expense-detail'),
 path('expenses/<int:pk>/payments/', ExpensePaymentAPIView.as_view(),name='expense-payments'),
 path('projects/<int:project_id>/expenses/', ProjectExpenseListAPIView.as_view(),name='project-expenses'),
 path('expenses/categories/', ExpenseCategoryAPIView.as_view(),name='expense-categories'),
+path('projects/<int:project_id>/financial-audit-log/', FinancialAuditLogListView.as_view(), name='project-financial-audit-log'),
 ]

@@ -34,6 +34,7 @@ from .services import (
     submit_vendor_for_approval, apply_approval_action, apply_request_changes_action,
     user_is_authorized_for_level, raise_vendor_request, generate_access_token,
     validate_public_token, ensure_draft_status, InvalidTokenError,
+    level_recipient_accounts,
 )
 from .tasks import (
     send_vendor_invited_notification, send_vendor_submitted_notification,
@@ -41,6 +42,7 @@ from .tasks import (
     send_vendor_request_changes_notification, send_vendor_resubmitted_notification,
     send_vendor_approval_in_progress_notification, _badge,
 )
+from core.notifications import notify
 
 
 def _client_ip(request):
@@ -405,6 +407,17 @@ class VendorSubmitForApprovalView(APIView):
         else:
             transaction.on_commit(lambda: send_vendor_submitted_notification.delay(vendor.id))
 
+        # In-app bell notification, alongside the email above, to whoever is
+        # the approver at the vendor's current stage.
+        level = vendor.approval_instance.current_level() if hasattr(vendor, "approval_instance") else None
+        notify(
+            level_recipient_accounts(level),
+            title=f"Vendor onboarding {'resubmitted' if was_resubmission else 'submitted'}: {vendor.name}",
+            message=f"{vendor.vendor_reference_no or vendor.name} is awaiting your approval.",
+            category="vendor_approval",
+            link="/vendors/approvals",
+        )
+
         return Response(VendorOnboardingDetailSerializer(vendor, context={"request": request}).data)
 
 
@@ -455,9 +468,24 @@ class VendorApproveView(APIView):
 
         if vendor.status == "approved":
             transaction.on_commit(lambda: send_vendor_approved_notification.delay(vendor.id))
+            notify(
+                vendor.created_by,
+                title=f"Vendor approved: {vendor.name}",
+                message=f"{vendor.vendor_reference_no or vendor.name} has been fully approved.",
+                category="vendor_approval",
+                link=f"/vendors/{vendor.id}",
+            )
         else:
             transaction.on_commit(lambda: send_vendor_approval_advanced_notification.delay(vendor.id))
             transaction.on_commit(lambda: send_vendor_approval_in_progress_notification.delay(vendor.id))
+            next_level = vendor.approval_instance.current_level() if hasattr(vendor, "approval_instance") else None
+            notify(
+                level_recipient_accounts(next_level),
+                title=f"Vendor awaiting your approval: {vendor.name}",
+                message=f"{vendor.vendor_reference_no or vendor.name} advanced to the next approval stage.",
+                category="vendor_approval",
+                link="/vendors/approvals",
+            )
 
         return Response(VendorOnboardingDetailSerializer(vendor, context={"request": request}).data)
 
@@ -481,6 +509,13 @@ class VendorRequestChangesView(APIView):
 
         transaction.on_commit(
             lambda: send_vendor_request_changes_notification.delay(vendor.id, change_request.id)
+        )
+        notify(
+            vendor.created_by,
+            title=f"Changes requested: {vendor.name}",
+            message=f"The approver requested changes on {vendor.vendor_reference_no or vendor.name}.",
+            category="vendor_approval",
+            link=f"/vendors/{vendor.id}",
         )
 
         return Response(VendorOnboardingDetailSerializer(vendor, context={"request": request}).data)
