@@ -1,51 +1,24 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Django
-db.sqlite3
-db.sqlite3.backup
-*.sqlite3
-*.sqlite3.*
-media/
-staticfiles/
-*/migrations/__pycache__/
-
-# Env / secrets
+# Environment variables
 .env
 .env.*
 !.env.example
-*.log
-logs/
 
-# Virtual environments
-venv/
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+db.sqlite3
+
+# Python cache / local dev
+__pycache__/
+*.py[cod]
 .venv/
+venv/
 env/
-ENV/
-
-# Test / tooling caches
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-htmlcov/
-.coverage
 
 # IDE
 .vscode/
 .idea/
-*.swp
 
 # OS
 .DS_Store
-Thumbs.db
-
-# Node / React (if any)
-node_modules/
-dist/
-build/
-
-# Celery
-celerybeat-schedule*

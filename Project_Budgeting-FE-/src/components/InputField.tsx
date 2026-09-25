@@ -7,12 +7,16 @@ interface InputFieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
   error?: string;
   endIcon?: React.ReactNode;
    togglePassword?: boolean;
-   
+
   onEndIconClick?: () => void;
+  /** Overrides the label's className entirely (opt-in - omit to keep the default style).
+   * Lets a specific form adopt a different label density/typography without touching
+   * every other caller of this shared component. */
+  labelClassName?: string;
 }
 
 export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(
-  ({ label, error, endIcon, onEndIconClick,togglePassword,  type = 'text',   className = '', id, ...props }, ref) => {
+  ({ label, error, endIcon, onEndIconClick,togglePassword,  type = 'text',   className = '', id, labelClassName, ...props }, ref) => {
     const [showPassword, setShowPassword] = useState(false);
   const isPasswordType = type === 'password';
   const inputType = isPasswordType ? (showPassword ? 'text' : 'password') : type;
@@ -24,7 +28,7 @@ export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(
           {label && (
         <label
           htmlFor={inputId}
-          className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200"
+          className={labelClassName || "block text-base font-medium text-gray-900 mb-2 dark:text-gray-200"}
         >
           {label.endsWith('*') ? (
             <>{label.slice(0, -1).trimEnd()} <span className="text-red-500">*</span></>

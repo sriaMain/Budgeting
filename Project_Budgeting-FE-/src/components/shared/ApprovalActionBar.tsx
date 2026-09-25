@@ -12,7 +12,7 @@ interface ApprovalActionBarProps<TPayload> {
   canAct: boolean;
   onApprove: (comments: string) => Promise<void>;
   onRequestChanges: (payload: TPayload) => Promise<void>;
-  /** Vendor/employee onboarding each pass their own section-picker modal here. */
+  /** Each onboarding module passes its own section-picker modal here. */
   RequestChangesModal: React.ComponentType<RequestChangesModalProps<TPayload>>;
   sectionOptions: { value: string; label: string }[];
 }

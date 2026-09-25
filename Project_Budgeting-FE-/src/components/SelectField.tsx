@@ -10,16 +10,18 @@ interface SelectFieldProps extends React.SelectHTMLAttributes<HTMLSelectElement>
   error?: string;
   options: Option[];
   placeholder?: string;
+  /** Overrides the label's className entirely (opt-in - omit to keep the default style). */
+  labelClassName?: string;
 }
 
 export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(
-  ({ label, error, options, placeholder, className = '', id, ...props }, ref) => {
+  ({ label, error, options, placeholder, className = '', id, labelClassName, ...props }, ref) => {
     const selectId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
 
     return (
       <div className="w-full mb-5">
         {label && (
-          <label htmlFor={selectId} className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">
+          <label htmlFor={selectId} className={labelClassName || "block text-base font-medium text-gray-900 mb-2 dark:text-gray-200"}>
             {label.endsWith('*') ? (
               <>{label.slice(0, -1).trimEnd()} <span className="text-red-500">*</span></>
             ) : label}

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { Upload, FileText, Download, Trash2, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Upload, FileText, Download, Trash2, XCircle, Loader2, ShieldCheck, ShieldX } from 'lucide-react';
 import { formatFileSize } from '../utils/fileHelpers';
+import { StatusBadge } from './StatusBadge';
 
 interface ExistingDoc {
   id: number;
@@ -9,6 +10,10 @@ interface ExistingDoc {
   mimeType: string;
   status: string;
   uploadedAt: string;
+  /** Only set once a reviewer has acted on the document via the verify endpoint. */
+  verifiedBy?: string | number | null;
+  verifiedAt?: string | null;
+  remarks?: string | null;
 }
 
 interface DocumentUploadCardProps {
@@ -24,7 +29,33 @@ interface DocumentUploadCardProps {
   onDelete?: () => Promise<void>;
   onDownload?: () => void;
   disabled?: boolean;
+  /** Admin/manager-only verify affordance. Omitted entirely for modules that don't yet
+   * have a review workflow (vendor/employee/freelancer onboarding), so this stays optional. */
+  canVerify?: boolean;
+  onVerify?: (status: 'verified' | 'rejected', remarks?: string) => Promise<void>;
 }
+
+/** Status-aware badge for the 5 ClientDocument statuses (uploaded/under_review/verified/
+ * rejected/expired). Falls back to a neutral title-cased label for any other status string,
+ * so this keeps working unmodified for vendor/freelancer documents that only ever set
+ * 'uploaded'/'verified'. */
+const DOC_STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'danger' | 'neutral' | 'info'> = {
+  uploaded: 'neutral',
+  under_review: 'warning',
+  verified: 'success',
+  rejected: 'danger',
+  expired: 'neutral',
+};
+
+const DOC_STATUS_LABELS: Record<string, string> = {
+  uploaded: 'Uploaded',
+  under_review: 'Under Review',
+  verified: 'Verified',
+  rejected: 'Rejected',
+  expired: 'Expired',
+};
+
+const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 /** Checks `file` against an HTML `accept` attribute string (comma-separated
  * extensions like ".pdf" and/or MIME types like "image/png"). Checks both the
@@ -44,12 +75,15 @@ function isFileTypeAllowed(file: File, accept: string): boolean {
 
 export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
   label, required, accept = '.pdf,.jpg,.jpeg,.png', allowedTypesText = 'PDF, JPG, JPEG or PNG', maxSizeMb = 10,
-  existingDoc, onUpload, onDelete, onDownload, disabled,
+  existingDoc, onUpload, onDelete, onDownload, disabled, canVerify, onVerify,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [rejectRemarks, setRejectRemarks] = useState('');
 
   const resetFileInput = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -103,6 +137,36 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
     }
   };
 
+  const handleVerify = async () => {
+    if (!onVerify) return;
+    setIsVerifying(true);
+    setError(undefined);
+    try {
+      await onVerify('verified');
+    } catch {
+      setError('Failed to verify this document. Please try again.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!onVerify) return;
+    setIsVerifying(true);
+    setError(undefined);
+    try {
+      await onVerify('rejected', rejectRemarks.trim() || undefined);
+      setIsRejecting(false);
+      setRejectRemarks('');
+    } catch {
+      setError('Failed to reject this document. Please try again.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const showVerifyActions = canVerify && existingDoc && onVerify && !disabled;
+
   return (
     <div className={`border rounded-lg p-4 ${error ? 'border-red-300 bg-red-50 dark:border-red-900/40 dark:bg-red-500/10' : 'border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}`}>
       <div className="flex items-start justify-between gap-3">
@@ -122,20 +186,51 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
             ) : (
               <p className="text-xs text-gray-400 dark:text-gray-500">{allowedTypesText}, up to {maxSizeMb}MB</p>
             )}
+            {existingDoc?.verifiedAt && (
+              <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
+                {existingDoc.status === 'rejected' ? 'Rejected' : 'Verified'} by {existingDoc.verifiedBy ?? 'reviewer'} on{' '}
+                {new Date(existingDoc.verifiedAt).toLocaleString()}
+                {existingDoc.remarks && <span className="block italic text-gray-400 dark:text-gray-500">"{existingDoc.remarks}"</span>}
+              </p>
+            )}
             {error && <p className="text-xs text-red-600 mt-1 dark:text-red-400">{error}</p>}
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
           {existingDoc && (
-            <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400">
-              <CheckCircle2 className="w-4 h-4" /> Uploaded
-            </span>
+            <StatusBadge
+              status={existingDoc.status}
+              variant={DOC_STATUS_VARIANTS[existingDoc.status] ?? 'neutral'}
+              label={DOC_STATUS_LABELS[existingDoc.status] ?? titleCase(existingDoc.status)}
+            />
           )}
           {!existingDoc && !isUploading && error && (
             <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
               <XCircle className="w-4 h-4" /> Upload failed
             </span>
+          )}
+          {showVerifyActions && (
+            <>
+              <button
+                type="button"
+                onClick={handleVerify}
+                disabled={isVerifying || isRejecting}
+                className="p-1.5 rounded-md hover:bg-green-50 text-green-600 dark:hover:bg-green-500/10 dark:text-green-400 disabled:opacity-50"
+                title="Verify"
+              >
+                {isVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsRejecting((prev) => !prev)}
+                disabled={isVerifying}
+                className="p-1.5 rounded-md hover:bg-red-50 text-red-500 dark:hover:bg-red-500/10 dark:text-red-400 disabled:opacity-50"
+                title="Reject"
+              >
+                <ShieldX className="w-4 h-4" />
+              </button>
+            </>
           )}
           {existingDoc && onDownload && (
             <button type="button" onClick={onDownload} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 dark:hover:bg-gray-800 dark:text-gray-400" title="Download">
@@ -163,6 +258,39 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
           )}
         </div>
       </div>
+
+      {isRejecting && (
+        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+          <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Reason for rejection (optional)</label>
+          <div className="flex items-start gap-2">
+            <textarea
+              value={rejectRemarks}
+              onChange={(e) => setRejectRemarks(e.target.value)}
+              rows={2}
+              placeholder="e.g. Document is illegible, wrong file type, expired..."
+              className="flex-1 px-3 py-2 text-sm bg-input-bg dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-md border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-800 dark:focus:ring-violet-500"
+            />
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={isVerifying}
+                className="px-3 py-1.5 text-xs font-medium rounded-md bg-risk-600 text-white hover:bg-risk-700 disabled:opacity-50"
+              >
+                {isVerifying ? 'Rejecting…' : 'Confirm Reject'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsRejecting(false); setRejectRemarks(''); }}
+                disabled={isVerifying}
+                className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

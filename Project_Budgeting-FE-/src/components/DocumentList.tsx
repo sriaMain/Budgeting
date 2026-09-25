@@ -20,6 +20,11 @@ export interface UploadedDocumentLike {
   file_type: string;
   status?: string;
   uploaded_at: string;
+  /** Only ever set once a reviewer has acted on the document via the verify endpoint -
+   * optional so modules without a review workflow (vendor/employee/freelancer) are unaffected. */
+  verified_by?: string | number | null;
+  verified_at?: string | null;
+  remarks?: string | null;
 }
 
 interface DocumentListProps {
@@ -29,9 +34,12 @@ interface DocumentListProps {
   onDelete: (docId: number) => Promise<void>;
   onDownload: (docId: number) => void;
   disabled?: boolean;
+  /** Admin/manager-only verify affordance, shown per-document when both are provided. */
+  canVerify?: boolean;
+  onVerify?: (docId: number, status: 'verified' | 'rejected', remarks?: string) => Promise<void>;
 }
 
-export const DocumentList: React.FC<DocumentListProps> = ({ slots, documents, onUpload, onDelete, onDownload, disabled }) => {
+export const DocumentList: React.FC<DocumentListProps> = ({ slots, documents, onUpload, onDelete, onDownload, disabled, canVerify, onVerify }) => {
   const byCategory = new Map<string, UploadedDocumentLike>();
   documents.forEach((d) => {
     if (!byCategory.has(d.category)) byCategory.set(d.category, d);
@@ -64,12 +72,17 @@ export const DocumentList: React.FC<DocumentListProps> = ({ slots, documents, on
                     mimeType: doc.file_type,
                     status: doc.status ?? 'uploaded',
                     uploadedAt: doc.uploaded_at,
+                    verifiedBy: doc.verified_by,
+                    verifiedAt: doc.verified_at,
+                    remarks: doc.remarks,
                   }
                 : undefined
             }
             onUpload={(file) => handleUpload(slot.key, file)}
             onDelete={doc ? () => onDelete(doc.id) : undefined}
             onDownload={doc ? () => onDownload(doc.id) : undefined}
+            canVerify={canVerify}
+            onVerify={doc && onVerify ? (status, remarks) => onVerify(doc.id, status, remarks) : undefined}
           />
         );
       })}

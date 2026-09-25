@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/sria_logo_gray.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>project_budgeting</title>
+    <!--
+      Applies the persisted theme (see src/hooks/useTheme.ts, which owns the
+      "sria-theme" localStorage key) before React mounts/paints, so a reload
+      while in dark mode never flashes a white page first. Defaults to light
+      when nothing's saved yet - the app always opens in light mode until the
+      user explicitly toggles dark mode, regardless of the OS/browser's
+      system color-scheme preference.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('sria-theme');
+          var theme = stored === 'light' || stored === 'dark' ? stored : 'light';
+          document.documentElement.classList.toggle('dark', theme === 'dark');
+        } catch (e) {
+          // localStorage unavailable (privacy mode, etc.) - default to light.
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

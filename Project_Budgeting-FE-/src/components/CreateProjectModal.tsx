@@ -149,7 +149,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             .then((res) => setPocOptionsRaw(res.data || []))
             .catch((err) => console.error('Failed to fetch POC options:', err));
 
-        axiosInstance.get<{ id: number; company_name: string }[]>('/client/dropdown/')
+        axiosInstance.get<{ id: number; company_name: string }[]>('/client/dropdown/?ready_only=1')
             .then((res) => {
                 const options = (res.data || []).map((c) => ({ id: c.id, label: c.company_name }));
                 setClientOptions(options);

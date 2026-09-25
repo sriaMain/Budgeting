@@ -1,0 +1,65 @@
+name: Deploy Budgeting
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 15m
+          script: bash /srv/apps/budgeting/repo/deploy/deploy.sh
+
+      - name: Notify success
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "[Budgeting] Deploy succeeded - ${{ github.sha }}"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: Budgeting Deploy Bot
+          body: |
+            Budgeting was deployed successfully.
+
+            Branch: master
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Message: ${{ github.event.head_commit.message }}
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Notify failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "[Budgeting] Deploy FAILED - ${{ github.sha }}"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: Budgeting Deploy Bot
+          body: |
+            Budgeting deployment failed. The live site was NOT necessarily
+            updated and may need manual attention.
+
+            Branch: master
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Message: ${{ github.event.head_commit.message }}
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            See the workflow run log above for the exact error - the deploy
+            script fails loudly (and does not touch running services) on
+            git divergence, migration errors, or a failed post-deploy health
+            check.
