@@ -3,13 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Edit2, Eye, EyeOff, FileText, Download, Send } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Layout } from '../../components/Layout';
-import { StatusBadge } from '../../components/StatusBadge';
 import { ApprovalTimeline } from '../../components/ApprovalTimeline';
 import { ApprovalActionBar } from '../../components/ApprovalActionBar';
 import { VersionDiffPanel } from '../../components/VersionDiffPanel';
 import { Tabs } from '../../components/Tabs';
 import { useAppSelector } from '../../hooks/useAppSelector';
 import * as api from '../../services/vendorOnboarding';
+import { VendorStatusHeader } from './components/VendorStatusHeader';
+import { formatAmount, fyLabel } from './components/vendorDisplay';
 import type {
   VendorOnboardingDetail, VendorApprovalHistoryEvent, VendorOnboardingChoices,
   VendorSubmissionVersion, RequestChangesPayload,
@@ -36,6 +37,10 @@ interface VendorDetailsContentProps {
   onBack: () => void;
   onEdit: (vendorId: number) => void;
   backLabel?: string;
+  /** Rendered inside a side drawer: no breadcrumb, and the drawer header already carries the name. */
+  embedded?: boolean;
+  /** Notified after an approve / request-changes action, so a list behind the drawer can refresh. */
+  onChanged?: (vendor: VendorOnboardingDetail) => void;
 }
 
 /**
@@ -43,7 +48,7 @@ interface VendorDetailsContentProps {
  * and navigation callbacks as props so it can be shown either inline (swapped in place of
  * the list, no URL change) or inside the standalone /vendors/:id route below.
  */
-export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Vendors' }: VendorDetailsContentProps) {
+export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Vendors', embedded = false, onChanged }: VendorDetailsContentProps) {
   const [vendor, setVendor] = useState<VendorOnboardingDetail | null>(null);
   const [history, setHistory] = useState<VendorApprovalHistoryEvent[]>([]);
   const [versions, setVersions] = useState<VendorSubmissionVersion[]>([]);
@@ -62,6 +67,7 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
         api.getSubmissionVersions(vendorId).catch(() => []),
       ]);
       setVendor(v);
+      onChanged?.(v);
       setHistory(h);
       setVersions(ver);
     } catch (err) {
@@ -113,9 +119,9 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
   const proc = vendor.procurement_detail;
 
   return (
-    <div className="space-y-6 animate-fade-in-down">
+    <div className={embedded ? 'space-y-5' : 'space-y-6 animate-fade-in-down'}>
       {/* Breadcrumb / Back */}
-      <div className="mb-2 flex items-center gap-2 text-sm">
+      <div className={`mb-2 flex items-center gap-2 text-sm ${embedded ? 'hidden' : ''}`}>
         <button onClick={onBack} className="text-blue-600 hover:text-blue-800 font-semibold transition-colors dark:text-blue-400 dark:hover:text-blue-300">
           {backLabel}
         </button>
@@ -126,8 +132,7 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{vendor.name}</h2>
-          <StatusBadge status={vendor.status} />
+          {!embedded && <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{vendor.name}</h2>}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -154,6 +159,8 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
         </div>
       </div>
 
+      <VendorStatusHeader vendor={vendor} />
+
       {vendor.status === 'action_required' && openChangeRequest && (
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 dark:bg-amber-500/10 dark:border-amber-500/30">
           <p className="text-sm font-semibold text-orange-800 dark:text-amber-300">Action Required — {openChangeRequest.section_display}</p>
@@ -179,6 +186,9 @@ export function VendorDetailsContent({ vendorId, onBack, onEdit, backLabel = 'Ve
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4 dark:bg-gray-900 dark:border-gray-800">
             <h3 className="font-bold text-gray-900 text-sm dark:text-white">Vendor Details</h3>
+            <Field label="Service Category" value={p?.service_category} />
+            <Field label="Headcount" value={p?.headcount != null ? String(p.headcount) : null} />
+            <Field label={`${fyLabel(vendor.financials?.fy_start)} Amount Spent`} value={formatAmount(vendor.financials?.fy_spend)} />
             <Field label="Company Code" value={p?.company_code} />
             <Field label="Plant" value={p?.plant} />
             <Field label="Contact Person" value={p?.contact_person_name} />

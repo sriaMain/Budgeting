@@ -10,6 +10,14 @@ export interface VendorOnboardingChoices {
   document_categories: Choice[];
   change_request_sections: Choice[];
   currencies: Choice[];
+  onboarding_currencies: Choice[];
+  payment_terms: Choice[];
+  billing_frequencies: Choice[];
+  document_statuses: Choice[];
+  // Internal review enums - admin choices only, stripped from the public payload.
+  kyc_statuses: Choice[];
+  risk_ratings: Choice[];
+  bank_verification_statuses: Choice[];
 }
 
 export interface VendorPublicChoices {
@@ -17,6 +25,10 @@ export interface VendorPublicChoices {
   msme_categories: Choice[];
   document_categories: Choice[];
   currencies: Choice[];
+  onboarding_currencies: Choice[];
+  payment_terms: Choice[];
+  billing_frequencies: Choice[];
+  document_statuses: Choice[];
 }
 
 export type VendorRequestStatus =
@@ -69,6 +81,12 @@ export interface VendorOnboardingProfile {
   finance_manager_name: string;
   finance_manager_email: string;
   finance_manager_mobile: string;
+  service_category: string;
+  registration_number: string;
+  /** Internal vendor-master fields (admin only - the portal never returns them). */
+  headcount?: number | null;
+  /** 1-5 stars; null = not rated yet. */
+  rating?: number | null;
 }
 
 export interface VendorKYC {
@@ -81,6 +99,8 @@ export interface VendorKYC {
   epf_number: string;
   esic_number: string;
   esic_district: string;
+  tax_id: string;
+  beneficial_ownership_details: string;
 }
 
 export interface VendorBankDetail {
@@ -96,6 +116,10 @@ export interface VendorBankDetail {
   region: string;
   street: string;
   city: string;
+  swift_code: string;
+  iban: string;
+  bank_country: string;
+  bank_address: string;
 }
 
 export interface VendorProcurementDetail {
@@ -111,12 +135,24 @@ export interface VendorProcurementDetail {
   schema_group: string;
   gr_based_invoice_verification: boolean;
   check_double_invoice: boolean;
+  contract_number: string;
+  po_number: string;
+  contract_start_date: string | null;
+  contract_end_date: string | null;
+  custom_payment_terms: string;
+  billing_frequency: string;
+  service_rate: string | null;
+  rate_unit: string;
+  withholding_tax_applicable: boolean;
+  withholding_tax_percentage: string | null;
+  tax_remarks: string;
 }
 
 export interface VendorDocument {
   id: number;
   vendor: number;
-  file: string;
+  /** Write-only upload field - never returned; files open via the signed download endpoint. */
+  file?: string;
   file_name: string;
   file_size: number;
   file_type: string;
@@ -126,6 +162,64 @@ export interface VendorDocument {
   uploaded_by: number | null;
   uploaded_by_role: 'admin' | 'vendor';
   uploaded_at: string;
+  /** Set only by the verify endpoint - uploading never verifies a document. */
+  verified_by?: number | null;
+  verified_by_name?: string | null;
+  verified_at?: string | null;
+  remarks?: string;
+}
+
+/** Internal review state - admin detail payload only, never sent to the vendor portal. */
+export interface VendorReview {
+  kyc_status: string;
+  risk_rating: string;
+  compliance_remarks: string;
+  bank_verification_status: string;
+  bank_verification_remarks: string;
+}
+
+export interface VendorEmailStatus {
+  status: 'not_sent' | 'sent' | 'failed';
+  recipient: string | null;
+  sent_at: string | null;
+  sender: string | null;
+}
+
+/** What the requesting user may do with this vendor (server-computed from their role's permissions). */
+export interface VendorPermissions {
+  edit: boolean;
+  submit: boolean;
+  verify: boolean;
+  approve: boolean;
+  request_changes: boolean;
+  send_email: boolean;
+  delete: boolean;
+  view_unmasked_bank: boolean;
+  upload_documents: boolean;
+  delete_documents: boolean;
+  /** Rating / headcount - still editable after the vendor is submitted or approved. */
+  edit_master?: boolean;
+}
+
+export interface VendorRequirementIssue {
+  key: string;
+  step: VendorOnboardingStepKey;
+  stage: 'submission' | 'approval';
+  kind: 'missing' | 'invalid';
+  message: string;
+}
+
+export interface VendorAuditLogEntry {
+  id: number;
+  action: string;
+  action_display: string;
+  field_name: string;
+  old_value: string;
+  new_value: string;
+  remarks: string;
+  performed_by: number | null;
+  performed_by_name: string | null;
+  created_at: string;
 }
 
 export interface VendorApprovalStage {
@@ -203,6 +297,45 @@ export interface VendorOnboardingDetail {
   current_approval_stage: VendorApprovalStage | null;
   is_current_approver: boolean;
   is_archived: boolean;
+  /** Data-driven 5-step onboarding summary, computed server-side from the vendor's records. */
+  onboarding: VendorOnboardingSummary;
+  /** Committed POs / vendor bills (internal only - never returned by the public portal). */
+  financials: VendorFinancials | null;
+  service_categories: string[];
+  review: VendorReview;
+  email_status: VendorEmailStatus;
+  permissions: VendorPermissions;
+}
+
+export type VendorOnboardingStepKey = 'intake' | 'tax_kyc' | 'banking' | 'contract' | 'approved';
+export type VendorStepStatus = 'pending' | 'in_progress' | 'completed' | 'requires_review' | 'failed';
+
+export interface VendorOnboardingSummary {
+  step_statuses: Record<VendorOnboardingStepKey, VendorStepStatus>;
+  current_step: VendorOnboardingStepKey | null;
+  completed_steps: number;
+  total_steps: number;
+  percent: number;
+  jurisdiction: 'Indian' | 'Overseas';
+  /** Must be filled in / uploaded before submitting for review. */
+  submission_issues: VendorRequirementIssue[];
+  /** Must be verified internally before final approval. */
+  approval_issues: VendorRequirementIssue[];
+}
+
+/** Decimal amounts arrive as strings to avoid float rounding. */
+export interface VendorFinancials {
+  po_count: number;
+  po_total: string;
+  latest_po_no: string | null;
+  latest_po_issue_date: string | null;
+  billed_total: string;
+  paid_total: string;
+  outstanding_total: string;
+  pending_bills: number;
+  fy_spend: string;
+  fy_start: string;
+  po_consumption_percent: number | null;
 }
 
 export interface VendorApprovalHistoryEvent {

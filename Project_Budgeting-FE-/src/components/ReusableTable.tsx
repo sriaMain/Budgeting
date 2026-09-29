@@ -20,6 +20,8 @@ interface ReusableTableProps<T> {
   onEdit?: (item: T) => void;
   onDelete?: (item: T) => void;
   onRowClick?: (item: T) => void;
+  /** Marks rows as selected (e.g. the row last clicked via `onRowClick`) with the accent highlight. */
+  isRowSelected?: (item: T) => boolean;
   emptyMessage?: string;
   /** Rich empty state (e.g. <EmptyState .../>). Takes priority over `emptyMessage` when provided. */
   emptyState?: React.ReactNode;
@@ -44,6 +46,7 @@ export const ReusableTable = <T extends any>({
   onEdit,
   onDelete,
   onRowClick,
+  isRowSelected,
   emptyMessage = "No records found.",
   emptyState,
   error,
@@ -111,6 +114,7 @@ export const ReusableTable = <T extends any>({
           },
           role: 'button' as const,
           tabIndex: 0,
+          'aria-pressed': isRowSelected ? isRowSelected(item) : undefined,
         }
       : {};
 
@@ -155,7 +159,11 @@ export const ReusableTable = <T extends any>({
                 data.map((item) => (
                   <tr
                     key={String(item[keyField])}
-                    className={`hover:bg-gray-50 transition-colors dark:hover:bg-gray-800 ${onRowClick ? 'cursor-pointer' : ''}`}
+                    className={`transition-colors ${
+                      isRowSelected?.(item)
+                        ? 'bg-blue-50 shadow-[inset_3px_0_0_0_var(--color-blue-600)] dark:bg-violet-500/10 dark:shadow-[inset_3px_0_0_0_var(--color-violet-500)]'
+                        : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                    } ${onRowClick ? 'cursor-pointer' : ''}`}
                     {...rowProps(item)}
                   >
                     {columns.map((col, colIndex) => (
@@ -209,7 +217,11 @@ export const ReusableTable = <T extends any>({
           data.map((item) => (
             <div
               key={String(item[keyField])}
-              className={`bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800 ${onRowClick ? 'cursor-pointer' : ''}`}
+              className={`bg-white rounded-lg border p-4 shadow-sm dark:bg-gray-900 ${
+                isRowSelected?.(item)
+                  ? 'border-blue-600 ring-1 ring-blue-600 dark:border-violet-500 dark:ring-violet-500'
+                  : 'border-gray-200 dark:border-gray-800'
+              } ${onRowClick ? 'cursor-pointer' : ''}`}
               {...rowProps(item)}
             >
               {/* Card Content */}
@@ -250,7 +262,8 @@ export const ReusableTable = <T extends any>({
                         // Other columns as labeled fields
                         <div>
                           <p className="text-xs text-gray-500 font-semibold mb-1 dark:text-gray-400">{col.header}</p>
-                          <p className="text-sm text-gray-900 dark:text-gray-100">{value || 'N/A'}</p>
+                          {/* div, not p: column accessors often render block content (divs, badges). */}
+                          <div className="text-sm text-gray-900 dark:text-gray-100">{value || 'N/A'}</div>
                         </div>
                       )}
                     </div>

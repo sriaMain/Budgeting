@@ -79,6 +79,8 @@ export default function InvoiceDetailsScreen({
                 subtotal: parseFloat(data.sub_total || '0').toLocaleString('en-IN'),
                 total: parseFloat(data.total_amount || '0').toLocaleString('en-IN'),
                 tax: parseFloat(data.tax_amount || '0').toLocaleString('en-IN'),
+                // Copied from the project's quotation when the invoice is created.
+                tax_percentage: Number(data.tax_percentage || 0),
                 in_house: parseFloat(data.sub_total || '0').toLocaleString('en-IN'),
                 out_sourced: '0.00',
                 invoiced_sum: parseFloat(data.paid_amount || '0').toLocaleString('en-IN'),
@@ -476,7 +478,7 @@ export default function InvoiceDetailsScreen({
                                 </div>
                                 <div className="grid grid-cols-3 gap-4 text-sm">
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600 dark:text-gray-400">Tax (%)</span>
+                                        <span className="text-gray-600 dark:text-gray-400">Tax ({totals.tax_percentage ?? 0}%)</span>
                                         <span className="font-medium text-gray-900 dark:text-gray-100">{totals.tax}</span>
                                     </div>
                                     <div className="flex justify-between">

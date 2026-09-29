@@ -37,9 +37,16 @@ interface DocumentListProps {
   /** Admin/manager-only verify affordance, shown per-document when both are provided. */
   canVerify?: boolean;
   onVerify?: (docId: number, status: 'verified' | 'rejected', remarks?: string) => Promise<void>;
+  onPreview?: (docId: number) => void;
+  /** Review-only: no upload/replace/delete, verify still allowed. */
+  readOnly?: boolean;
+  requireRejectReason?: boolean;
+  uploadedLabel?: string;
 }
 
-export const DocumentList: React.FC<DocumentListProps> = ({ slots, documents, onUpload, onDelete, onDownload, disabled, canVerify, onVerify }) => {
+export const DocumentList: React.FC<DocumentListProps> = ({
+  slots, documents, onUpload, onDelete, onDownload, disabled, canVerify, onVerify, onPreview, readOnly, requireRejectReason, uploadedLabel,
+}) => {
   const byCategory = new Map<string, UploadedDocumentLike>();
   documents.forEach((d) => {
     if (!byCategory.has(d.category)) byCategory.set(d.category, d);
@@ -83,6 +90,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ slots, documents, on
             onDownload={doc ? () => onDownload(doc.id) : undefined}
             canVerify={canVerify}
             onVerify={doc && onVerify ? (status, remarks) => onVerify(doc.id, status, remarks) : undefined}
+            onPreview={doc && onPreview ? () => onPreview(doc.id) : undefined}
+            readOnly={readOnly}
+            requireRejectReason={requireRejectReason}
+            uploadedLabel={uploadedLabel}
           />
         );
       })}

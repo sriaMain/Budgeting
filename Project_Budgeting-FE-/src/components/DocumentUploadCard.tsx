@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Upload, FileText, Download, Trash2, XCircle, Loader2, ShieldCheck, ShieldX } from 'lucide-react';
+import { Upload, FileText, Download, Trash2, XCircle, Loader2, ShieldCheck, ShieldX, Eye } from 'lucide-react';
 import { formatFileSize } from '../utils/fileHelpers';
 import { StatusBadge } from './StatusBadge';
 
@@ -33,6 +33,14 @@ interface DocumentUploadCardProps {
    * have a review workflow (vendor/employee/freelancer onboarding), so this stays optional. */
   canVerify?: boolean;
   onVerify?: (status: 'verified' | 'rejected', remarks?: string) => Promise<void>;
+  /** Opens the document for viewing (e.g. a signed URL in a new tab). */
+  onPreview?: () => void;
+  /** Review-only: hides upload/replace/delete but keeps verify/reject (e.g. a submitted vendor). */
+  readOnly?: boolean;
+  /** Rejection needs a reason (defaults to optional, as before). */
+  requireRejectReason?: boolean;
+  /** Badge text for a freshly uploaded, unverified document. */
+  uploadedLabel?: string;
 }
 
 /** Status-aware badge for the 5 ClientDocument statuses (uploaded/under_review/verified/
@@ -75,8 +83,9 @@ function isFileTypeAllowed(file: File, accept: string): boolean {
 
 export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
   label, required, accept = '.pdf,.jpg,.jpeg,.png', allowedTypesText = 'PDF, JPG, JPEG or PNG', maxSizeMb = 10,
-  existingDoc, onUpload, onDelete, onDownload, disabled, canVerify, onVerify,
+  existingDoc, onUpload, onDelete, onDownload, disabled, canVerify, onVerify, onPreview, readOnly, requireRejectReason, uploadedLabel,
 }) => {
+  const canModify = !disabled && !readOnly;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -114,11 +123,16 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
     try {
       await onUpload(file);
     } catch (err) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status === 429) {
+      const response = (err as { response?: { status?: number; data?: { message?: unknown; detail?: unknown } } })?.response;
+      const serverMessage = [response?.data?.message, response?.data?.detail].find((m): m is string => typeof m === 'string' && m.length > 0);
+      if (response?.status === 429) {
         setError(`${label} upload is temporarily rate-limited. Please try again later.`);
+      } else if (response?.status === 401) {
+        setError('Your session has expired. Please sign in again.');
+      } else if (response?.status === 403) {
+        setError(serverMessage || "You don't have permission to upload this document.");
       } else {
-        setError(`${label} upload failed. Please try again.`);
+        setError(serverMessage ? `${label}: ${serverMessage}` : `${label} upload failed. Please try again.`);
       }
       console.error(err);
     } finally {
@@ -152,6 +166,10 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
 
   const handleConfirmReject = async () => {
     if (!onVerify) return;
+    if (requireRejectReason && !rejectRemarks.trim()) {
+      setError('A rejection reason is required.');
+      return;
+    }
     setIsVerifying(true);
     setError(undefined);
     try {
@@ -166,6 +184,8 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
   };
 
   const showVerifyActions = canVerify && existingDoc && onVerify && !disabled;
+  const statusLabel = (status: string) =>
+    status === 'uploaded' && uploadedLabel ? uploadedLabel : DOC_STATUS_LABELS[status] ?? titleCase(status);
 
   return (
     <div className={`border rounded-lg p-4 ${error ? 'border-red-300 bg-red-50 dark:border-red-900/40 dark:bg-red-500/10' : 'border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}`}>
@@ -202,7 +222,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
             <StatusBadge
               status={existingDoc.status}
               variant={DOC_STATUS_VARIANTS[existingDoc.status] ?? 'neutral'}
-              label={DOC_STATUS_LABELS[existingDoc.status] ?? titleCase(existingDoc.status)}
+              label={statusLabel(existingDoc.status)}
             />
           )}
           {!existingDoc && !isUploading && error && (
@@ -212,6 +232,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
           )}
           {showVerifyActions && (
             <>
+              {existingDoc.status !== 'verified' && (
               <button
                 type="button"
                 onClick={handleVerify}
@@ -221,6 +242,8 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
               >
                 {isVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
               </button>
+              )}
+              {existingDoc.status !== 'rejected' && (
               <button
                 type="button"
                 onClick={() => setIsRejecting((prev) => !prev)}
@@ -230,19 +253,25 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
               >
                 <ShieldX className="w-4 h-4" />
               </button>
+              )}
             </>
+          )}
+          {existingDoc && onPreview && (
+            <button type="button" onClick={onPreview} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 dark:hover:bg-gray-800 dark:text-gray-400" title="Preview">
+              <Eye className="w-4 h-4" />
+            </button>
           )}
           {existingDoc && onDownload && (
             <button type="button" onClick={onDownload} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 dark:hover:bg-gray-800 dark:text-gray-400" title="Download">
               <Download className="w-4 h-4" />
             </button>
           )}
-          {existingDoc && onDelete && !disabled && (
+          {existingDoc && onDelete && canModify && (
             <button type="button" onClick={handleDelete} disabled={isDeleting} className="p-1.5 rounded-md hover:bg-red-50 text-red-500 dark:hover:bg-red-500/10 dark:text-red-400" title="Delete">
               {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
             </button>
           )}
-          {!disabled && (
+          {canModify && (
             <>
               <input ref={fileInputRef} type="file" accept={accept} className="hidden" onChange={handleFileSelect} />
               <button
@@ -261,7 +290,9 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
 
       {isRejecting && (
         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
-          <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">Reason for rejection (optional)</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1.5 dark:text-gray-400">
+            Reason for rejection {requireRejectReason ? <span className="text-red-500">*</span> : '(optional)'}
+          </label>
           <div className="flex items-start gap-2">
             <textarea
               value={rejectRemarks}
@@ -274,7 +305,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
               <button
                 type="button"
                 onClick={handleConfirmReject}
-                disabled={isVerifying}
+                disabled={isVerifying || (requireRejectReason && !rejectRemarks.trim())}
                 className="px-3 py-1.5 text-xs font-medium rounded-md bg-risk-600 text-white hover:bg-risk-700 disabled:opacity-50"
               >
                 {isVerifying ? 'Rejecting…' : 'Confirm Reject'}

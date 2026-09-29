@@ -14,6 +14,8 @@ import type {
   VendorSubmissionVersion,
   RaiseVendorRequestPayload,
   RequestChangesPayload,
+  VendorReview,
+  VendorAuditLogEntry,
 } from "../types/vendorOnboarding.types";
 
 const BASE = "/vendor-onboarding";
@@ -183,4 +185,26 @@ export const updateApprovalLevel = async (configId: number, levelId: number, dat
 
 export const deleteApprovalLevel = async (configId: number, levelId: number) => {
   await axiosInstance.delete(`${BASE}/approval-config/${configId}/levels/${levelId}/`);
+};
+
+/** Internal reviewer update of KYC status / risk / bank verification (vendor.verify). */
+export const reviewVendor = async (id: number, data: Partial<VendorReview>): Promise<VendorOnboardingDetail> => {
+  const res = await axiosInstance.patch(`${BASE}/vendors/${id}/review/`, data);
+  return res.data;
+};
+
+/** Marks a document Under Review / Verified / Rejected - rejection requires remarks. */
+export const verifyDocument = async (
+  id: number,
+  docId: number,
+  status: "under_review" | "verified" | "rejected",
+  remarks = ""
+): Promise<VendorDocument> => {
+  const res = await axiosInstance.post(`${BASE}/vendors/${id}/documents/${docId}/verify/`, { status, remarks });
+  return res.data;
+};
+
+export const getAuditLogs = async (id: number): Promise<VendorAuditLogEntry[]> => {
+  const res = await axiosInstance.get(`${BASE}/vendors/${id}/audit-logs/`);
+  return res.data;
 };

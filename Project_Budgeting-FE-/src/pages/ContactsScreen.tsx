@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import type { Client, POC } from "../pages/ClientListPage";
+import type { Client, POC, OnboardingStep } from "../pages/ClientListPage";
 import { ClientListPage, kycStatusLabel } from "../pages/ClientListPage";
 import { ClientDetailsPage } from "../pages/ClientDetailsPage";
 import { Layout } from "../components/Layout";
@@ -46,6 +46,8 @@ export default function ContactsScreen() {
   // Create/edit drawer state
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | undefined>(undefined);
+  // Drawer section to scroll to on open (set when opened from an onboarding step card).
+  const [editingSection, setEditingSection] = useState<OnboardingStep | undefined>(undefined);
 
   // Delete confirmation state
   const [deletingClient, setDeletingClient] = useState<Client | null>(null);
@@ -131,11 +133,13 @@ export default function ContactsScreen() {
 
   const openCreateDrawer = () => {
     setEditingClient(undefined);
+    setEditingSection(undefined);
     setIsDrawerOpen(true);
   };
 
-  const openEditDrawer = (client: Client) => {
+  const openEditDrawer = (client: Client, section?: OnboardingStep) => {
     setEditingClient(client);
+    setEditingSection(section);
     setIsDrawerOpen(true);
   };
 
@@ -155,14 +159,20 @@ export default function ContactsScreen() {
       );
     }
     if (meta.keepOpen) {
-      // Just-created client: keep the drawer open, switched into edit mode for the new
-      // record, so KYC documents (which need a real client id to attach to) can be
-      // uploaded right away instead of forcing the user to close and reopen it.
+      // Just-created client (or a save with failed document uploads): keep the drawer open,
+      // switched into edit mode for the saved record, so KYC can continue in place.
       setEditingClient(saved);
-      toast('You can now upload KYC documents for this client below.', { duration: 6000, icon: '📎' });
+      if (wasCreate) toast('Continue the remaining KYC steps below.', { duration: 6000, icon: '📎' });
     } else {
       setIsDrawerOpen(false);
     }
+  };
+
+  // Document upload/delete/verify inside the drawer can move server-computed step_statuses:
+  // sync the list (and the drawer's own client prop) without closing it or toasting a save.
+  const handleClientRefreshed = (fresh: Client) => {
+    setClients((prev) => prev.map((c) => (c.id === fresh.id ? fresh : c)));
+    setEditingClient((prev) => (prev?.id === fresh.id ? fresh : prev));
   };
 
   const handlePOCCreated = (newPOC: POC) => {
@@ -253,6 +263,7 @@ export default function ContactsScreen() {
                   onViewClient={handleNavigateToClientDetails}
                   onSearch={handleSearch}
                   getPrimaryContact={getPrimaryContact}
+                  onOpenStep={openEditDrawer}
                 />
               )}
 
@@ -293,6 +304,8 @@ export default function ContactsScreen() {
           userRole={userRole}
           onSaved={handleClientSaved}
           onCancel={closeDrawer}
+          onClientRefreshed={handleClientRefreshed}
+          initialSection={editingSection}
         />
       </Drawer>
 

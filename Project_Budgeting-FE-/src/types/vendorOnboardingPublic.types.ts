@@ -26,7 +26,8 @@ export interface VendorPublicDetail {
   progress_percentage: number;
   submitted_at: string | null;
   approved_at: string | null;
-  profile: VendorOnboardingProfile | null;
+  /** Named onboarding_profile by the backend (was mistyped as `profile`, so the portal never prefilled it). */
+  onboarding_profile: VendorOnboardingProfile | null;
   kyc: VendorKYC | null;
   bank_detail: VendorBankDetail | null;
   procurement_detail: VendorProcurementDetail | null;

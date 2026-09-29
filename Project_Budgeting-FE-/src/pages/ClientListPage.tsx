@@ -3,7 +3,7 @@ import { Search, Plus, Users, ShieldCheck, AlertTriangle, Globe2, ShieldAlert } 
 import { ReusableTable, type Column } from '../components/ReusableTable';
 import { StatusBadge } from '../components/StatusBadge';
 import { StatCard } from '../components/StatCard';
-import { VendorStepper, type StepConfig } from '../pages/vendor-onboarding/components/VendorStepper';
+import { OnboardingStepCards } from '../components/OnboardingStepCards';
 
 /** Mirrors the role union stored in auth/authSlice.ts (that slice doesn't export a
  * standalone type alias for it, only inline on its state shape). */
@@ -158,6 +158,7 @@ export type ClientDocumentCategory =
   | 'cin_llpin'
   | 'w8ben_e'
   | 'beneficial_ownership_proof'
+  | 'tax_residency_certificate'
   | 'other';
 
 export type ClientDocumentStatus = 'uploaded' | 'under_review' | 'verified' | 'rejected' | 'expired';
@@ -165,7 +166,8 @@ export type ClientDocumentStatus = 'uploaded' | 'under_review' | 'verified' | 'r
 export interface ClientDocument {
   id: number;
   company: number;
-  file: string;
+  /** Write-only upload field - never returned; files are fetched via the signed download endpoint. */
+  file?: string;
   file_name: string;
   file_size: number;
   file_type: string;
@@ -274,6 +276,7 @@ export const DOCUMENT_CATEGORY_OPTIONS: { value: ClientDocumentCategory; label: 
   { value: 'cin_llpin', label: 'CIN / LLPIN' },
   { value: 'w8ben_e', label: 'W-8BEN-E' },
   { value: 'beneficial_ownership_proof', label: 'Beneficial Ownership Document' },
+  { value: 'tax_residency_certificate', label: 'Tax Residency Document' },
   { value: 'other', label: 'Other Document' },
 ];
 
@@ -429,6 +432,142 @@ export const computeJurisdiction = (country: string | undefined): Jurisdiction =
   return 'Overseas';
 };
 
+/** Step cards for the list page's onboarding panel - same 6-step sequence as ONBOARDING_STEPS,
+ * with the longer title/description copy the cards display. */
+export const ONBOARDING_STEP_CARDS: { value: OnboardingStep; title: string; description: string }[] = [
+  { value: 'intake', title: 'Intake', description: 'Capture legal name, entity type, country and billing owner' },
+  { value: 'identity_kyc', title: 'Identity KYC', description: 'Collect CIN/LLPIN, GSTIN/PAN or overseas VAT/EIN/Tax ID' },
+  { value: 'compliance', title: 'Compliance', description: 'Screen sanctions, beneficial ownership, tax residency and risk' },
+  { value: 'banking', title: 'Banking', description: 'Verify bank letter, IFSC for India or SWIFT/IBAN overseas' },
+  { value: 'commercials', title: 'Commercials', description: 'Confirm currency, payment terms, withholding and invoicing rules' },
+  { value: 'approved', title: 'Approved', description: 'Mark project-ready and expose client in New Project dropdown' },
+];
+
+export type OnboardingCardStatus = 'completed' | 'in_progress' | 'pending' | 'requires_review' | 'failed';
+
+export interface ResolvedOnboardingStep {
+  value: OnboardingStep;
+  title: string;
+  description: string;
+  status: OnboardingCardStatus;
+  isCurrent: boolean;
+}
+
+/** A "requires review" step escalates to "failed" when one of its underlying checks hard-failed. */
+const stepHasHardFailure = (client: Client, step: OnboardingStep): boolean => {
+  if (step === 'compliance') {
+    return client.sanctions_screening_status === 'failed' || client.beneficial_ownership_status === 'failed';
+  }
+  if (step === 'banking') return client.banking_verification_status === 'rejected';
+  return false;
+};
+
+/** Maps a client's server-computed step_statuses (via deriveStepProgress, which also covers the
+ * stale-client fallback) onto the 6 onboarding step cards, plus the current step and completion %. */
+export const resolveOnboardingSteps = (
+  client: Client
+): { steps: ResolvedOnboardingStep[]; current: ResolvedOnboardingStep | null; completedCount: number; percent: number } => {
+  const { completedSteps, errorSteps } = deriveStepProgress(client);
+  const hasApprovalBlockers = (client.approval_blockers?.length ?? 0) > 0;
+
+  const steps: ResolvedOnboardingStep[] = ONBOARDING_STEP_CARDS.map((card, i) => {
+    const n = i + 1;
+    let status: OnboardingCardStatus;
+    if (card.value === 'approved') {
+      // Approved is only ever Completed or Pending, and never while approval blockers remain.
+      status = completedSteps.has(n) && !hasApprovalBlockers ? 'completed' : 'pending';
+    } else if (errorSteps.has(n)) {
+      status = stepHasHardFailure(client, card.value) ? 'failed' : 'requires_review';
+    } else if (completedSteps.has(n)) {
+      status = 'completed';
+    } else {
+      status = client.step_statuses?.[card.value] === 'in_progress' ? 'in_progress' : 'pending';
+    }
+    return { ...card, status, isCurrent: false };
+  });
+
+  // Current = the client's onboarding_step, unless that step is already complete (pointer lagging
+  // behind step_statuses) - then the first step that isn't.
+  const ownIndex = steps.findIndex((s) => s.value === client.onboarding_step);
+  const currentIndex =
+    ownIndex >= 0 && steps[ownIndex].status !== 'completed' ? ownIndex : steps.findIndex((s) => s.status !== 'completed');
+  if (currentIndex >= 0) steps[currentIndex].isCurrent = true;
+
+  const completedCount = steps.filter((s) => s.status === 'completed').length;
+  return {
+    steps,
+    current: currentIndex >= 0 ? steps[currentIndex] : null,
+    completedCount,
+    percent: Math.round((completedCount / steps.length) * 100),
+  };
+};
+
+interface OnboardingProcessPanelProps {
+  client: Client | null;
+  /** Opens the existing KYC drawer at the given step's section. Omit to render the cards read-only. */
+  onStepClick?: (client: Client, step: OnboardingStep) => void;
+}
+
+/** "Client onboarding process" panel: the selected client's 6 onboarding steps as status cards. */
+const OnboardingProcessPanel: React.FC<OnboardingProcessPanelProps> = ({ client, onStepClick }) => {
+  const resolved = useMemo(() => (client ? resolveOnboardingSteps(client) : null), [client]);
+
+  const currentLabel = resolved?.current ? resolved.current.title : 'Project-ready';
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-900 dark:border-gray-800">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-4 px-4 sm:px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+        <div className="min-w-0">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">Client onboarding process</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {client && resolved ? (
+              <>
+                <span className="font-medium text-gray-700 dark:text-gray-200">{client.company_name}</span>
+                {' '}&middot; {currentLabel} &middot; {resolved.percent}% complete
+              </>
+            ) : (
+              'Click a client row to see its onboarding progress here.'
+            )}
+          </p>
+        </div>
+        <p className="text-sm text-gray-500 sm:whitespace-nowrap dark:text-gray-400">
+          {ONBOARDING_STEP_CARDS.length} steps &middot; intake to project-ready approval
+        </p>
+      </div>
+
+      {client && resolved && (
+        <div className="px-4 sm:px-5 py-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <StatusBadge status={client.kyc_status} variant={kycStatusVariant(client.kyc_status)} label={`KYC: ${kycStatusLabel(client.kyc_status)}`} />
+            <StatusBadge status={client.risk_rating} variant={riskRatingVariant(client.risk_rating)} label={`${riskRatingLabel(client.risk_rating)} risk`} />
+            <StatusBadge
+              status={client.is_project_ready ? 'project_ready' : 'not_project_ready'}
+              variant={client.is_project_ready ? 'success' : 'neutral'}
+              label={client.is_project_ready ? 'Project-ready' : 'Not project-ready'}
+            />
+            <span>
+              {[client.jurisdiction ?? computeJurisdiction(client.country), client.country, client.currency].filter(Boolean).join(' · ')}
+            </span>
+          </div>
+
+          <OnboardingStepCards
+            steps={resolved.steps.map((step) => ({ ...step, key: step.value }))}
+            onStepClick={onStepClick ? (key) => onStepClick(client, key as OnboardingStep) : undefined}
+            clickHint={(step) => `Open ${step.title} in the KYC drawer`}
+            scrollKey={client.id}
+          />
+
+          {(client.approval_blockers?.length ?? 0) > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              <span className="font-semibold">Before approval:</span> {client.approval_blockers!.join(', ')}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /**
  * ==================================================================
  * SECTION: ClientListPage Component
@@ -449,9 +588,9 @@ interface ClientListProps {
   onSearch: (query: string) => void;
   /** Optional lookup for a client's primary point of contact, shown under their name/phone in the table. */
   getPrimaryContact?: (clientId: number) => string | undefined;
+  /** Opens the existing KYC drawer scrolled to an onboarding step's section (onboarding step cards). */
+  onOpenStep?: (client: Client, step: OnboardingStep) => void;
 }
-
-const STEPPER_STEPS: StepConfig[] = ONBOARDING_STEPS.map((s, i) => ({ index: i + 1, label: s.label }));
 
 const PAGE_SIZE = 10;
 
@@ -467,6 +606,7 @@ export function ClientListPage({
   onViewClient,
   onSearch,
   getPrimaryContact,
+  onOpenStep,
 }: ClientListProps) {
   const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(1);
@@ -552,7 +692,7 @@ export function ClientListPage({
           <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden dark:bg-gray-800">
             <div
               className={`h-full rounded-full ${c.onboarding_step === 'approved' ? 'bg-green-600' : 'bg-blue-600'}`}
-              style={{ width: `${onboardingProgressPercent(c.onboarding_step)}%` }}
+              style={{ width: `${resolveOnboardingSteps(c).percent}%` }}
             />
           </div>
         </div>
@@ -638,25 +778,8 @@ export function ClientListPage({
         />
       </div>
 
-      {/* Onboarding stepper - bound to whichever client was last row-clicked */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 sm:p-5 dark:bg-gray-900 dark:border-gray-800">
-        {selectedClient ? (
-          <>
-            <p className="text-sm font-semibold text-gray-900 mb-3 dark:text-white">
-              {selectedClient.company_name} &middot; {onboardingStepLabel(selectedClient.onboarding_step)} &middot; {onboardingProgressPercent(selectedClient.onboarding_step)}% complete
-            </p>
-            <VendorStepper
-              steps={STEPPER_STEPS}
-              currentStep={onboardingStepIndex(selectedClient.onboarding_step)}
-              completedSteps={deriveStepProgress(selectedClient).completedSteps}
-              errorSteps={deriveStepProgress(selectedClient).errorSteps}
-              onStepClick={() => {}}
-            />
-          </>
-        ) : (
-          <p className="text-sm text-gray-500 dark:text-gray-400">Click a client row to see its onboarding progress here.</p>
-        )}
-      </div>
+      {/* Onboarding process - bound to whichever client was last row-clicked */}
+      <OnboardingProcessPanel client={selectedClient} onStepClick={canEdit ? onOpenStep : undefined} />
 
       <ReusableTable<Client>
         data={paginatedClients}
@@ -666,6 +789,7 @@ export function ClientListPage({
         error={error}
         onRetry={onRetry}
         onRowClick={handleRowClick}
+        isRowSelected={(c) => c.id === selectedClientId}
         onEdit={canEdit ? onEditClient : undefined}
         onDelete={canDelete ? onDeleteClient : undefined}
         emptyMessage='No clients found. Click "Onboard Client" to create one.'

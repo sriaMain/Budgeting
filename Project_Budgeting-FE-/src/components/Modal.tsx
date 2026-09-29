@@ -30,7 +30,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, size = 'md
         >
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 dark:bg-gray-900 dark:border-gray-800">
             <h3 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors dark:text-gray-500 dark:hover:text-gray-300">
+            <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors dark:text-gray-500 dark:hover:text-gray-300">
               <X size={24} />
             </button>
           </div>

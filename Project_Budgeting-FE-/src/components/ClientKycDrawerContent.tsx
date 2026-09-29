@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import axiosInstance from '../utils/axiosInstance';
 import { parseApiErrors } from '../utils/parseApiErrors';
@@ -7,8 +7,9 @@ import { InputField } from './InputField';
 import { SelectField } from './SelectField';
 import { Checkbox } from './Checkbox';
 import { SearchableSelect, type SearchableSelectOption } from './SearchableSelect';
-import { DocumentList } from './DocumentList';
+import { ClientDocumentsSection, type StagedClientDocument, type DocumentPreviewSource } from './ClientDocumentsSection';
 import { StatusBadge } from './StatusBadge';
+import { COMPACT_LABEL, COMPACT_FIELD_PADDING } from './fieldDensity';
 import type { FormErrors } from '../types';
 import {
   CLIENT_TYPE_OPTIONS,
@@ -16,7 +17,6 @@ import {
   KYC_STATUS_OPTIONS,
   RISK_RATING_OPTIONS,
   EDITABLE_ONBOARDING_STEPS,
-  DOCUMENT_CATEGORY_OPTIONS,
   BANKING_VERIFICATION_STATUS_OPTIONS,
   SANCTIONS_SCREENING_OPTIONS,
   BENEFICIAL_OWNERSHIP_OPTIONS,
@@ -31,7 +31,7 @@ import {
   stepStatusLabel,
   stepStatusVariant,
 } from '../pages/ClientListPage';
-import type { Client, CompanyTag, ClientDocument, UserRole, StepStatuses } from '../pages/ClientListPage';
+import type { Client, CompanyTag, ClientDocument, UserRole, StepStatuses, OnboardingStep } from '../pages/ClientListPage';
 
 interface CountryCodeOption {
   name: string;
@@ -45,6 +45,13 @@ interface ClientKycDrawerContentProps {
   userRole: UserRole;
   onSaved: (client: Client, meta: { kycAutoChanged: boolean; keepOpen?: boolean }) => void;
   onCancel: () => void;
+  /** Called with the re-fetched client after document changes (upload/delete/verify), which can
+   * move server-computed step_statuses - keeps the list's onboarding panel in sync without
+   * closing the drawer. */
+  onClientRefreshed?: (client: Client) => void;
+  /** Onboarding step whose form section should be scrolled into view on open (e.g. from a
+   * step card on the Clients list). Omit to open at the top as usual. */
+  initialSection?: OnboardingStep;
 }
 
 // Standard GSTIN format: 2-digit state code, 10-char PAN, 1-char entity code, "Z", 1 checksum char.
@@ -57,8 +64,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // InputField/SelectField's labelClassName - every other form in the app is unaffected).
 // Same colors as everywhere else in the app (gray-500/gray-900, blue/violet focus rings) -
 // only the label typography and field density change, not the palette.
-const COMPACT_LABEL = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 dark:text-gray-400';
-const compactField = { labelClassName: COMPACT_LABEL, className: 'py-2.5' };
+const compactField = { labelClassName: COMPACT_LABEL, className: COMPACT_FIELD_PADDING };
 
 interface FormState {
   company_name: string;
@@ -189,8 +195,9 @@ const buildInitialForm = (client?: Client): FormState => ({
  * The server can silently override kyc_status on save (see onSaved's kycAutoChanged flag) -
  * callers are expected to re-render from the saved response and surface that explanation.
  */
-export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ client, userRole, onSaved, onCancel }) => {
+export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ client, userRole, onSaved, onCancel, onClientRefreshed, initialSection }) => {
   const isEditing = !!client;
+  const formRef = useRef<HTMLFormElement>(null);
   const [form, setForm] = useState<FormState>(() => buildInitialForm(client));
   const [tags, setTags] = useState<CompanyTag[]>([]);
   const [countryCodes, setCountryCodes] = useState<CountryCodeOption[]>([]);
@@ -201,20 +208,60 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
 
   const [documents, setDocuments] = useState<ClientDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
+  // Files picked but not uploaded yet - on a create they wait for the new client's id.
+  const [stagedDocs, setStagedDocs] = useState<StagedClientDocument[]>([]);
+  const [isUploadingDocs, setIsUploadingDocs] = useState(false);
+  const [documentsError, setDocumentsError] = useState<string | undefined>();
+  const [docsLoadError, setDocsLoadError] = useState<string | undefined>();
+  const [recentlyUploadedIds, setRecentlyUploadedIds] = useState<Set<number>>(new Set());
+  // Latest staged list for async upload loops / unmount cleanup (updated after each commit).
+  const stagedDocsRef = useRef(stagedDocs);
+  useEffect(() => {
+    stagedDocsRef.current = stagedDocs;
+  }, [stagedDocs]);
+
+  // Release thumbnail object URLs for anything still staged when the drawer closes.
+  useEffect(
+    () => () => stagedDocsRef.current.forEach((d) => d.previewUrl && URL.revokeObjectURL(d.previewUrl)),
+    []
+  );
+
+  // The Drawer unmounts its children while closed, so this runs once per open.
+  useEffect(() => {
+    if (!initialSection) return;
+    formRef.current
+      ?.querySelector(`[data-kyc-section="${initialSection}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [initialSection]);
 
   useEffect(() => {
     axiosInstance.get('/company-tags/').then((res) => setTags(res.data)).catch(() => {});
     axiosInstance.get('/country-codes/').then((res) => setCountryCodes(res.data)).catch(() => {});
   }, []);
 
+  const loadDocuments = (clientId: number) => {
+    setDocsLoading(true);
+    setDocsLoadError(undefined);
+    return axiosInstance
+      .get(`/client/${clientId}/documents/`)
+      .then((res) => setDocuments(res.data))
+      .catch((err) => {
+        console.error('Failed to load client documents', err);
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        setDocsLoadError(
+          status === 401
+            ? 'Your session has expired. Please sign in again.'
+            : status === 403
+              ? "You don't have permission to view this client's documents."
+              : 'Unable to load KYC documents. Please try again.'
+        );
+      })
+      .finally(() => setDocsLoading(false));
+  };
+
   useEffect(() => {
     if (!client?.id) return;
-    setDocsLoading(true);
-    axiosInstance
-      .get(`/client/${client.id}/documents/`)
-      .then((res) => setDocuments(res.data))
-      .catch(() => toast.error('Failed to load documents'))
-      .finally(() => setDocsLoading(false));
+    loadDocuments(client.id);
   }, [client?.id]);
 
   const jurisdiction = useMemo(() => computeJurisdiction(form.country), [form.country]);
@@ -291,6 +338,11 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
       setErrors(validationErrors);
       return;
     }
+    if (stagedDocs.some((d) => !d.category)) {
+      setDocumentsError('Select a document type for each document before saving.');
+      formRef.current?.querySelector('[data-kyc-section="documents"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
 
     setIsSaving(true);
     setErrors({});
@@ -359,12 +411,22 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
 
       // Always re-render from the server's response, not the submitted payload - it may
       // have silently forced kyc_status to enhanced_review (high risk / undocumented overseas).
-      const saved: Client = res.data;
+      let saved: Client = res.data;
       const kycAutoChanged = saved.kyc_status !== form.kyc_status;
+      // Documents need a real client id, so files picked before the client existed (or not
+      // yet uploaded on an edit) go up now, against the id the save just returned.
+      let failedUploads = 0;
+      if (stagedDocs.length > 0) {
+        const result = await uploadStagedDocuments(saved.id);
+        failedUploads = result.failed;
+        if (result.uploaded > 0) saved = (await fetchClient(saved.id)) ?? saved;
+        if (failedUploads > 0) {
+          toast.error(`${failedUploads} document${failedUploads === 1 ? '' : 's'} failed to upload - retry from the Documents section.`);
+        }
+      }
       // On a create, ask the caller to keep this drawer open (switched into edit mode for
-      // the new client) instead of closing it - Documents needs a real client id to attach
-      // to, so closing here would force the user to reopen it just to upload KYC documents.
-      onSaved(saved, { kycAutoChanged, keepOpen: !client });
+      // the new client) so the rest of KYC can continue in place; likewise on any failed upload.
+      onSaved(saved, { kycAutoChanged, keepOpen: !client || failedUploads > 0 });
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       const apiErrors = parseApiErrors(err);
@@ -403,43 +465,214 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
     }
   };
 
-  const handleVerifyDocument = async (docId: number, status: 'verified' | 'rejected', remarks?: string) => {
-    if (!client?.id) return;
-    const res = await axiosInstance.post(`/client/${client.id}/documents/${docId}/verify/`, { status, remarks });
-    setDocuments((prev) => prev.map((d) => (d.id === docId ? res.data : d)));
+  const fetchClient = async (id: number): Promise<Client | undefined> => {
+    try {
+      return (await axiosInstance.get(`/client/${id}/`)).data;
+    } catch {
+      return undefined;
+    }
   };
 
-  const handleUploadDocument = async (category: string, file: File) => {
-    if (!client?.id) return;
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('category', category);
-    fd.append('is_required', 'false');
-    const res = await axiosInstance.post(`/client/${client.id}/documents/`, fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    setDocuments((prev) => [...prev.filter((d) => d.id !== res.data.id), res.data]);
+  /** Re-reads the client after a document change so step_statuses / approval blockers stay current. */
+  const refreshClientAfterDocChange = async () => {
+    if (!client?.id || !onClientRefreshed) return;
+    const fresh = await fetchClient(client.id);
+    if (fresh) onClientRefreshed(fresh);
   };
 
-  const handleDeleteDocument = async (docId: number) => {
-    if (!client?.id) return;
-    await axiosInstance.delete(`/client/${client.id}/documents/${docId}/`);
-    setDocuments((prev) => prev.filter((d) => d.id !== docId));
+  /** Maps an upload failure to a safe, user-facing message (technical detail goes to the console). */
+  const describeUploadError = (err: unknown): { message: string; code?: string } => {
+    console.error('Client document upload failed', err);
+    const e = err as { code?: string; response?: { status?: number; data?: { message?: unknown; detail?: unknown; error?: unknown } } };
+    const response = e.response;
+    if (!response) return { message: 'Unable to upload document. Please check your connection and try again.' };
+    const code = typeof response.data?.error === 'string' ? response.data.error : undefined;
+    if (response.status === 401) return { message: 'Your session has expired. Please sign in again.', code };
+    if (response.status === 403) return { message: "You don't have permission to upload KYC documents.", code };
+    if (response.status === 413) return { message: 'File is too large.', code };
+    if (response.status === 429) return { message: 'Too many uploads right now. Please try again shortly.', code };
+    if ((response.status ?? 0) >= 500) return { message: 'Server could not process the document. Please try again.', code };
+    const serverMessage = [response.data?.message, response.data?.detail].find((m): m is string => typeof m === 'string' && m.length > 0);
+    return { message: serverMessage || 'Unable to upload document. Please try again.', code };
   };
 
-  const handleDownloadDocument = (docId: number) => {
-    if (!client?.id) return;
-    axiosInstance
-      .get(`/client/${client.id}/documents/${docId}/download/`)
-      .then((res) => window.open(res.data.download_url, '_blank'))
-      .catch(() => toast.error('Failed to get download link'));
+  const markRecentlyUploaded = (id: number) => {
+    setRecentlyUploadedIds((prev) => new Set(prev).add(id));
+    setTimeout(() => setRecentlyUploadedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    }), 6000);
   };
 
-  const documentSlots = DOCUMENT_CATEGORY_OPTIONS.map((opt) => ({
-    key: opt.value,
-    label: opt.label,
-    required: opt.value === 'sanctions_screening' && jurisdiction === 'Overseas',
-  }));
+  const patchStaged = (key: string, patch: Partial<StagedClientDocument>) =>
+    setStagedDocs((prev) => prev.map((d) => (d.key === key ? { ...d, ...patch } : d)));
+
+  /** Uploads one staged file through the existing multipart endpoint. Content-Type is left to the
+   * browser so the multipart boundary is set correctly. */
+  const uploadOneStaged = async (clientId: number, staged: StagedClientDocument): Promise<{ ok: boolean; code?: string }> => {
+    patchStaged(staged.key, { state: 'uploading', progress: 0, error: undefined });
+    try {
+      const fd = new FormData();
+      fd.append('file', staged.file);
+      fd.append('category', staged.category);
+      fd.append('is_required', 'false');
+      const res = await axiosInstance.post(`/client/${clientId}/documents/`, fd, {
+        onUploadProgress: (e) => {
+          if (e.total) patchStaged(staged.key, { progress: Math.min(99, Math.round((e.loaded / e.total) * 100)) });
+        },
+      });
+      setDocuments((prev) => [res.data, ...prev.filter((d) => d.id !== res.data.id)]);
+      if (staged.previewUrl) URL.revokeObjectURL(staged.previewUrl);
+      setStagedDocs((prev) => prev.filter((d) => d.key !== staged.key));
+      markRecentlyUploaded(res.data.id);
+      return { ok: true };
+    } catch (err) {
+      const { message, code } = describeUploadError(err);
+      patchStaged(staged.key, { state: 'error', progress: undefined, error: message });
+      return { ok: false, code };
+    }
+  };
+
+  /** Uploads every staged file sequentially - the backend's 8-document cap is checked per request. */
+  const uploadStagedDocuments = async (clientId: number, keys?: string[]): Promise<{ uploaded: number; failed: number }> => {
+    let uploaded = 0;
+    let failed = 0;
+    setIsUploadingDocs(true);
+    setDocumentsError(undefined);
+    const queue = stagedDocsRef.current.filter((d) => d.category && (!keys || keys.includes(d.key)));
+    for (let i = 0; i < queue.length; i++) {
+      const result = await uploadOneStaged(clientId, queue[i]);
+      if (result.ok) {
+        uploaded++;
+        continue;
+      }
+      failed++;
+      if (result.code === 'document_limit_reached' || result.code === 'duplicate_document') {
+        // Our list was out of date - re-sync it so the counter and limit reflect the server.
+        loadDocuments(clientId);
+      }
+      if (result.code === 'document_limit_reached') {
+        // Every remaining file would hit the same limit - don't send them.
+        const rest = queue.slice(i + 1);
+        rest.forEach((d) => patchStaged(d.key, { state: 'error', error: 'Maximum 8 KYC documents are allowed. Delete a document to upload another.' }));
+        failed += rest.length;
+        break;
+      }
+    }
+    setIsUploadingDocs(false);
+    return { uploaded, failed };
+  };
+
+  const reportUploadResult = ({ uploaded, failed }: { uploaded: number; failed: number }) => {
+    if (uploaded > 0) {
+      toast.success(uploaded === 1 ? 'KYC document uploaded successfully' : `${uploaded} KYC documents uploaded successfully`);
+      refreshClientAfterDocChange();
+    }
+    if (failed > 0) toast.error(`${failed} document${failed === 1 ? '' : 's'} could not be uploaded - see the reason on each file.`);
+  };
+
+  const handleUploadStagedNow = async () => {
+    if (!client?.id) return;
+    reportUploadResult(await uploadStagedDocuments(client.id));
+  };
+
+  const handleRetryStaged = async (key: string) => {
+    if (!client?.id) return;
+    reportUploadResult(await uploadStagedDocuments(client.id, [key]));
+  };
+
+  const handleVerifyDocument = async (doc: ClientDocument, status: 'verified' | 'rejected', remarks?: string) => {
+    if (!client?.id) return;
+    const res = await axiosInstance.post(`/client/${client.id}/documents/${doc.id}/verify/`, { status, remarks });
+    setDocuments((prev) => prev.map((d) => (d.id === doc.id ? res.data : d)));
+    toast.success(status === 'verified' ? 'Document verified' : 'Document rejected');
+    refreshClientAfterDocChange();
+  };
+
+  const handleDeleteDocument = async (doc: ClientDocument) => {
+    if (!client?.id) return;
+    try {
+      await axiosInstance.delete(`/client/${client.id}/documents/${doc.id}/`);
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      toast.error(status === 403 ? "You don't have permission to delete documents." : 'Failed to delete document');
+      throw err;
+    }
+    setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+    toast.success('Document deleted');
+    refreshClientAfterDocChange();
+  };
+
+  /** Short-lived signed URL from the existing permission-checked download endpoint. */
+  const getSignedDocumentUrl = async (doc: ClientDocument): Promise<string | undefined> => {
+    if (!client?.id) return undefined;
+    const res = await axiosInstance.get(`/client/${client.id}/documents/${doc.id}/download/`);
+    return res.data.download_url;
+  };
+
+  /** Fetches the file into a same-origin blob typed with its real MIME type, so PDFs/images
+   * render inline for preview and downloads keep their original filename. Falls back to the
+   * signed URL itself if the storage host refuses a cross-origin fetch. */
+  const loadDocumentBlobUrl = async (doc: ClientDocument): Promise<{ blobUrl?: string; signedUrl?: string }> => {
+    const signedUrl = await getSignedDocumentUrl(doc);
+    if (!signedUrl) return {};
+    try {
+      const response = await fetch(signedUrl);
+      if (!response.ok) throw new Error(String(response.status));
+      const blob = await response.blob();
+      const typed = new Blob([blob], { type: doc.file_type || blob.type });
+      return { blobUrl: URL.createObjectURL(typed), signedUrl };
+    } catch {
+      return { signedUrl };
+    }
+  };
+
+  const handleLoadPreview = async (doc: ClientDocument): Promise<DocumentPreviewSource | undefined> => {
+    const { blobUrl, signedUrl } = await loadDocumentBlobUrl(doc);
+    if (blobUrl) return { url: blobUrl, isBlob: true };
+    return signedUrl ? { url: signedUrl, isBlob: false } : undefined;
+  };
+
+  /** Opens the file in a new tab via a short-lived signed URL. */
+  const handleOpenDocument = async (doc: ClientDocument) => {
+    // Opened synchronously (before any await) so popup blockers treat it as user-initiated.
+    const win = window.open('', '_blank');
+    try {
+      const signedUrl = await getSignedDocumentUrl(doc);
+      if (!signedUrl) throw new Error('No download URL returned');
+      if (win) {
+        win.opener = null;
+        win.location.href = signedUrl;
+      } else {
+        window.open(signedUrl, '_blank', 'noopener');
+      }
+    } catch (err) {
+      console.error('Opening client document failed', err);
+      win?.close();
+      toast.error('Unable to open the document. Please try again.');
+    }
+  };
+
+  const handleDownloadDocument = async (doc: ClientDocument) => {
+    try {
+      const { blobUrl, signedUrl } = await loadDocumentBlobUrl(doc);
+      if (blobUrl) {
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = doc.file_name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
+      } else if (signedUrl) {
+        window.open(signedUrl, '_blank', 'noopener');
+      }
+    } catch (err) {
+      console.error('Client document download failed', err);
+      toast.error('Unable to download the document. Please try again.');
+    }
+  };
 
   const countryCodeOptions: SearchableSelectOption[] = countryCodes.map((c) => ({
     id: c.dial_code,
@@ -457,7 +690,7 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
     countryOptions.find((o) => o.id === form.country) || (form.country ? { id: form.country, label: form.country } : null);
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-8">
       {errors.general && (
         <div className="p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400">
           {errors.general}
@@ -465,7 +698,7 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
       )}
 
       {/* General */}
-      <section>
+      <section data-kyc-section="intake">
         <div className="flex items-center justify-between mb-4">
           <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">General</h4>
           {stepPill('intake')}
@@ -571,7 +804,7 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
       </section>
 
       {/* Identity & KYC */}
-      <section className="border-t pt-6 dark:border-gray-800">
+      <section data-kyc-section="identity_kyc" className="border-t pt-6 dark:border-gray-800">
         <div className="flex items-center justify-between mb-4">
           <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">Identity &amp; KYC</h4>
           {stepPill('identity_kyc')}
@@ -643,7 +876,7 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
       </section>
 
       {/* Compliance */}
-      <section className="border-t pt-6 dark:border-gray-800">
+      <section data-kyc-section="compliance" className="border-t pt-6 dark:border-gray-800">
         <div className="flex items-center justify-between mb-4">
           <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">Compliance</h4>
           {stepPill('compliance')}
@@ -718,7 +951,7 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
       </section>
 
       {/* Commercials */}
-      <section className="border-t pt-6 dark:border-gray-800">
+      <section data-kyc-section="commercials" className="border-t pt-6 dark:border-gray-800">
         <div className="flex items-center justify-between mb-4">
           <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">Commercials</h4>
           {stepPill('commercials')}
@@ -797,7 +1030,7 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
       </section>
 
       {/* Banking */}
-      <section className="border-t pt-6 dark:border-gray-800">
+      <section data-kyc-section="banking" className="border-t pt-6 dark:border-gray-800">
         <div className="flex items-center justify-between mb-4">
           <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">Banking</h4>
           {stepPill('banking')}
@@ -845,7 +1078,7 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
       </section>
 
       {/* KYC & Onboarding */}
-      <section className="border-t pt-6 dark:border-gray-800">
+      <section data-kyc-section="approved" className="border-t pt-6 dark:border-gray-800">
         <div className="flex items-center justify-between mb-4">
           <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">KYC &amp; Onboarding</h4>
           {stepPill('approved')}
@@ -914,22 +1147,39 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
       </section>
 
       {/* Documents */}
-      <section className="border-t pt-6 dark:border-gray-800">
-        <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Documents</h4>
-        {isEditing ? (
-          <DocumentList
-            slots={documentSlots}
-            documents={documents}
-            onUpload={handleUploadDocument}
-            onDelete={handleDeleteDocument}
-            onDownload={handleDownloadDocument}
-            onVerify={handleVerifyDocument}
-            canVerify={canApprove}
-            disabled={docsLoading}
-          />
-        ) : (
-          <p className="text-sm text-gray-500 dark:text-gray-400">Save this client first, then reopen it here to upload KYC documents (max 8).</p>
-        )}
+      <section data-kyc-section="documents" className="border-t pt-6 dark:border-gray-800">
+        <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3 dark:text-gray-300">KYC Documents</h4>
+        <ClientDocumentsSection
+          jurisdiction={jurisdiction}
+          documents={documents}
+          staged={stagedDocs}
+          onStagedChange={(next) => {
+            setDocumentsError(undefined);
+            setStagedDocs(next);
+          }}
+          canUploadNow={isEditing}
+          onUploadStaged={handleUploadStagedNow}
+          onRetryStaged={handleRetryStaged}
+          isUploading={isUploadingDocs}
+          isLoading={docsLoading}
+          loadError={docsLoadError}
+          onReloadDocuments={client?.id ? () => loadDocuments(client.id) : undefined}
+          recentlyUploadedIds={recentlyUploadedIds}
+          onLoadPreview={handleLoadPreview}
+          onOpenDocument={handleOpenDocument}
+          onDownload={handleDownloadDocument}
+          onDelete={handleDeleteDocument}
+          resolveThumbnailUrl={isEditing ? getSignedDocumentUrl : undefined}
+          canVerify={canApprove && isEditing}
+          onVerify={handleVerifyDocument}
+          fieldEvidence={{
+            registration_no: !!form.registration_no.trim(),
+            gstin: !!form.gstin.trim(),
+            pan: !!form.pan.trim(),
+            tax_id: !!form.tax_id.trim(),
+          }}
+          error={documentsError}
+        />
       </section>
 
       {/* Footer summary */}
@@ -954,7 +1204,11 @@ export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ 
             disabled={isSaving}
             className="px-8 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSaving ? 'Saving…' : isEditing ? 'Update Client' : 'Create Client'}
+            {isSaving
+              ? isUploadingDocs ? 'Uploading documents…' : 'Saving…'
+              : isEditing
+                ? 'Update Client'
+                : stagedDocs.length > 0 ? `Create Client & Upload ${stagedDocs.length}` : 'Create Client'}
           </button>
         </div>
       </div>

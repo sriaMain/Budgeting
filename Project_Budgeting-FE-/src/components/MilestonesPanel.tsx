@@ -28,6 +28,10 @@ interface Milestone {
     actual_cost: string | number;
     margin: string | number;
     billed_amount: string | number;
+    /** Pre-tax billed amount (billing_amount is pre-tax too). */
+    billed_base_amount?: string | number;
+    /** Tax % the invoice gets, from the project's quotation. */
+    tax_percentage?: string | number;
     received_amount: string | number;
     outstanding_amount: string | number;
     billing_status: string;
@@ -216,7 +220,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
     };
 
     const openInvoiceModal = (milestone: Milestone) => {
-        const remaining = num(milestone.billing_amount) - num(milestone.billed_amount);
+        const remaining = num(milestone.billing_amount) - num(milestone.billed_base_amount ?? milestone.billed_amount);
         setInvoiceAmount(remaining > 0 ? String(remaining) : String(num(milestone.billing_amount)));
         setInvoiceDueDays('30');
         setInvoiceModalMilestone(milestone);
@@ -502,13 +506,24 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
 
                         <div className="space-y-3">
                             <div>
-                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Invoice Amount</label>
+                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Invoice Amount (before tax)</label>
                                 <input
                                     type="number"
                                     value={invoiceAmount}
                                     onChange={(e) => setInvoiceAmount(e.target.value)}
                                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                                 />
+                                {(() => {
+                                    const taxPct = num(invoiceModalMilestone.tax_percentage);
+                                    const base = num(invoiceAmount);
+                                    const tax = (base * taxPct) / 100;
+                                    return (
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                            + Tax {taxPct}% (from quotation): {tax.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                            {' '}&middot; Invoice total: <span className="font-semibold text-gray-700 dark:text-gray-200">{(base + tax).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                        </p>
+                                    );
+                                })()}
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Due in (days)</label>

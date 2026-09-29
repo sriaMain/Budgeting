@@ -1,17 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Search, Plus, UserPlus, Filter, X, Users, AlertCircle, CheckCircle2, Archive, ArchiveRestore } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Search, UserPlus, Filter, X, Users, AlertCircle, CheckCircle2, Archive } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Layout } from '../../components/Layout';
-import { StatusBadge } from '../../components/StatusBadge';
 import { StatCard } from '../../components/StatCard';
 import { Tabs, type TabItem } from '../../components/Tabs';
 import { useAppSelector } from '../../hooks/useAppSelector';
 import * as api from '../../services/vendorOnboarding';
 import type { VendorOnboardingDetail, VendorOnboardingChoices, VendorListFilters, VendorRequestSummary } from '../../types/vendorOnboarding.types';
 import { ACTION_REQUIRED_STATUS_GROUP } from '../../types/vendorOnboarding.types';
-import { VendorDetailsContent } from './VendorDetailsPage';
-import { RaiseVendorRequestModal } from './RaiseVendorRequestModal';
+import { VendorOnboardDrawer } from './VendorOnboardDrawer';
+import { VendorOnboardingPanel } from './components/VendorOnboardingPanel';
+import { VendorCard } from './components/VendorCard';
+import type { VendorOnboardingStepKey } from '../../types/vendorOnboarding.types';
 
 // Sentinel tab/card key for "Archived" - it's a visibility flag, not a
 // status, so it can't just be another value in the status filter the way the
@@ -56,7 +56,6 @@ function summaryCardValues(summary: VendorRequestSummary | null) {
  * Vendors tab (which supplies its own Layout), the same way ClientListPage is embedded.
  */
 export function VendorListContent() {
-  const navigate = useNavigate();
 
   const [vendors, setVendors] = useState<VendorOnboardingDetail[]>([]);
   const [summary, setSummary] = useState<VendorRequestSummary | null>(null);
@@ -64,10 +63,13 @@ export function VendorListContent() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [isRaiseModalOpen, setIsRaiseModalOpen] = useState(false);
+  // Onboarding drawer: vendorId null = onboard a new vendor; section = step to scroll to.
+  const [drawer, setDrawer] = useState<{ open: boolean; vendorId: number | null; section?: VendorOnboardingStepKey }>({ open: false, vendorId: null });
+  const panelRef = useRef<HTMLDivElement>(null);
   const [filters, setFilters] = useState<VendorListFilters>({});
   const [appliedFilters, setAppliedFilters] = useState<VendorListFilters>({});
-  const [selectedVendorId, setSelectedVendorId] = useState<number | null>(null);
+  // Card last clicked - drives the onboarding panel.
+  const [activeVendorId, setActiveVendorId] = useState<number | null>(null);
 
   useEffect(() => {
     api.getChoices().then(setChoices).catch(() => {});
@@ -126,14 +128,12 @@ export function VendorListContent() {
     setAppliedFilters(next);
   };
 
-  const handleRowClick = (vendor: VendorOnboardingDetail) => {
-    if (vendor.status === 'invited' || vendor.status === 'draft') {
-      // Nothing meaningful to review yet - go straight to the wizard.
-      navigate(`/vendors/${vendor.id}/edit`);
-    } else {
-      setSelectedVendorId(vendor.id);
-    }
+  const openStep = (vendor: VendorOnboardingDetail, step: VendorOnboardingStepKey) => {
+    setActiveVendorId(vendor.id);
+    setDrawer({ open: true, vendorId: vendor.id, section: step });
   };
+
+  const activeVendor = vendors.find((v) => v.id === activeVendorId) || null;
 
   const handleArchive = async (vendor: VendorOnboardingDetail) => {
     try {
@@ -157,61 +157,40 @@ export function VendorListContent() {
     }
   };
 
-  if (selectedVendorId) {
-    return (
-      <VendorDetailsContent
-        vendorId={selectedVendorId}
-        backLabel="Vendors"
-        onBack={() => {
-          setSelectedVendorId(null);
-          fetchVendors();
-          fetchSummary();
-        }}
-        onEdit={(id) => navigate(`/vendors/${id}/edit`)}
-      />
-    );
-  }
+  /** Card click (like the client list's row click) only selects the vendor - the onboarding panel
+   * above then shows where it is stuck, and clicking a step there opens the form at that step. */
+  const selectVendor = (vendor: VendorOnboardingDetail) => {
+    setActiveVendorId(vendor.id);
+    panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  /** Edit opens the onboarding form - editable while the backend accepts edits, otherwise
+   * read-only with the reviewer's verification and approval actions. */
+  const openVendor = (vendor: VendorOnboardingDetail) => {
+    setActiveVendorId(vendor.id);
+    setDrawer({ open: true, vendorId: vendor.id });
+  };
+
+  const upsertVendor = (saved: VendorOnboardingDetail) =>
+    setVendors((prev) => (prev.some((v) => v.id === saved.id) ? prev.map((v) => (v.id === saved.id ? saved : v)) : [saved, ...prev]));
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-fade-in-down">
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
-        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Vendor Requests</h2>
+        <div>
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Vendors</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Subcontracting firms and pods</p>
+        </div>
 
-        <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto flex-wrap">
-          <div className="relative flex-1 sm:flex-initial">
-            <input
-              type="text"
-              placeholder="Search vendor requests..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-64 text-sm sm:text-base dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
-            />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 dark:text-gray-500" />
-          </div>
-
+        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto flex-wrap">
           <button
-            onClick={() => setShowFilters((s) => !s)}
-            className="flex items-center gap-2 px-3 sm:px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 font-semibold transition-colors whitespace-nowrap text-sm sm:text-base dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-          >
-            <Filter size={18} className="sm:w-5 sm:h-5" />
-            <span className="hidden sm:inline">Filters</span>
-          </button>
-
-          <button
-            onClick={() => navigate('/vendors/add')}
-            className="flex items-center gap-2 border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 sm:px-5 py-2 rounded-md font-semibold transition-colors whitespace-nowrap text-sm sm:text-base dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-          >
-            <Plus size={18} className="sm:w-5 sm:h-5" />
-            <span className="hidden sm:inline">Add Vendor</span>
-          </button>
-
-          <button
-            onClick={() => setIsRaiseModalOpen(true)}
+            onClick={() => setDrawer({ open: true, vendorId: null })}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-5 py-2 rounded-md font-semibold transition-colors whitespace-nowrap shadow-md hover:shadow-lg text-sm sm:text-base"
+            title="Enter the vendor's details and/or email them a secure onboarding link"
           >
             <UserPlus size={18} className="sm:w-5 sm:h-5" />
-            <span className="hidden sm:inline">Raise Vendor Request</span>
+            <span>Onboard Vendor</span>
           </button>
         </div>
       </div>
@@ -255,15 +234,41 @@ export function VendorListContent() {
         })()}
       </div>
 
+      <div ref={panelRef} className="scroll-mt-4">
+        <VendorOnboardingPanel vendor={activeVendor} onStepClick={openStep} />
+      </div>
+
       <Tabs
         tabs={STATUS_TABS}
         active={appliedFilters.archived === 'true' ? ARCHIVED_TAB_KEY : appliedFilters.status || ''}
         onChange={handleTabOrCardClick}
       />
 
-      <p className="text-xs text-gray-500 dark:text-gray-400">
-        Search matches vendor name, email, phone, PAN or GSTIN.
-      </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Registered vendors &middot; {loading ? '…' : vendors.length}
+        </h3>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="relative flex-1 sm:flex-initial">
+            <input
+              type="text"
+              placeholder="Search vendors..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              title="Matches vendor name, reference, email, phone, PAN or GSTIN"
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-72 text-sm sm:text-base dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
+            />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 dark:text-gray-500" />
+          </div>
+          <button
+            onClick={() => setShowFilters((s) => !s)}
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 font-semibold transition-colors whitespace-nowrap text-sm sm:text-base dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            <Filter size={18} className="sm:w-5 sm:h-5" />
+            <span className="hidden sm:inline">Filters</span>
+          </button>
+        </div>
+      </div>
 
       {showFilters && choices && (
         <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
@@ -344,81 +349,41 @@ export function VendorListContent() {
       )}
 
       {loading ? (
-        <div className="text-center p-12 text-gray-500 dark:text-gray-400">Loading vendor requests...</div>
+        <div className="text-center p-12 text-gray-500 dark:text-gray-400">Loading vendors...</div>
       ) : vendors.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-12 text-center shadow-sm dark:bg-gray-900 dark:border-gray-800">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 dark:bg-gray-800">
             <Users className="w-8 h-8 text-gray-400 dark:text-gray-500" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">No vendor requests found</h3>
-          <p className="text-gray-600 dark:text-gray-300">Get started by raising your first vendor request</p>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">No vendors found</h3>
+          <p className="text-gray-600 dark:text-gray-300">Click "Onboard Vendor" to invite your first vendor</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-x-auto dark:bg-gray-900 dark:border-gray-800">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide dark:border-gray-700 dark:text-gray-400">
-                <th className="px-4 py-3">Reference</th>
-                <th className="px-4 py-3">Vendor Name</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Current Stage</th>
-                <th className="px-4 py-3">Submitted</th>
-                <th className="px-4 py-3">Last Updated</th>
-                <th className="px-4 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vendors.map((vendor) => (
-                <tr key={vendor.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800">
-                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{vendor.vendor_reference_no || '—'}</td>
-                  <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{vendor.name || 'Untitled'}</td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{vendor.email || '-'}</td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{vendor.vendor_type_display}</td>
-                  <td className="px-4 py-3"><StatusBadge status={vendor.status} /></td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{vendor.current_stage}</td>
-                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{vendor.submitted_at ? new Date(vendor.submitted_at).toLocaleDateString() : '-'}</td>
-                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{new Date(vendor.updated_at).toLocaleDateString()}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <button onClick={() => handleRowClick(vendor)} className="text-blue-600 hover:text-blue-800 font-medium text-xs dark:text-blue-400 dark:hover:text-blue-300">
-                        View
-                      </button>
-                      {vendor.is_archived ? (
-                        <button
-                          onClick={() => handleUnarchive(vendor)}
-                          className="flex items-center gap-1 text-gray-600 hover:text-gray-900 font-medium text-xs dark:text-gray-400 dark:hover:text-gray-200"
-                          title="Restore to main list"
-                        >
-                          <ArchiveRestore className="w-3.5 h-3.5" /> Restore
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleArchive(vendor)}
-                          className="flex items-center gap-1 text-gray-600 hover:text-gray-900 font-medium text-xs dark:text-gray-400 dark:hover:text-gray-200"
-                          title="Hide from the main list"
-                        >
-                          <Archive className="w-3.5 h-3.5" /> Archive
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {vendors.map((vendor) => (
+            <VendorCard
+              key={vendor.id}
+              vendor={vendor}
+              selected={vendor.id === activeVendorId}
+              onSelect={() => selectVendor(vendor)}
+              onEdit={() => openVendor(vendor)}
+              onArchive={() => handleArchive(vendor)}
+              onUnarchive={() => handleUnarchive(vendor)}
+            />
+          ))}
         </div>
       )}
 
-      <RaiseVendorRequestModal
-        isOpen={isRaiseModalOpen}
-        onClose={() => setIsRaiseModalOpen(false)}
-        onRaised={() => {
-          fetchVendors();
+      <VendorOnboardDrawer
+        isOpen={drawer.open}
+        vendorId={drawer.vendorId}
+        initialSection={drawer.section}
+        onClose={() => setDrawer({ open: false, vendorId: null })}
+        onSaved={(saved) => {
+          upsertVendor(saved);
+          setActiveVendorId(saved.id);
           fetchSummary();
         }}
-        vendorTypeOptions={choices?.vendor_types || []}
       />
     </div>
   );

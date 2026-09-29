@@ -1,6 +1,7 @@
 import { Eye, EyeOff } from 'lucide-react';
 import React, { forwardRef } from 'react';
 import { useState } from 'react';
+import { useFieldDensity, COMPACT_LABEL, COMPACT_FIELD_PADDING } from './fieldDensity';
 
 interface InputFieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -21,6 +22,8 @@ export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(
   const isPasswordType = type === 'password';
   const inputType = isPasswordType ? (showPassword ? 'text' : 'password') : type;
     const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+    const compact = useFieldDensity() === 'compact';
+    const labelClass = labelClassName || (compact ? COMPACT_LABEL : undefined);
     
     return (
       <div className="w-full mb-5">
@@ -28,7 +31,7 @@ export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(
           {label && (
         <label
           htmlFor={inputId}
-          className={labelClassName || "block text-base font-medium text-gray-900 mb-2 dark:text-gray-200"}
+          className={labelClass || "block text-base font-medium text-gray-900 mb-2 dark:text-gray-200"}
         >
           {label.endsWith('*') ? (
             <>{label.slice(0, -1).trimEnd()} <span className="text-red-500">*</span></>
@@ -52,6 +55,7 @@ export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(
               disabled:opacity-50 disabled:cursor-not-allowed
               ${error ? 'ring-2 ring-red-500 bg-red-50 dark:bg-red-950/40' : ''}
               ${endIcon ? 'pr-12' : ''}
+              ${compact && !className ? COMPACT_FIELD_PADDING : ''}
               ${className}
             `}
             aria-invalid={!!error}
