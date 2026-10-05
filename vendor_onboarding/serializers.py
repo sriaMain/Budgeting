@@ -5,9 +5,8 @@ from .models import (
     VendorOnboardingProfile, VendorKYC, VendorBankDetail,
     VendorProcurementDetail, VendorDocument, VendorChangeRequest,
     VendorSubmissionVersion, VendorApprovalWorkflowConfig, VendorApprovalLevel,
-    VendorApprovalHistory,
+    VendorApprovalHistory, VendorAuditLog, VendorEmailLog,
 )
-from .validators import pan_validator
 
 
 TOTAL_STEPS = 6
@@ -54,10 +53,23 @@ class VendorOnboardingProfileSerializer(serializers.ModelSerializer):
         exclude = ("id", "vendor", "created_at", "updated_at")
 
 
+class VendorPublicOnboardingProfileSerializer(VendorOnboardingProfileSerializer):
+    """Portal variant - the internal rating and headcount are never shown to or writable by the vendor."""
+
+    class Meta(VendorOnboardingProfileSerializer.Meta):
+        exclude = VendorOnboardingProfileSerializer.Meta.exclude + ("rating", "headcount")
+
+
+# Internal review fields - excluded from the step serializers below, which the vendor
+# self-service portal shares; they are read/written only via VendorReviewSerializer.
+KYC_REVIEW_FIELDS = ("kyc_status", "risk_rating", "compliance_remarks")
+BANK_REVIEW_FIELDS = ("verification_status", "verification_remarks")
+
+
 class VendorKYCSerializer(serializers.ModelSerializer):
     class Meta:
         model = VendorKYC
-        exclude = ("id", "vendor", "created_at", "updated_at")
+        exclude = ("id", "vendor", "created_at", "updated_at") + KYC_REVIEW_FIELDS
 
 
 class VendorBankDetailSerializer(serializers.ModelSerializer):
@@ -67,7 +79,7 @@ class VendorBankDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = VendorBankDetail
-        exclude = ("id", "vendor", "created_at", "updated_at")
+        exclude = ("id", "vendor", "created_at", "updated_at") + BANK_REVIEW_FIELDS
 
     def get_account_number_masked(self, obj):
         return obj.mask_account_number()
@@ -78,13 +90,23 @@ class VendorBankDetailUnmaskedSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = VendorBankDetail
-        exclude = ("id", "vendor", "created_at", "updated_at")
+        exclude = ("id", "vendor", "created_at", "updated_at") + BANK_REVIEW_FIELDS
 
 
 class VendorProcurementDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = VendorProcurementDetail
         exclude = ("id", "vendor", "created_at", "updated_at")
+
+    def validate(self, attrs):
+        start = attrs.get("contract_start_date", getattr(self.instance, "contract_start_date", None))
+        end = attrs.get("contract_end_date", getattr(self.instance, "contract_end_date", None))
+        if start and end and end < start:
+            raise serializers.ValidationError({"contract_end_date": "Contract end date must be on or after the start date."})
+        pct = attrs.get("withholding_tax_percentage")
+        if pct is not None and not (0 <= pct <= 100):
+            raise serializers.ValidationError({"withholding_tax_percentage": "Enter a percentage between 0 and 100."})
+        return attrs
 
 
 class VendorDocumentSerializer(serializers.ModelSerializer):
@@ -93,8 +115,22 @@ class VendorDocumentSerializer(serializers.ModelSerializer):
         fields = (
             "id", "vendor", "file", "file_name", "file_size", "file_type",
             "category", "is_required", "status", "uploaded_by", "uploaded_by_role", "uploaded_at",
+            "verified_by", "verified_by_name", "verified_at", "remarks",
         )
-        read_only_fields = ("uploaded_by", "uploaded_by_role", "uploaded_at", "file_name", "file_size", "file_type", "status")
+        read_only_fields = (
+            "uploaded_by", "uploaded_by_role", "uploaded_at", "file_name", "file_size", "file_type", "status",
+            "verified_by", "verified_at", "remarks",
+        )
+        # The stored file reference is never returned - downloads go through the signed-URL endpoints.
+        extra_kwargs = {"file": {"write_only": True}}
+
+    verified_by_name = serializers.SerializerMethodField()
+
+    def get_verified_by_name(self, obj):
+        user = obj.verified_by
+        if not user:
+            return None
+        return getattr(user, "get_full_name", lambda: "")() or getattr(user, "username", None) or getattr(user, "email", None)
 
     def create(self, validated_data):
         request = self.context.get("request")
@@ -223,11 +259,22 @@ class VendorOnboardingDetailSerializer(_VendorApprovalStageMixin, serializers.Mo
     current_stage = serializers.SerializerMethodField()
     progress_percentage = serializers.SerializerMethodField()
     is_current_approver = serializers.SerializerMethodField()
+    # Data-driven 5-step summary (intake -> tax & KYC -> banking -> contract -> approved).
+    onboarding = serializers.SerializerMethodField()
+    # Committed POs / bills from finances - internal only, never on the public portal serializer.
+    financials = serializers.SerializerMethodField()
+    service_categories = serializers.SerializerMethodField()
+    # Internal review state (KYC status, risk, bank verification) - admin serializer only.
+    review = serializers.SerializerMethodField()
+    email_status = serializers.SerializerMethodField()
+    # What the requesting user may do, so the UI hides actions their role can't perform.
+    permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = Vendor
         fields = (
             "id", "vendor_reference_no", "name", "email", "phone",
+            "onboarding", "financials", "service_categories", "review", "email_status", "permissions",
             "vendor_type", "vendor_type_display", "contact_person_name",
             "company_code", "plant", "internal_requester", "initial_comments",
             "status", "status_display", "current_stage", "last_saved_step", "progress_percentage",
@@ -238,6 +285,71 @@ class VendorOnboardingDetailSerializer(_VendorApprovalStageMixin, serializers.Mo
 
     def get_progress_percentage(self, obj):
         return _progress_percentage(obj)
+
+    def get_onboarding(self, obj):
+        from .progress import summarize_vendor_onboarding
+
+        return summarize_vendor_onboarding(obj)
+
+    def get_financials(self, obj):
+        # The list view pre-computes these for every vendor in 4 grouped queries and passes
+        # them in context; a single-vendor detail request computes its own.
+        financials = self.context.get("vendor_financials")
+        if financials is None:
+            from .progress import build_vendor_financials
+
+            financials = build_vendor_financials([obj.id])
+        return financials.get(obj.id)
+
+    def get_service_categories(self, obj):
+        profile = getattr(obj, "onboarding_profile", None)
+        if profile and profile.service_category:
+            return [profile.service_category]
+        return [pg.product_group_name for pg in obj.product_groups.all()]
+
+    def get_review(self, obj):
+        kyc = getattr(obj, "kyc", None)
+        bank = getattr(obj, "bank_detail", None)
+        return {
+            "kyc_status": kyc.kyc_status if kyc else "draft",
+            "risk_rating": kyc.risk_rating if kyc else "low",
+            "compliance_remarks": kyc.compliance_remarks if kyc else "",
+            "bank_verification_status": bank.verification_status if bank else "not_verified",
+            "bank_verification_remarks": bank.verification_remarks if bank else "",
+        }
+
+    def get_email_status(self, obj):
+        log = obj.email_logs.filter(template="vendor_invited.html").first()
+        if not log:
+            return {"status": "not_sent", "recipient": obj.email or None, "sent_at": None, "sender": None}
+        return {"status": log.status, "recipient": log.recipient, "sent_at": log.created_at, "sender": log.sender}
+
+    def get_permissions(self, obj):
+        from .views import _can_edit, _can_edit_master_fields
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return {}
+
+        def has(code):
+            return bool(user.is_superuser or user.has_role_permission(code))
+
+        is_approver = self.get_is_current_approver(obj)
+        return {
+            "edit": _can_edit(obj, user),
+            # Rating / headcount stay editable after submission and approval.
+            "edit_master": _can_edit_master_fields(obj, user),
+            "submit": has("vendor.submit") and obj.status in ("draft", "action_required", "invited"),
+            "verify": has("vendor.verify") and obj.status != "approved",
+            "approve": has("vendor.approve") and is_approver,
+            "request_changes": has("vendor.request_changes") and is_approver,
+            "send_email": has("vendor.create") and obj.status != "approved",
+            "delete": has("vendor.delete"),
+            "view_unmasked_bank": has("vendor.bank.view_unmasked"),
+            "upload_documents": has("vendor.document.upload") and _can_edit(obj, user),
+            "delete_documents": has("vendor.document.delete") and _can_edit(obj, user),
+        }
 
     def get_is_current_approver(self, obj):
         from .services import user_is_authorized_for_level
@@ -257,7 +369,7 @@ class VendorOnboardingDetailSerializer(_VendorApprovalStageMixin, serializers.Mo
 class VendorPublicDetailSerializer(_VendorApprovalStageMixin, serializers.ModelSerializer):
     """Public, token-scoped view - excludes anything admin-internal (created_by,
     approval history, is_current_approver, etc.)."""
-    onboarding_profile = VendorOnboardingProfileSerializer(read_only=True)
+    onboarding_profile = VendorPublicOnboardingProfileSerializer(read_only=True)
     kyc = VendorKYCSerializer(read_only=True)
     bank_detail = VendorBankDetailSerializer(read_only=True)
     procurement_detail = VendorProcurementDetailSerializer(read_only=True)
@@ -305,88 +417,55 @@ class VendorSubmitForApprovalSerializer(serializers.Serializer):
         super().__init__(*args, **kwargs)
 
     def validate(self, attrs):
-        vendor = self.vendor
-        errors = {}
+        from .progress import vendor_requirement_issues
 
-        if not vendor.name:
-            errors["name"] = "Vendor legal name is required."
-        if not vendor.vendor_type:
-            errors["vendor_type"] = "Vendor type is required."
-        if not vendor.email:
-            errors["email"] = "Primary email is required."
-        if not vendor.phone:
-            errors["phone"] = "Primary mobile is required."
-
-        profile = getattr(vendor, "onboarding_profile", None)
-        if not profile:
-            errors["profile"] = "Vendor details (Step 1) must be completed."
-        else:
-            for field in ("contact_person_name", "contact_person_designation",
-                          "address_line1", "city", "state", "country", "pin_code"):
-                if not getattr(profile, field):
-                    errors[field] = "This field is required."
-            if profile.gst_registered and not profile.gstin:
-                errors["gstin"] = "GSTIN is required when GST registered."
-            if profile.msme_registered:
-                if not profile.udyam_number:
-                    errors["udyam_number"] = "UDYAM number is required when MSME registered."
-                if not profile.msme_category:
-                    errors["msme_category"] = "MSME category is required when MSME registered."
-
-        kyc = getattr(vendor, "kyc", None)
-        if not kyc or not kyc.pan:
-            errors["pan"] = "PAN is required."
-        if kyc:
-            try:
-                pan_validator(kyc.pan)
-            except Exception:
-                errors["pan"] = "PAN format is invalid."
-            if not getattr(kyc, "country_of_tax_residence", None):
-                errors["country_of_tax_residence"] = "Country of tax residence is required."
-            if vendor.vendor_type == "company":
-                if not kyc.cin:
-                    errors["cin"] = "CIN is required for Company vendor type."
-                if not kyc.incorporation_date:
-                    errors["incorporation_date"] = "Date of incorporation is required for Company vendor type."
-            if kyc.tan and not kyc.tan_mobile:
-                errors["tan_mobile"] = "TAN associated mobile number is required when TAN is provided."
-
-        bank = getattr(vendor, "bank_detail", None)
-        if not bank:
-            errors["bank_detail"] = "Bank details (Step 3) must be completed."
-        else:
-            for field in ("bank_name", "account_holder_name", "account_number", "ifsc_code"):
-                if not getattr(bank, field):
-                    errors[field] = "This field is required."
-
-        procurement = getattr(vendor, "procurement_detail", None)
-        if not procurement:
-            errors["procurement_detail"] = "Business / Procurement details (Step 4) must be completed."
-        else:
-            for field in ("account_group", "purchasing_org", "payment_terms", "order_currency"):
-                if not getattr(procurement, field):
-                    errors[field] = "This field is required."
-
-        documents = list(vendor.documents.all())
-        categories_present = {d.category for d in documents}
-        if "pan" not in categories_present:
-            errors["document_pan"] = "PAN document is required."
-        bank_proof_categories = {
-            "bank_proof_cancelled_cheque", "bank_proof_bank_statement", "bank_proof_bank_certificate",
+        errors = {
+            issue["key"]: f"{issue['message']} is required." if issue["kind"] == "missing" else issue["message"]
+            for issue in vendor_requirement_issues(self.vendor)
+            if issue["stage"] == "submission"
         }
-        if not (categories_present & bank_proof_categories):
-            errors["document_bank_proof"] = "At least one bank proof document is required."
-        if profile and profile.gst_registered and "gst_certificate" not in categories_present:
-            errors["document_gst_certificate"] = "GST certificate is required when GST registered."
-        if vendor.vendor_type == "company" and "cin_incorporation_certificate" not in categories_present:
-            errors["document_cin"] = "CIN / Incorporation certificate is required for Company vendor type."
-        if profile and profile.msme_registered and "msme_udyam_certificate" not in categories_present:
-            errors["document_msme"] = "UDYAM / MSME certificate is required when MSME registered."
-        if kyc and kyc.epf_number and "epf_certificate" not in categories_present:
-            errors["document_epf"] = "EPF certificate is required when an EPF number is provided."
-        if kyc and kyc.esic_number and "esic_certificate" not in categories_present:
-            errors["document_esic"] = "ESIC certificate is required when an ESIC number is provided."
-
         if errors:
             raise serializers.ValidationError(errors)
         return attrs
+
+
+class VendorReviewSerializer(serializers.Serializer):
+    """Internal reviewer update of KYC status / risk / bank verification - never used by the portal."""
+    kyc_status = serializers.ChoiceField(choices=VendorKYC.KYC_STATUS_CHOICES, required=False)
+    risk_rating = serializers.ChoiceField(choices=VendorKYC.RISK_RATING_CHOICES, required=False)
+    compliance_remarks = serializers.CharField(required=False, allow_blank=True)
+    bank_verification_status = serializers.ChoiceField(choices=VendorBankDetail.VERIFICATION_STATUS_CHOICES, required=False)
+    bank_verification_remarks = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if attrs.get("kyc_status") == "rejected" and not (attrs.get("compliance_remarks") or "").strip():
+            raise serializers.ValidationError({"compliance_remarks": "A reason is required when rejecting KYC."})
+        if attrs.get("bank_verification_status") == "rejected" and not (attrs.get("bank_verification_remarks") or "").strip():
+            raise serializers.ValidationError({"bank_verification_remarks": "A reason is required when rejecting bank verification."})
+        return attrs
+
+
+class VendorDocumentVerifySerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=[("under_review", "Under Review"), ("verified", "Verified"), ("rejected", "Rejected")])
+    remarks = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if attrs["status"] == "rejected" and not attrs["remarks"].strip():
+            raise serializers.ValidationError({"remarks": "A rejection reason is required."})
+        return attrs
+
+
+class VendorAuditLogSerializer(serializers.ModelSerializer):
+    action_display = serializers.CharField(source="get_action_display", read_only=True)
+    performed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = VendorAuditLog
+        fields = ("id", "action", "action_display", "field_name", "old_value", "new_value", "remarks",
+                  "performed_by", "performed_by_name", "created_at")
+
+    def get_performed_by_name(self, obj):
+        user = obj.performed_by
+        if user:
+            return getattr(user, "get_full_name", lambda: "")() or getattr(user, "username", None) or getattr(user, "email", None)
+        return "Vendor (self-service)" if obj.performed_by_label == "vendor" else (obj.performed_by_label or "System")

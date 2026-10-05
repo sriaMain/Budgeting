@@ -319,7 +319,9 @@ def user_is_authorized_for_level(user, level):
         return level.approver_user_id == user.id
     if level.approver_role_id:
         return level.approver_role in user.roles.all()
-    return False
+    # No specific approver assigned to this level (e.g. the seeded default "Final Approver"):
+    # anyone whose role holds vendor.approve may act, instead of superusers only.
+    return user.has_role_permission("vendor.approve")
 
 
 def level_recipient_accounts(level):

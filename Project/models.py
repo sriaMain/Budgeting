@@ -444,6 +444,13 @@ class Milestone(models.Model):
         return total or Decimal("0.00")
 
     @property
+    def billed_base_amount(self):
+        # Pre-tax amount billed - billing_amount is pre-tax (like the contract
+        # value), so "fully billed" compares against this, not the GST-inclusive total.
+        total = self._billing_invoices().aggregate(total=models.Sum('sub_total'))['total']
+        return total or Decimal("0.00")
+
+    @property
     def received_amount(self):
         total = self._billing_invoices().aggregate(total=models.Sum('paid_amount'))['total']
         return total or Decimal("0.00")
@@ -458,7 +465,7 @@ class Milestone(models.Model):
         invoices = self._billing_invoices()
         if not invoices.exists():
             return 'not_billed'
-        if self.billing_amount and self.billed_amount >= self.billing_amount:
+        if self.billing_amount and self.billed_base_amount >= self.billing_amount:
             return 'invoiced'
         return 'partially_invoiced'
 

@@ -366,6 +366,9 @@ class ClientDocumentSerializer(serializers.ModelSerializer):
             "uploaded_by", "uploaded_at", "file_name", "file_size", "file_type", "status",
             "verified_by", "verified_at", "remarks",
         )
+        # The stored Cloudinary reference is never sent back - files are only ever reachable
+        # through ClientDocumentDownloadView's permission-checked, short-lived signed URL.
+        extra_kwargs = {"file": {"write_only": True}}
 
     def create(self, validated_data):
         request = self.context.get("request")

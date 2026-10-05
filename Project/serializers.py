@@ -407,6 +407,10 @@ class MilestoneSerializer(serializers.ModelSerializer):
     actual_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     margin = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     billed_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    # Pre-tax billed amount - what billing_amount (also pre-tax) is compared against.
+    billed_base_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    # Tax % a new invoice for this milestone gets (from the project's quotation).
+    tax_percentage = serializers.SerializerMethodField()
     received_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     outstanding_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     billing_status = serializers.CharField(read_only=True)
@@ -414,6 +418,10 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     created_by_name = serializers.SerializerMethodField()
     updated_by_name = serializers.SerializerMethodField()
+
+    def get_tax_percentage(self, obj):
+        quote = obj.project.created_from_quotation if obj.project_id else None
+        return str(quote.tax_percentage) if quote and quote.tax_percentage is not None else "0.00"
 
     # Write-only escape hatch for Section 11's "unless explicitly allowed" -
     # never persisted, just relaxes the contract-value cap for this save.
@@ -438,6 +446,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
             'actual_cost',
             'margin',
             'billed_amount',
+            'billed_base_amount',
+            'tax_percentage',
             'received_amount',
             'outstanding_amount',
             'billing_status',

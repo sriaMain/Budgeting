@@ -1,3 +1,5 @@
+import logging
+import os
 import time
 
 import cloudinary.utils
@@ -741,6 +743,26 @@ class CompanyPOCListView(APIView):
         return Response(result, status=status.HTTP_200_OK)
 
 
+logger = logging.getLogger(__name__)
+
+MAX_CLIENT_DOCUMENTS = 8
+MAX_CLIENT_DOCUMENT_SIZE = 10 * 1024 * 1024  # 10 MB, same limit the frontend enforces
+ALLOWED_CLIENT_DOCUMENT_TYPES = {
+    ".pdf": {"application/pdf"},
+    ".jpg": {"image/jpeg", "image/pjpeg"},
+    ".jpeg": {"image/jpeg", "image/pjpeg"},
+    ".png": {"image/png"},
+}
+
+
+def _document_error(message, http_status=400, error=None):
+    # `detail` kept alongside `message` for existing consumers that read DRF's default key.
+    return Response(
+        {"success": False, "message": message, "detail": message, "error": error or message},
+        status=http_status,
+    )
+
+
 class ClientDocumentListCreateView(APIView):
     permission_classes = [IsAuthenticated, HasPermissionCode]
     authentication_classes = [JWTAuthentication]
@@ -752,17 +774,51 @@ class ClientDocumentListCreateView(APIView):
         return Response(ClientDocumentSerializer(docs, many=True, context={"request": request}).data)
 
     def post(self, request, pk):
+        # Read the multipart body before any early return: answering a large upload without
+        # consuming it makes the dev server drop the connection, so the browser only ever saw
+        # a network error instead of the real reason (e.g. the document limit).
+        file = request.FILES.get("file")
         company = get_object_or_404(Company, pk=pk)
-        if company.documents.count() >= 8:
-            return Response({"detail": "Maximum of 8 documents per client."}, status=400)
-        if not request.FILES.get("file"):
-            return Response({"file": ["This field is required."]}, status=400)
+
+        if not file:
+            return _document_error("Please choose a file to upload.", error="file_required")
+        if file.size == 0:
+            return _document_error("The selected file is empty.", error="file_empty")
+        if file.size > MAX_CLIENT_DOCUMENT_SIZE:
+            return _document_error("File is too large. Maximum size is 10 MB.", error="file_too_large")
+
+        ext = os.path.splitext(file.name or "")[1].lower()
+        content_type = (file.content_type or "").lower()
+        allowed_types = ALLOWED_CLIENT_DOCUMENT_TYPES.get(ext)
+        # Some OSes send an empty or generic MIME type, so only an explicit mismatch is rejected.
+        if not allowed_types or (content_type and content_type != "application/octet-stream" and content_type not in allowed_types):
+            return _document_error("Only PDF, JPG, JPEG and PNG files are allowed.", error="unsupported_file_type")
+
+        if company.documents.count() >= MAX_CLIENT_DOCUMENTS:
+            return _document_error(
+                f"Maximum {MAX_CLIENT_DOCUMENTS} KYC documents are allowed. Delete a document to upload another.",
+                error="document_limit_reached",
+            )
+        if company.documents.filter(file_name=file.name, file_size=file.size).exists():
+            return _document_error("This document has already been uploaded for this client.", error="duplicate_document")
 
         data = request.data.copy()
         data["company"] = company.id
         serializer = ClientDocumentSerializer(data=data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        document = serializer.save()
+        if not serializer.is_valid():
+            logger.warning("Client %s document upload rejected: %s", company.id, serializer.errors)
+            if "category" in serializer.errors:
+                return _document_error("Please select a valid document type.", error="invalid_document_type")
+            return _document_error("Unable to upload document. Please check the file and try again.", error="invalid_document")
+        try:
+            document = serializer.save()
+        except Exception:
+            logger.exception("Client %s document upload failed while storing the file", company.id)
+            return _document_error(
+                "Server could not process the document. Please try again.",
+                http_status=status.HTTP_502_BAD_GATEWAY,
+                error="storage_failed",
+            )
         _log_client_audit(
             company, "document_uploaded", request,
             field_name="category", new_value=document.get_category_display(),
@@ -823,11 +879,14 @@ class ClientDocumentVerifyView(APIView):
         new_status = request.data.get("status")
         if new_status not in ("verified", "rejected"):
             return Response({"status": ["Must be 'verified' or 'rejected'."]}, status=400)
+        remarks = (request.data.get("remarks") or "").strip()
+        if new_status == "rejected" and not remarks:
+            return _document_error("A rejection reason is required.", error="rejection_reason_required")
 
         document.status = new_status
         document.verified_by = request.user
         document.verified_at = now()
-        document.remarks = request.data.get("remarks", "")
+        document.remarks = remarks
         document.save()
 
         _log_client_audit(

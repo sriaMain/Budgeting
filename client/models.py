@@ -459,6 +459,7 @@ class ClientDocument(models.Model):
         ("cin_llpin", "CIN / LLPIN"),
         ("w8ben_e", "W-8BEN-E"),
         ("beneficial_ownership_proof", "Beneficial Ownership Document"),
+        ("tax_residency_certificate", "Tax Residency Document"),
         ("other", "Other Document"),
     ]
 

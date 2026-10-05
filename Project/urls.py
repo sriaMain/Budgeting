@@ -9,7 +9,7 @@ from .views import (ProjectAPIView, ProjectBudgetAPIView, BudgetLineListCreateAP
  TimesheetAPIView, TimesheetEntryAPIView, SubmitTimesheetAPIView, StartTaskTimerAPIView,
   PauseTaskTimerAPIView, PendingExtraHoursAPIView, ReviewExtraHoursAPIView, RequestExtraHoursAPIView, ExtraHoursHistoryAPIView,
   TaskStatusChoicesView, ServiceUsersAPIView, TaskGroupedByStatusAPIView, TimesheetWeeklySummaryAPIView, TimesheetEmployeeAPIView, ProjectStatusChoicesView, ProjectNamesAPIView,
-  MyTaskExtrasAPIView, MyActiveTimerAPIView, ProjectManagerOptionsAPIView, ProjectPOCOptionsAPIView)
+  MyTaskExtrasAPIView, MyActiveTimerAPIView, AdjustConsumedHoursAPIView, ProjectManagerOptionsAPIView, ProjectPOCOptionsAPIView)
 
 
 urlpatterns = [
@@ -64,5 +64,6 @@ urlpatterns = [
     path('timesheet/employee/<int:user_id>/', TimesheetEmployeeAPIView.as_view(), name='timesheet-employee'),
     path('tasks/my-extras/', MyTaskExtrasAPIView.as_view(), name='my-task-extras'),
     path('tasks/my-active-timer/', MyActiveTimerAPIView.as_view(), name='my-active-timer'),
+    path('tasks/<int:task_id>/consumed-hours/', AdjustConsumedHoursAPIView.as_view(), name='task-adjust-consumed-hours'),
 
 ]
