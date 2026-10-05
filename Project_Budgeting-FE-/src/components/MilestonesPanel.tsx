@@ -9,7 +9,7 @@
  * paid or spent.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
 
@@ -26,7 +26,23 @@ interface Milestone {
     status: string;
     status_display: string;
     actual_cost: string | number;
+    /** Expenses linked to the milestone (employee_cost excluded - see labour_cost). */
+    expense_cost?: string | number;
+    /** Task timer hours x assignee hourly cost rate. */
+    labour_cost?: string | number;
     margin: string | number;
+    /** This milestone's share of the quotation (= billing_amount). */
+    quotation_amount?: string | number;
+    budget_utilization_percent?: string | number;
+    billing_percent?: string | number;
+    remaining_budget?: string | number;
+    remaining_billable_amount?: string | number;
+    /** budget_amount as a % of the project's user budget. */
+    budget_percent?: string | number;
+    /** billing_amount (bill amount) as a % of the project's quotation. */
+    bill_percent?: string | number;
+    project_budget_base?: string | number;
+    quotation_base?: string | number;
     billed_amount: string | number;
     /** Pre-tax billed amount (billing_amount is pre-tax too). */
     billed_base_amount?: string | number;
@@ -41,6 +57,12 @@ interface Milestone {
 interface MilestonesPanelProps {
     projectId: string;
     currency?: string;
+    /** Project user budget (cost_budget) - Budget % is taken of this. */
+    userBudget?: number;
+    /** Project quotation amount before tax - Bill % is taken of this. */
+    quotationAmount?: number;
+    /** Called after a milestone is added/edited/archived/billed, so the page can refresh its own figures. */
+    onChanged?: () => void;
 }
 
 const STATUS_OPTIONS = [
@@ -85,14 +107,16 @@ const emptyForm = {
     sequence: '1',
     planned_start_date: '',
     planned_end_date: '',
-    budget_amount: '',
-    billing_amount: '',
+    budget_percent: '',
+    bill_percent: '',
     status: 'not_started',
 };
 
-export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, currency = 'INR' }) => {
+export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, currency = 'INR', userBudget = 0, quotationAmount = 0, onChanged }) => {
     const [milestones, setMilestones] = useState<Milestone[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    // Only the first load shows "Loading..."; background refreshes swap data in silently.
+    const [hasLoaded, setHasLoaded] = useState(false);
 
     const [showAddForm, setShowAddForm] = useState(false);
     const [form, setForm] = useState(emptyForm);
@@ -107,21 +131,41 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
     const [invoiceDueDays, setInvoiceDueDays] = useState('30');
     const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
 
+    // Background refreshes (interval/focus) can overlap a refresh triggered by
+    // a save; only the most recent request may update the list, so an older
+    // in-flight response can't overwrite the just-saved milestone.
+    const latestRequest = useRef(0);
+
     const fetchMilestones = useCallback(async () => {
         if (!projectId) return;
+        const requestId = ++latestRequest.current;
         setIsLoading(true);
         try {
             const res = await axiosInstance.get<Milestone[]>(`/projects/${projectId}/milestones/`);
+            if (requestId !== latestRequest.current) return;
             setMilestones(Array.isArray(res.data) ? res.data : []);
         } catch (error) {
             console.error('Failed to fetch milestones:', error);
         } finally {
             setIsLoading(false);
+            setHasLoaded(true);
         }
     }, [projectId]);
 
     useEffect(() => {
         fetchMilestones();
+    }, [fetchMilestones]);
+
+    // Actual cost includes live task timers, so keep the figures fresh while
+    // the panel is open and whenever the user comes back to the tab.
+    useEffect(() => {
+        const interval = window.setInterval(fetchMilestones, 30000);
+        const onFocus = () => fetchMilestones();
+        window.addEventListener('focus', onFocus);
+        return () => {
+            window.clearInterval(interval);
+            window.removeEventListener('focus', onFocus);
+        };
     }, [fetchMilestones]);
 
     const totals = useMemo(() => milestones.reduce(
@@ -130,17 +174,61 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
             acc.billing += num(m.billing_amount);
             acc.actual += num(m.actual_cost);
             acc.billed += num(m.billed_amount);
+            acc.billedBase += num(m.billed_base_amount ?? m.billed_amount);
             acc.received += num(m.received_amount);
             return acc;
         },
-        { budget: 0, billing: 0, actual: 0, billed: 0, received: 0 }
+        { budget: 0, billing: 0, actual: 0, billed: 0, billedBase: 0, received: 0 }
     ), [milestones]);
 
-    const validateForm = (values: typeof emptyForm) => {
+    const budgetBase = milestones.length > 0 ? num(milestones[0].project_budget_base ?? userBudget) : userBudget;
+    const quotationBase = milestones.length > 0 ? num(milestones[0].quotation_base ?? quotationAmount) : quotationAmount;
+    const pctOf = (base: number, pct: string) => Math.round(base * (Number(pct) || 0)) / 100;
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const pctOfBase = (amount: number, base: number) => (base ? round2((amount / base) * 100) : 0);
+
+    // What the other milestones haven't used yet - the most a new (or the
+    // edited) milestone can take. Mirrors the backend's 100% cap.
+    const availableFor = (excludeId: number | null) => {
+        const used = milestones.reduce(
+            (acc, m) => (m.id === excludeId ? acc : {
+                budget: acc.budget + num(m.budget_amount),
+                bill: acc.bill + num(m.billing_amount),
+            }),
+            { budget: 0, bill: 0 }
+        );
+        return {
+            budget: round2(Math.max(budgetBase - used.budget, 0)),
+            bill: round2(Math.max(quotationBase - used.bill, 0)),
+        };
+    };
+    const addAvailable = availableFor(null);
+
+    const validateForm = (values: typeof emptyForm, excludeId: number | null = null) => {
         const errors: Record<string, string> = {};
         if (!values.name.trim()) errors.name = 'Milestone name is required.';
-        if (values.budget_amount !== '' && Number(values.budget_amount) < 0) errors.budget_amount = 'Budget cannot be negative.';
-        if (values.billing_amount !== '' && Number(values.billing_amount) < 0) errors.billing_amount = 'Billing amount cannot be negative.';
+        const sequence = parseInt(values.sequence, 10);
+        const original = milestones.find((m) => m.id === excludeId);
+        if (!sequence || sequence < 1) {
+            errors.sequence = 'Sequence must be 1 or more.';
+        } else if (!original || num(original.sequence) !== sequence) {
+            // Same rule as the backend: only checked when the number changes
+            const clash = milestones.find((m) => m.id !== excludeId && num(m.sequence) === sequence);
+            if (clash) errors.sequence = `Sequence ${sequence} is already used by "${clash.name}".`;
+        }
+        const budgetPct = Number(values.budget_percent);
+        const billPct = Number(values.bill_percent);
+        const available = availableFor(excludeId);
+        if (values.budget_percent !== '' && (budgetPct < 0 || budgetPct > 100)) {
+            errors.budget_percent = 'Budget % must be between 0 and 100.';
+        } else if (budgetBase && pctOf(budgetBase, values.budget_percent) > available.budget + 0.005) {
+            errors.budget_percent = `Only ${pctOfBase(available.budget, budgetBase)}% (${available.budget.toLocaleString()} ${currency}) of the user budget is left.`;
+        }
+        if (values.bill_percent !== '' && (billPct < 0 || billPct > 100)) {
+            errors.bill_percent = 'Bill % must be between 0 and 100.';
+        } else if (quotationBase && pctOf(quotationBase, values.bill_percent) > available.bill + 0.005) {
+            errors.bill_percent = `Only ${pctOfBase(available.bill, quotationBase)}% (${available.bill.toLocaleString()} ${currency}) of the quotation is left.`;
+        }
         return errors;
     };
 
@@ -150,10 +238,30 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
         sequence: parseInt(values.sequence, 10) || 1,
         planned_start_date: values.planned_start_date || null,
         planned_end_date: values.planned_end_date || null,
-        budget_amount: values.budget_amount === '' ? 0 : parseFloat(values.budget_amount),
-        billing_amount: values.billing_amount === '' ? 0 : parseFloat(values.billing_amount),
+        budget_percent: values.budget_percent === '' ? 0 : parseFloat(values.budget_percent),
+        bill_percent: values.bill_percent === '' ? 0 : parseFloat(values.bill_percent),
         status: values.status,
     });
+
+    // Open the add form pre-filled with the next sequence number and whatever
+    // budget / bill % the existing milestones haven't used yet.
+    const toggleAddForm = () => {
+        if (showAddForm) {
+            setShowAddForm(false);
+            return;
+        }
+        const nextSequence = milestones.reduce((max, m) => Math.max(max, num(m.sequence)), 0) + 1;
+        const budgetLeft = pctOfBase(addAvailable.budget, budgetBase);
+        const billLeft = pctOfBase(addAvailable.bill, quotationBase);
+        setForm({
+            ...emptyForm,
+            sequence: String(nextSequence),
+            budget_percent: budgetLeft > 0 ? String(budgetLeft) : '',
+            bill_percent: billLeft > 0 ? String(billLeft) : '',
+        });
+        setFormErrors({});
+        setShowAddForm(true);
+    };
 
     const handleAdd = async () => {
         const errors = validateForm(form);
@@ -162,15 +270,21 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
 
         setIsSubmitting(true);
         try {
-            await axiosInstance.post(`/projects/${projectId}/milestones/`, buildPayload(form));
+            const res = await axiosInstance.post<Milestone>(`/projects/${projectId}/milestones/`, buildPayload(form));
             toast.success('Milestone added');
+            // Show the saved milestone right away, then refresh for the server's derived figures
+            if (res.data?.id) {
+                setMilestones((prev) => [...prev.filter((m) => m.id !== res.data.id), res.data]
+                    .sort((a, b) => num(a.sequence) - num(b.sequence) || a.id - b.id));
+            }
             setForm(emptyForm);
             setFormErrors({});
             setShowAddForm(false);
             fetchMilestones();
+            onChanged?.();
         } catch (error: any) {
             const data = error?.response?.data;
-            const msg = data?.budget_amount?.[0] || data?.name?.[0] || data?.detail || 'Failed to add milestone';
+            const msg = data?.sequence?.[0] || data?.budget_percent?.[0] || data?.bill_percent?.[0] || data?.budget_amount?.[0] || data?.name?.[0] || data?.detail || 'Failed to add milestone';
             toast.error(msg);
         } finally {
             setIsSubmitting(false);
@@ -185,25 +299,31 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
             sequence: String(milestone.sequence),
             planned_start_date: milestone.planned_start_date || '',
             planned_end_date: milestone.planned_end_date || '',
-            budget_amount: String(num(milestone.budget_amount)),
-            billing_amount: String(num(milestone.billing_amount)),
+            budget_percent: String(num(milestone.budget_percent)),
+            bill_percent: String(num(milestone.bill_percent)),
             status: milestone.status,
         });
     };
 
     const handleSaveEdit = async (id: number) => {
-        const errors = validateForm(editForm);
+        const errors = validateForm(editForm, id);
         setFormErrors(errors);
-        if (Object.keys(errors).length > 0) return;
+        // The inline edit row has no error slots, so surface the first problem as a toast
+        const firstError = Object.values(errors)[0];
+        if (firstError) {
+            toast.error(firstError);
+            return;
+        }
 
         try {
             await axiosInstance.patch(`/projects/${projectId}/milestones/${id}/`, buildPayload(editForm));
             toast.success('Milestone updated');
             setEditingId(null);
             fetchMilestones();
+            onChanged?.();
         } catch (error: any) {
             const data = error?.response?.data;
-            const msg = data?.budget_amount?.[0] || data?.name?.[0] || data?.detail || 'Failed to update milestone';
+            const msg = data?.sequence?.[0] || data?.budget_percent?.[0] || data?.bill_percent?.[0] || data?.budget_amount?.[0] || data?.name?.[0] || data?.detail || 'Failed to update milestone';
             toast.error(msg);
         }
     };
@@ -214,6 +334,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
             await axiosInstance.delete(`/projects/${projectId}/milestones/${id}/`);
             toast.success('Milestone archived');
             setMilestones((prev) => prev.filter((m) => m.id !== id));
+            onChanged?.();
         } catch (error) {
             toast.error('Failed to archive milestone');
         }
@@ -243,6 +364,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
             toast.success('Invoice created (Draft)');
             setInvoiceModalMilestone(null);
             fetchMilestones();
+            onChanged?.();
         } catch (error: any) {
             toast.error(error?.response?.data?.error || 'Failed to create invoice');
         } finally {
@@ -265,7 +387,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                 <p className="text-sm font-semibold text-gray-900 dark:text-white">Milestones</p>
                 <button
                     type="button"
-                    onClick={() => setShowAddForm((v) => !v)}
+                    onClick={toggleAddForm}
                     className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
                 >
                     {showAddForm ? 'Cancel' : '+ Add Milestone'}
@@ -292,8 +414,9 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                 type="number"
                                 value={form.sequence}
                                 onChange={(e) => setForm({ ...form, sequence: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.sequence ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                             />
+                            {formErrors.sequence && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.sequence}</p>}
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Status</label>
@@ -324,24 +447,46 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Budget Amount</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Budget Amount (%)</label>
                             <input
                                 type="number"
-                                value={form.budget_amount}
-                                onChange={(e) => setForm({ ...form, budget_amount: e.target.value })}
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.budget_amount ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
+                                min={0}
+                                max={100}
+                                step="0.01"
+                                value={form.budget_percent}
+                                onChange={(e) => setForm({ ...form, budget_percent: e.target.value })}
+                                placeholder="e.g. 25"
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.budget_percent ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                             />
-                            {formErrors.budget_amount && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.budget_amount}</p>}
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                = {pctOf(budgetBase, form.budget_percent).toLocaleString()} {currency} of user budget {budgetBase.toLocaleString()} {currency}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                Remaining: <span className="font-medium text-gray-700 dark:text-gray-200">{addAvailable.budget.toLocaleString()} {currency} ({pctOfBase(addAvailable.budget, budgetBase)}%)</span>
+                                {form.budget_percent !== '' && ` → ${round2(addAvailable.budget - pctOf(budgetBase, form.budget_percent)).toLocaleString()} ${currency} after this`}
+                            </p>
+                            {formErrors.budget_percent && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.budget_percent}</p>}
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Billing Amount</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bill Amount (%)</label>
                             <input
                                 type="number"
-                                value={form.billing_amount}
-                                onChange={(e) => setForm({ ...form, billing_amount: e.target.value })}
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.billing_amount ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
+                                min={0}
+                                max={100}
+                                step="0.01"
+                                value={form.bill_percent}
+                                onChange={(e) => setForm({ ...form, bill_percent: e.target.value })}
+                                placeholder="e.g. 25"
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.bill_percent ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                             />
-                            {formErrors.billing_amount && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.billing_amount}</p>}
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                = {pctOf(quotationBase, form.bill_percent).toLocaleString()} {currency} of quotation {quotationBase.toLocaleString()} {currency}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                Remaining: <span className="font-medium text-gray-700 dark:text-gray-200">{addAvailable.bill.toLocaleString()} {currency} ({pctOfBase(addAvailable.bill, quotationBase)}%)</span>
+                                {form.bill_percent !== '' && ` → ${round2(addAvailable.bill - pctOf(quotationBase, form.bill_percent)).toLocaleString()} ${currency} after this`}
+                            </p>
+                            {formErrors.bill_percent && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.bill_percent}</p>}
                         </div>
                         <div className="md:col-span-4">
                             <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Description</label>
@@ -367,7 +512,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
             )}
 
             <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-x-auto">
-                {isLoading ? (
+                {isLoading && !hasLoaded ? (
                     <p className="p-4 text-sm text-gray-500 dark:text-gray-400">Loading milestones...</p>
                 ) : milestones.length === 0 ? (
                     <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No milestones yet. Add one above.</p>
@@ -380,21 +525,42 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                 <th className="px-4 py-2">Status</th>
                                 <th className="px-4 py-2 text-right">Budget</th>
                                 <th className="px-4 py-2 text-right">Actual Cost</th>
-                                <th className="px-4 py-2 text-right">Billing Amount</th>
-                                <th className="px-4 py-2 text-right">Margin</th>
+                                <th className="px-4 py-2 text-right">Budget Used %</th>
+                                <th className="px-4 py-2 text-right">Remaining Budget</th>
+                                <th className="px-4 py-2 text-right">Bill Amount</th>
+                                <th className="px-4 py-2 text-right">Invoiced</th>
+                                <th className="px-4 py-2 text-right">Invoiced %</th>
+                                <th className="px-4 py-2 text-right">Remaining Billable</th>
                                 <th className="px-4 py-2">Billing</th>
                                 <th className="px-4 py-2">Payment</th>
                                 <th className="px-4 py-2" />
                             </tr>
                         </thead>
                         <tbody>
-                            {milestones.map((m) => {
+                            {milestones.map((m, index) => {
                                 const isEditing = editingId === m.id;
-                                const margin = num(m.margin);
                                 const overBudget = num(m.actual_cost) > num(m.budget_amount) && num(m.budget_amount) > 0;
+                                const billedBase = num(m.billed_base_amount ?? m.billed_amount);
+                                const quotation = num(m.quotation_amount ?? m.billing_amount);
+                                const utilization = num(m.budget_utilization_percent);
+                                const billingPct = m.billing_percent !== undefined
+                                    ? num(m.billing_percent)
+                                    : (quotation > 0 ? (billedBase / quotation) * 100 : 0);
+                                const remainingBudget = num(m.remaining_budget ?? (num(m.budget_amount) - num(m.actual_cost)));
+                                const remainingBillable = num(m.remaining_billable_amount ?? (quotation - billedBase));
                                 return (
                                     <tr key={m.id} className="border-b border-gray-100 dark:border-gray-800 align-top">
-                                        <td className="px-4 py-2 text-gray-500 dark:text-gray-400">{m.sequence}</td>
+                                        <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
+                                            {isEditing ? (
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    value={editForm.sequence}
+                                                    onChange={(e) => setEditForm({ ...editForm, sequence: e.target.value })}
+                                                    className="w-14 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm"
+                                                />
+                                            ) : index + 1 /* row position, so the series is always 1, 2, 3... */}
+                                        </td>
                                         <td className="px-4 py-2">
                                             {isEditing ? (
                                                 <input
@@ -427,34 +593,80 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                         </td>
                                         <td className="px-4 py-2 text-right">
                                             {isEditing ? (
-                                                <input
-                                                    type="number"
-                                                    value={editForm.budget_amount}
-                                                    onChange={(e) => setEditForm({ ...editForm, budget_amount: e.target.value })}
-                                                    className="w-24 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm text-right"
-                                                />
+                                                <div className="flex flex-wrap items-center justify-end gap-1">
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        max={100}
+                                                        step="0.01"
+                                                        value={editForm.budget_percent}
+                                                        onChange={(e) => setEditForm({ ...editForm, budget_percent: e.target.value })}
+                                                        className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm text-right"
+                                                    />
+                                                    <span className="text-xs text-gray-500">%</span>
+                                                    <p className="basis-full text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">max {pctOfBase(availableFor(m.id).budget, budgetBase)}%</p>
+                                                </div>
                                             ) : (
-                                                <span>{num(m.budget_amount).toLocaleString()} {currency}</span>
+                                                <>
+                                                    <span>{num(m.budget_amount).toLocaleString()} {currency}</span>
+                                                    <p className="text-[11px] text-gray-500 dark:text-gray-400">{num(m.budget_percent).toFixed(2)}% of budget</p>
+                                                </>
                                             )}
                                         </td>
                                         <td className={`px-4 py-2 text-right ${overBudget ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-900 dark:text-white'}`}>
                                             {num(m.actual_cost).toLocaleString()} {currency}
                                             {overBudget && <span className="ml-1 text-[10px] uppercase">Over</span>}
+                                            {(m.labour_cost !== undefined || m.expense_cost !== undefined) && (
+                                                <p className="text-[11px] font-normal text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                                    Time {num(m.labour_cost).toLocaleString()} + Exp {num(m.expense_cost).toLocaleString()}
+                                                </p>
+                                            )}
+                                        </td>
+                                        <td className={`px-4 py-2 text-right ${utilization > 100 ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-900 dark:text-white'}`}>
+                                            {utilization.toFixed(1)}%
+                                            <div className="mt-1 h-1.5 w-16 ml-auto rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                                                <div
+                                                    className={`h-full ${utilization > 100 ? 'bg-red-500' : utilization > 80 ? 'bg-amber-500' : 'bg-green-500'}`}
+                                                    style={{ width: `${Math.min(utilization, 100)}%` }}
+                                                />
+                                            </div>
+                                        </td>
+                                        <td className={`px-4 py-2 text-right ${remainingBudget < 0 ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-900 dark:text-white'}`}>
+                                            {remainingBudget.toLocaleString()} {currency}
                                         </td>
                                         <td className="px-4 py-2 text-right">
                                             {isEditing ? (
-                                                <input
-                                                    type="number"
-                                                    value={editForm.billing_amount}
-                                                    onChange={(e) => setEditForm({ ...editForm, billing_amount: e.target.value })}
-                                                    className="w-24 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm text-right"
-                                                />
+                                                <div className="flex flex-wrap items-center justify-end gap-1">
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        max={100}
+                                                        step="0.01"
+                                                        value={editForm.bill_percent}
+                                                        onChange={(e) => setEditForm({ ...editForm, bill_percent: e.target.value })}
+                                                        className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm text-right"
+                                                    />
+                                                    <span className="text-xs text-gray-500">%</span>
+                                                    <p className="basis-full text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">max {pctOfBase(availableFor(m.id).bill, quotationBase)}%</p>
+                                                </div>
                                             ) : (
-                                                <span>{num(m.billing_amount).toLocaleString()} {currency}</span>
+                                                <>
+                                                    <span>{quotation.toLocaleString()} {currency}</span>
+                                                    <p className="text-[11px] text-gray-500 dark:text-gray-400">{num(m.bill_percent).toFixed(2)}% of quotation</p>
+                                                </>
                                             )}
                                         </td>
-                                        <td className={`px-4 py-2 text-right font-medium ${margin < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                                            {margin.toLocaleString()} {currency}
+                                        <td className="px-4 py-2 text-right text-gray-900 dark:text-white">
+                                            {billedBase.toLocaleString()} {currency}
+                                        </td>
+                                        <td className="px-4 py-2 text-right text-gray-900 dark:text-white">
+                                            {billingPct.toFixed(1)}%
+                                            <div className="mt-1 h-1.5 w-16 ml-auto rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                                                <div className="h-full bg-blue-500" style={{ width: `${Math.min(billingPct, 100)}%` }} />
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-2 text-right font-medium text-green-600 dark:text-green-400">
+                                            {remainingBillable.toLocaleString()} {currency}
                                         </td>
                                         <td className="px-4 py-2">{renderStatusBadge(BILLING_BADGE, m.billing_status)}</td>
                                         <td className="px-4 py-2">{renderStatusBadge(PAYMENT_BADGE, m.payment_status)}</td>
@@ -481,9 +693,19 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                 <td className="px-4 py-2" colSpan={3}>Total</td>
                                 <td className="px-4 py-2 text-right">{totals.budget.toLocaleString()} {currency}</td>
                                 <td className="px-4 py-2 text-right">{totals.actual.toLocaleString()} {currency}</td>
+                                <td className="px-4 py-2 text-right">
+                                    {totals.budget > 0 ? ((totals.actual / totals.budget) * 100).toFixed(1) : '0.0'}%
+                                </td>
+                                <td className={`px-4 py-2 text-right ${(totals.budget - totals.actual) < 0 ? 'text-red-600 dark:text-red-400' : ''}`}>
+                                    {(totals.budget - totals.actual).toLocaleString()} {currency}
+                                </td>
                                 <td className="px-4 py-2 text-right">{totals.billing.toLocaleString()} {currency}</td>
-                                <td className={`px-4 py-2 text-right ${(totals.billing - totals.actual) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                                    {(totals.billing - totals.actual).toLocaleString()} {currency}
+                                <td className="px-4 py-2 text-right">{totals.billedBase.toLocaleString()} {currency}</td>
+                                <td className="px-4 py-2 text-right">
+                                    {totals.billing > 0 ? ((totals.billedBase / totals.billing) * 100).toFixed(1) : '0.0'}%
+                                </td>
+                                <td className="px-4 py-2 text-right text-green-600 dark:text-green-400">
+                                    {(totals.billing - totals.billedBase).toLocaleString()} {currency}
                                 </td>
                                 <td colSpan={3} />
                             </tr>

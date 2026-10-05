@@ -22,3 +22,8 @@ env/
 
 # OS
 .DS_Store
+
+# Local DB backups / celery beat state
+*.bak
+db.sqlite3.*
+celerybeat-schedule*

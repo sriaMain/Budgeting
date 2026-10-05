@@ -672,11 +672,11 @@ class MilestoneCreateInvoiceAPIView(APIView):
             )
 
         # Billing amount cannot exceed the milestone's billing amount.
-        if milestone.billing_amount and (milestone.billed_amount + amount) > milestone.billing_amount:
+        if milestone.billing_amount and (milestone.billed_base_amount + amount) > milestone.billing_amount:
             return Response({
                 "error": (
                     f"Invoice amount would bring total billed "
-                    f"({milestone.billed_amount + amount}) above this milestone's "
+                    f"({milestone.billed_base_amount + amount}) above this milestone's "
                     f"billing amount ({milestone.billing_amount})."
                 )
             }, status=status.HTTP_400_BAD_REQUEST)
@@ -690,6 +690,9 @@ class MilestoneCreateInvoiceAPIView(APIView):
         from finances.services import InvoiceService
         from finances.serializers import InvoiceListSerializer
 
+        # Milestone amounts are pre-tax; the invoice adds the quotation's tax on top.
+        tax_percentage = milestone.tax_percentage
+
         invoice = Invoice.objects.create(
             invoice_no=InvoiceService.generate_invoice_number(),
             quote=None,
@@ -697,6 +700,7 @@ class MilestoneCreateInvoiceAPIView(APIView):
             project=project,
             milestone=milestone,
             status='Draft',
+            tax_percentage=tax_percentage,
             issue_date=timezone.now().date(),
             due_date=timezone.now().date() + timedelta(days=due_days),
             created_by=request.user,
@@ -926,6 +930,17 @@ class ProjectFinancialSummaryAPIView(APIView):
             ],
         }, miscellaneous
 
+    def _task_timer_cost(self, project):
+        from .utils.timer import live_consumed_hours
+
+        total = Decimal("0.00")
+        for task in project.tasks.select_related("assigned_to"):
+            if not task.assigned_to:
+                continue
+            rate = task.assigned_to.charges_per_hour or Decimal("0")
+            total += live_consumed_hours(task) * Decimal(rate)
+        return total.quantize(Decimal("0.01"))
+
     def _invoice_breakdown(self, project):
         invoices = project.invoice_set.exclude(status='Cancelled')
         return [
@@ -949,9 +964,10 @@ class ProjectFinancialSummaryAPIView(APIView):
         # this is additive (freelancer cost via active assignments; there is
         # no employee-resource-cost channel available for Fixed Budget
         # projects yet, same as before this change).
-        resource_cost = self._freelancer_assignment_cost(project)
-        employee_cost = Decimal("0.00")
-        freelancer_cost = resource_cost
+        freelancer_cost = self._freelancer_assignment_cost(project)
+        # Employee cost = task timer hours x assignee's hourly cost rate.
+        employee_cost = self._task_timer_cost(project)
+        resource_cost = freelancer_cost + employee_cost
 
         if milestones.exists():
             budget = milestones.aggregate(total=Sum('budget_amount'))['total'] or Decimal("0.00")
@@ -1250,6 +1266,23 @@ class TaskAPIView(APIView):
                 {"error": "Permission denied"},
                 status=403
             )
+
+        # 🔒 Employees may only change the status of tasks assigned to them
+        is_manager = request.user.roles.filter(
+            role_name__in=["Project Manager", "Admin"]
+        ).exists()
+        if not is_manager:
+            if task.assigned_to_id != request.user.id:
+                return Response(
+                    {"error": "You can only update tasks assigned to you"},
+                    status=403
+                )
+            disallowed = set(request.data.keys()) - {"status"}
+            if disallowed:
+                return Response(
+                    {"error": f"Employees can only update status (not: {', '.join(sorted(disallowed))})"},
+                    status=403
+                )
 
         print("PATCH request.data:", request.data)
 
@@ -3009,3 +3042,91 @@ class MyActiveTimerAPIView(APIView):
         })
 
         return Response(data)
+
+
+class AdjustConsumedHoursAPIView(APIView):
+    """
+    Admin / Project Manager / Manager can correct a task's consumed hours.
+
+    consumed_hours is derived from closed TaskTimerLog rows, so the correction
+    is applied to those logs: an increase adds a closed adjustment log for the
+    assignee, a decrease trims time off the most recent logs.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    ALLOWED_ROLES = ["Admin", "Project Manager", "Manager"]
+
+    def post(self, request, task_id):
+        from django.db import transaction
+        from .utils.timer import get_active_timer
+
+        if not request.user.roles.filter(role_name__in=self.ALLOWED_ROLES).exists():
+            return Response({"error": "Permission denied"}, status=403)
+
+        task = get_object_or_404(Task, id=task_id)
+
+        try:
+            target_hours = Decimal(str(request.data.get("consumed_hours")))
+        except (InvalidOperation, TypeError, ValueError):
+            return Response({"error": "consumed_hours must be a number of hours"}, status=400)
+        if not target_hours.is_finite() or target_hours < 0:
+            return Response({"error": "consumed_hours cannot be negative"}, status=400)
+
+        # Refuse while a timer is running, otherwise the running session would
+        # be added on top of the corrected value when it is stopped.
+        if TaskTimerLog.objects.filter(task=task, is_active=True).exists():
+            return Response({"error": "Stop the running timer before adjusting consumed hours"}, status=400)
+        if task.assigned_to_id:
+            redis_task, _ = get_active_timer(task.assigned_to_id)
+            if redis_task and int(redis_task) == task.id:
+                return Response({"error": "Stop the running timer before adjusting consumed hours"}, status=400)
+
+        target_seconds = int(round(target_hours * 3600))
+
+        with transaction.atomic():
+            logs = list(
+                TaskTimerLog.objects.select_for_update().filter(
+                    task=task,
+                    is_active=False,
+                    start_time__isnull=False,
+                    end_time__isnull=False,
+                ).order_by("-end_time")
+            )
+            current_seconds = int(sum((log.end_time - log.start_time).total_seconds() for log in logs))
+            delta = target_seconds - current_seconds
+
+            if delta > 0:
+                now = timezone.now()
+                TaskTimerLog.objects.create(
+                    task=task,
+                    user=task.assigned_to or request.user,
+                    start_time=now - timedelta(seconds=delta),
+                    end_time=now,
+                    duration_minutes=delta // 60,
+                    is_active=False,
+                )
+            elif delta < 0:
+                to_remove = -delta
+                for log in logs:
+                    log_seconds = max(int((log.end_time - log.start_time).total_seconds()), 0)
+                    if log_seconds <= to_remove:
+                        to_remove -= log_seconds
+                        log.delete()
+                    else:
+                        log.end_time -= timedelta(seconds=to_remove)
+                        log.duration_minutes = (log_seconds - to_remove) // 60
+                        log.save(update_fields=["end_time", "duration_minutes"])
+                        to_remove = 0
+                    if to_remove <= 0:
+                        break
+
+            task.modified_by = request.user
+            task.save(update_fields=["modified_by", "modified_at"])
+
+        task.refresh_from_db()
+        return Response({
+            "message": "Consumed hours updated",
+            "previous_consumed_hours": round(current_seconds / 3600, 4),
+            "task": TaskSerializer(task).data,
+        }, status=200)

@@ -86,7 +86,8 @@ export function AddTaskModal({
         project: prefilledProjectId || 0,
         status: '',
         allocated_hours: '00:00', // Changed to HH:MM format
-        due_date: '' // Optional due date
+        due_date: '', // Optional due date
+        milestone: 0 // Optional milestone (labour cost rolls up to it)
 
     });
 
@@ -98,6 +99,7 @@ export function AddTaskModal({
     const [selectedService, setSelectedService] = useState<string>('');
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
     const [projects, setProjects] = useState<Project[]>([]);
+    const [milestones, setMilestones] = useState<{ id: number; name: string; sequence: number }[]>([]);
     const [statusChoices, setStatusChoices] = useState<StatusChoice[]>(DEFAULT_STATUS_OPTIONS);
     const [isLoadingUsers, setIsLoadingUsers] = useState(true);
     const [isLoadingProjects, setIsLoadingProjects] = useState(true);
@@ -126,6 +128,23 @@ export function AddTaskModal({
 
     const isProjectReadOnly = !!prefilledProjectId && !!prefilledProjectName;
 
+    // Milestones of the selected project, for the optional Milestone picker
+    useEffect(() => {
+        if (!isOpen || !formData.project) {
+            setMilestones([]);
+            return;
+        }
+        let cancelled = false;
+        axiosInstance.get(`/projects/${formData.project}/milestones/`)
+            .then(res => {
+                if (!cancelled) setMilestones(Array.isArray(res.data) ? res.data : []);
+            })
+            .catch(() => {
+                if (!cancelled) setMilestones([]);
+            });
+        return () => { cancelled = true; };
+    }, [isOpen, formData.project]);
+
     // Fetch users and projects on mount
     useEffect(() => {
         if (isOpen) {
@@ -142,7 +161,8 @@ export function AddTaskModal({
                 project: prefilledProjectId || 0,
                 status: '',
                 allocated_hours: '00:00',
-                due_date: ''
+                due_date: '',
+                milestone: 0
             });
             setAssigneeSearch('');
             setProjectSearch('');
@@ -162,6 +182,7 @@ export function AddTaskModal({
                     project: editingTask.project || prev.project,
                     assignee_id: editingTask.assigned_to?.id || prev.assignee_id || 0,
                     due_date: editingTask.due_date || prev.due_date,
+                    milestone: editingTask.milestone || 0,
                 }));
 
                 // Project prefilling is now handled by a separate useEffect 
@@ -326,7 +347,11 @@ export function AddTaskModal({
     const handleProjectSelect = (project: Project) => {
         console.log('Project selected:', project); // Debug log
         setSelectedProject(project);
-        setFormData(prev => ({ ...prev, project: project.project_no }));
+        setFormData(prev => ({
+            ...prev,
+            project: project.project_no,
+            milestone: prev.project === project.project_no ? prev.milestone : 0,
+        }));
         setProjectSearch(project.project_name);
         setShowProjectDropdown(false);
         setErrors(prev => ({ ...prev, project: '' }));
@@ -376,6 +401,7 @@ export function AddTaskModal({
             ...(selectedUserId && { assigned_to: selectedUserId }),
             ...(formData.assignee_id && !selectedUserId && formData.assignee_id !== 0 && { assignee_id: formData.assignee_id }),
             ...(formData.project && formData.project !== 0 && { project: formData.project }),
+            milestone: formData.milestone || null,
             // Always send due_date (even when cleared) so removing it on an edit
             // actually clears it server-side instead of being silently dropped.
             due_date: formData.due_date || null
@@ -587,6 +613,28 @@ export function AddTaskModal({
                                     <p className="text-xs text-red-600 mt-1">{errors.project}</p>
                                 )}
                             </div>
+
+                            {/* Milestone (Optional) */}
+                            {milestones.length > 0 && (
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        Milestone
+                                    </label>
+                                    <select
+                                        value={formData.milestone || ''}
+                                        onChange={(e) => setFormData({ ...formData, milestone: Number(e.target.value) || 0 })}
+                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700"
+                                    >
+                                        <option value="">No milestone</option>
+                                        {milestones.map(m => (
+                                            <option key={m.id} value={m.id}>{m.sequence}. {m.name}</option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                        Timer hours on this task are costed into the milestone's actual cost.
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Status (Optional) */}
                             <div className="space-y-2">

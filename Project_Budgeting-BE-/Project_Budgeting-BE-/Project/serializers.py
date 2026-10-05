@@ -404,9 +404,30 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     status_display = serializers.CharField(source='get_status_display', read_only=True)
 
+    expense_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    labour_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     actual_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     margin = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    quotation_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     billed_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    billed_base_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    budget_utilization_percent = serializers.DecimalField(max_digits=9, decimal_places=2, read_only=True)
+    billing_percent = serializers.DecimalField(max_digits=9, decimal_places=2, read_only=True)
+    remaining_budget = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    remaining_billable_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+
+    # Entered as percentages; budget_amount / billing_amount are derived from them.
+    budget_percent = serializers.DecimalField(
+        max_digits=6, decimal_places=2, required=False,
+        min_value=Decimal("0"), max_value=Decimal("100")
+    )
+    bill_percent = serializers.DecimalField(
+        max_digits=6, decimal_places=2, required=False,
+        min_value=Decimal("0"), max_value=Decimal("100")
+    )
+    project_budget_base = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    quotation_base = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    tax_percentage = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
     received_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     outstanding_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     billing_status = serializers.CharField(read_only=True)
@@ -435,9 +456,22 @@ class MilestoneSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'is_active',
+            'expense_cost',
+            'labour_cost',
             'actual_cost',
             'margin',
+            'quotation_amount',
             'billed_amount',
+            'billed_base_amount',
+            'budget_utilization_percent',
+            'billing_percent',
+            'remaining_budget',
+            'remaining_billable_amount',
+            'budget_percent',
+            'bill_percent',
+            'project_budget_base',
+            'quotation_base',
+            'tax_percentage',
             'received_amount',
             'outstanding_amount',
             'billing_status',
@@ -456,8 +490,61 @@ class MilestoneSerializer(serializers.ModelSerializer):
     def get_updated_by_name(self, obj):
         return obj.updated_by.get_full_name() if obj.updated_by else None
 
+    def _apply_percentages(self, validated_data, project, exclude_pk=None):
+        """Turn budget_percent / bill_percent into amounts, and keep the
+        milestones of a project within 100% of the budget and quotation."""
+        budget_percent = validated_data.pop('budget_percent', None)
+        bill_percent = validated_data.pop('bill_percent', None)
+        others = project.milestones.filter(is_active=True).exclude(pk=exclude_pk)
+        errors = {}
+
+        if budget_percent is not None:
+            base = Milestone.project_budget_base_for(project)
+            if not base:
+                errors['budget_percent'] = "Project has no user budget to take a percentage of."
+            else:
+                amount = (base * budget_percent / Decimal("100")).quantize(Decimal("0.01"))
+                used = others.aggregate(total=Sum('budget_amount'))['total'] or Decimal("0.00")
+                if used + amount > base:
+                    errors['budget_percent'] = (
+                        f"Milestone budgets would total {((used + amount) / base * 100):.2f}% "
+                        f"of the user budget (max 100%)."
+                    )
+                validated_data['budget_amount'] = amount
+
+        if bill_percent is not None:
+            base = Milestone.quotation_base_for(project)
+            if not base:
+                errors['bill_percent'] = "Project has no quotation amount to take a percentage of."
+            else:
+                amount = (base * bill_percent / Decimal("100")).quantize(Decimal("0.01"))
+                used = others.aggregate(total=Sum('billing_amount'))['total'] or Decimal("0.00")
+                if used + amount > base:
+                    errors['bill_percent'] = (
+                        f"Milestone bill amounts would total {((used + amount) / base * 100):.2f}% "
+                        f"of the quotation (max 100%)."
+                    )
+                validated_data['billing_amount'] = amount
+
+        if errors:
+            raise serializers.ValidationError(errors)
+        return validated_data
+
+    def _check_sequence(self, validated_data, project, exclude_pk=None):
+        """Each active milestone of a project needs its own sequence number."""
+        sequence = validated_data.get('sequence')
+        if sequence is None:
+            return
+        clash = project.milestones.filter(is_active=True, sequence=sequence).exclude(pk=exclude_pk).first()
+        if clash:
+            raise serializers.ValidationError(
+                {'sequence': f"Sequence {sequence} is already used by \"{clash.name}\"."}
+            )
+
     def create(self, validated_data):
         override = validated_data.pop('override_budget_check', False)
+        self._check_sequence(validated_data, validated_data['project'])
+        self._apply_percentages(validated_data, validated_data['project'])
         instance = Milestone(**validated_data)
         instance._allow_budget_override = override
         instance.save()
@@ -465,6 +552,10 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         override = validated_data.pop('override_budget_check', False)
+        # Only when it changes, so older duplicates can still be edited (and renumbered)
+        if validated_data.get('sequence', instance.sequence) != instance.sequence:
+            self._check_sequence(validated_data, instance.project, exclude_pk=instance.pk)
+        self._apply_percentages(validated_data, instance.project, exclude_pk=instance.pk)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance._allow_budget_override = override
@@ -880,6 +971,12 @@ class TaskSerializer(serializers.ModelSerializer):
         required=True
     )
     project_name = serializers.SerializerMethodField(read_only=True)
+    milestone = serializers.PrimaryKeyRelatedField(
+        queryset=Milestone.objects.filter(is_active=True),
+        required=False,
+        allow_null=True
+    )
+    milestone_name = serializers.SerializerMethodField(read_only=True)
     consumed_hours = serializers.SerializerMethodField(read_only=True)
     remaining_hours = serializers.SerializerMethodField(read_only=True)
     allocated_formatted = serializers.SerializerMethodField(read_only=True)
@@ -915,6 +1012,8 @@ class TaskSerializer(serializers.ModelSerializer):
             "assigned_to",
             "project",
             "project_name",
+            "milestone",
+            "milestone_name",
             "created_by",
             "modified_by",
             "due_date",
@@ -955,6 +1054,20 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def get_project_name(self, obj):
         return obj.project.project_name if obj.project else None
+
+    def get_milestone_name(self, obj):
+        return obj.milestone.name if obj.milestone else None
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        milestone = attrs.get("milestone", getattr(self.instance, "milestone", None))
+        project = attrs.get("project", getattr(self.instance, "project", None))
+        # Project's primary key is project_no (no `id` field), so compare on pk
+        if milestone and project and milestone.project_id != project.pk:
+            raise serializers.ValidationError(
+                {"milestone": "Milestone does not belong to this task's project."}
+            )
+        return attrs
 
 
     def get_created_by(self, obj):

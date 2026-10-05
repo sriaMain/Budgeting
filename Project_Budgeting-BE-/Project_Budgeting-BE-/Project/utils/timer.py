@@ -58,3 +58,24 @@ def format_seconds(seconds):
         "seconds": secs,
         "formatted": f"{hours:02d}:{minutes:02d}:{secs:02d}"
     }
+
+
+def live_consumed_hours(task):
+    """
+    Consumed hours for a task including the elapsed time of a timer that is
+    running right now (not yet committed to a TaskTimerLog row).
+    """
+    from decimal import Decimal
+    from django.utils import timezone
+
+    consumed = task.consumed_hours or Decimal("0")
+    if not task.assigned_to_id:
+        return consumed
+
+    redis_task, redis_start = get_active_timer(task.assigned_to_id)
+    if redis_task and redis_start and int(redis_task) == task.id:
+        start_time = timezone.datetime.fromisoformat(
+            redis_start.decode() if isinstance(redis_start, bytes) else redis_start
+        )
+        consumed += Decimal((timezone.now() - start_time).total_seconds()) / Decimal(3600)
+    return consumed

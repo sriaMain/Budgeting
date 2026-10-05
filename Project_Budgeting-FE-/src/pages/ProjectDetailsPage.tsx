@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Layout } from '../components/Layout';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Filter } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, X } from 'lucide-react';
 import type { DropResult } from '@hello-pangea/dnd';
 import axiosInstance from '../utils/axiosInstance';
 import { ReusableTable, type Column } from '../components/ReusableTable';
@@ -87,6 +87,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const [isAssignTaskModalOpen, setIsAssignTaskModalOpen] = useState(false);
     const [selectedTaskForAssignment, setSelectedTaskForAssignment] = useState<Task | null>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
+    const [editingConsumedTaskId, setEditingConsumedTaskId] = useState<string | null>(null);
+    const [consumedInput, setConsumedInput] = useState<string>('');
     const [isLoadingTasks, setIsLoadingTasks] = useState(true);
     const [firstQuoteId, setFirstQuoteId] = useState<number | null>(null);
     const [invoices, setInvoices] = useState<any[]>([]);
@@ -594,6 +596,40 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         }
     };
 
+    const startEditingConsumed = (task: Task) => {
+        const totalMinutes = Math.round((task.consumedHoursNum || 0) * 60);
+        const hh = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+        const mm = String(totalMinutes % 60).padStart(2, '0');
+        setConsumedInput(`${hh}:${mm}`);
+        setEditingConsumedTaskId(task.id);
+    };
+
+    // Admin / manager correction of consumed hours (input as HH:MM)
+    const saveConsumedHours = async (taskId: string) => {
+        const match = consumedInput.trim().match(/^(\d{1,4}):([0-5]\d)$/);
+        if (!match) {
+            toast.error('Enter consumed time as HH:MM');
+            return;
+        }
+        const hours = parseInt(match[1], 10) + parseInt(match[2], 10) / 60;
+        try {
+            const response = await axiosInstance.post(`tasks/${taskId}/consumed-hours/`, { consumed_hours: hours });
+            if (response.status === 200) {
+                toast.success('Consumed hours updated');
+                setEditingConsumedTaskId(null);
+                await refreshTaskById(taskId);
+                // Refresh the KPI cards (billable hours consumed / remaining)
+                if (projectId) {
+                    const projectResp = await axiosInstance.get(`/projects/${projectId}/`);
+                    setProject(projectResp.data);
+                }
+            }
+        } catch (error: any) {
+            console.error('Failed to update consumed hours:', error);
+            toast.error(error?.response?.data?.error || 'Failed to update consumed hours');
+        }
+    };
+
     // Opens a task in the edit modal — shared by the Task list, Task Board, Calendar and Gantt views.
     const openTaskForEdit = async (taskId: string) => {
         try {
@@ -957,7 +993,50 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                 </td>
                                                                 <td className="py-4 px-3 text-sm text-gray-600 dark:text-gray-400">{task.activityType}</td>
                                                                 <td className="py-4 px-3 text-sm text-gray-900 dark:text-white">{task.allocatedHours}</td>
-                                                                <td className="py-4 px-3 text-sm text-gray-900 dark:text-white">{task.consumedHours}</td>
+                                                                <td className="py-4 px-3 text-sm text-gray-900 dark:text-white">
+                                                                    {editingConsumedTaskId === task.id ? (
+                                                                        <div className="flex items-center gap-1">
+                                                                            <input
+                                                                                type="text"
+                                                                                value={consumedInput}
+                                                                                onChange={(e) => setConsumedInput(e.target.value)}
+                                                                                onKeyDown={(e) => {
+                                                                                    if (e.key === 'Enter') saveConsumedHours(task.id);
+                                                                                    if (e.key === 'Escape') setEditingConsumedTaskId(null);
+                                                                                }}
+                                                                                placeholder="HH:MM"
+                                                                                autoFocus
+                                                                                className="w-20 px-2 py-1 text-sm font-mono border border-gray-300 rounded dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+                                                                            />
+                                                                            <button
+                                                                                onClick={() => saveConsumedHours(task.id)}
+                                                                                className="px-2 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                                                                            >
+                                                                                Save
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => setEditingConsumedTaskId(null)}
+                                                                                className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500"
+                                                                                title="Cancel"
+                                                                            >
+                                                                                <X className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="flex items-center gap-2 group/consumed">
+                                                                            <span>{task.consumedHours}</span>
+                                                                            {(userRole === 'admin' || userRole === 'manager') && (
+                                                                                <button
+                                                                                    onClick={() => startEditingConsumed(task)}
+                                                                                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors opacity-0 group-hover/consumed:opacity-100 dark:text-gray-500"
+                                                                                    title="Edit consumed hours"
+                                                                                >
+                                                                                    <Edit2 className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </td>
                                                                 <td className="py-4 px-3 text-sm text-gray-600 dark:text-gray-400">{task.dueDate}</td>
                                                                 <td className="py-4 px-3 text-sm text-gray-600 dark:text-gray-400">{task.remaining}</td>
                                                             </tr>
@@ -1524,7 +1603,13 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
                         {/* Milestones — Fixed Budget / Milestone-Based projects only */}
                         {activeTab === 'Milestones' && projectId && (
-                            <MilestonesPanel projectId={projectId} currency={budgetCurrency} />
+                            <MilestonesPanel
+                                projectId={projectId}
+                                currency={budgetCurrency}
+                                userBudget={totalBudgetAmount}
+                                quotationAmount={Number(project?.contract_value) || 0}
+                                onChanged={refreshInvoices}
+                            />
                         )}
 
                         {/* Resources — Time & Material projects only */}

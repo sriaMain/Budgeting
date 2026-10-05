@@ -140,6 +140,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
   const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editingStatusTaskId, setEditingStatusTaskId] = useState<number | null>(null);
+  const [editingConsumedTaskId, setEditingConsumedTaskId] = useState<number | null>(null);
+  const [consumedInput, setConsumedInput] = useState<string>('');
   const [users, setUsers] = useState<any[]>([]);
   const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('');
   const [statusChoices, setStatusChoices] = useState<{ value: string, label: string }[]>([]);
@@ -686,6 +688,36 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     }
   };
 
+  const startEditingConsumed = (task: Task) => {
+    const totalMinutes = Math.round((task.consumed_hours || 0) * 60);
+    const hh = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+    const mm = String(totalMinutes % 60).padStart(2, '0');
+    setConsumedInput(`${hh}:${mm}`);
+    setEditingConsumedTaskId(task.id);
+  };
+
+  // Admin / manager correction of consumed hours (input as HH:MM)
+  const saveConsumedHours = async (taskId: number) => {
+    const match = consumedInput.trim().match(/^(\d{1,4}):([0-5]\d)$/);
+    if (!match) {
+      toast.error('Enter consumed time as HH:MM');
+      return;
+    }
+    const hours = parseInt(match[1], 10) + parseInt(match[2], 10) / 60;
+    try {
+      const response = await axiosInstance.post(`tasks/${taskId}/consumed-hours/`, { consumed_hours: hours });
+      if (response.status === 200) {
+        toast.success('Consumed hours updated');
+        setEditingConsumedTaskId(null);
+        fetchTasks();
+        if (activeTab === 'board') fetchGroupedTasks();
+      }
+    } catch (error: any) {
+      console.error('Failed to update consumed hours:', error);
+      toast.error(error?.response?.data?.error || 'Failed to update consumed hours');
+    }
+  };
+
   // Group tasks by project
   const groupTasksByProject = (): TaskGroup[] => {
     const grouped: Record<string, Task[]> = {};
@@ -1122,9 +1154,53 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                             </span>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <span className="text-sm text-gray-900 font-mono dark:text-gray-100">
-                              {task.consumed_formatted || (task.consumed_hours || 0).toFixed(2) + 'h'}
-                            </span>
+                            {editingConsumedTaskId === task.id ? (
+                              <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="text"
+                                  value={consumedInput}
+                                  onChange={(e) => setConsumedInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveConsumedHours(task.id);
+                                    if (e.key === 'Escape') setEditingConsumedTaskId(null);
+                                  }}
+                                  placeholder="HH:MM"
+                                  autoFocus
+                                  className="w-20 px-2 py-1 text-sm font-mono border border-gray-300 rounded dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+                                />
+                                <button
+                                  onClick={() => saveConsumedHours(task.id)}
+                                  className="px-2 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={() => setEditingConsumedTaskId(null)}
+                                  className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500"
+                                  title="Cancel"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center gap-2 group/consumed">
+                                <span className="text-sm text-gray-900 font-mono dark:text-gray-100">
+                                  {task.consumed_formatted || (task.consumed_hours || 0).toFixed(2) + 'h'}
+                                </span>
+                                {(userRole === 'admin' || userRole === 'manager') && !task.running && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      startEditingConsumed(task);
+                                    }}
+                                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors opacity-0 group-hover/consumed:opacity-100 dark:text-gray-500"
+                                    title="Edit Consumed Hours"
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td className="px-6 py-4 text-center">
                             <span className={`text-sm font-medium font-mono ${(task.remaining_hours || 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>

@@ -6,6 +6,7 @@ import axiosInstance from '../utils/axiosInstance';
 import AddRoleForm from '../components/AddRoleForm';
 import ModulesTab from '../components/ModulesTab';
 import ManageUsersTab from '../components/ManageUsersTab';
+import HrmsEmployeesTab from '../components/HrmsEmployeesTab';
 
 interface AdministrationScreenProps {
   userRole: 'admin' | 'user' | 'manager';
@@ -106,7 +107,7 @@ const PermissionsCell: React.FC<{ permissions: Permission[] }> = ({ permissions 
 
 const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, currentPage, onNavigate }) => {
   // For manager role, default to 'modules' tab; for admin, default to 'manage-roles'
-  const [activeTab, setActiveTab] = useState<'manage-roles' | 'modules' | 'manage-users'>(
+  const [activeTab, setActiveTab] = useState<'manage-roles' | 'modules' | 'manage-users' | 'hrms-employees'>(
     userRole === 'manager' ? 'modules' : 'manage-roles'
   );
   const [currentView, setCurrentView] = useState<'list' | 'add-role'>('list');
@@ -250,6 +251,22 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                   `}
                 >
                   Manage Users
+                </button>
+              )}
+
+              {/* HRMS Employees - Only for admin */}
+              {userRole === 'admin' && (
+                <button
+                  onClick={() => setActiveTab('hrms-employees')}
+                  className={`
+                      px-6 py-2.5 rounded-lg border-2 font-bold text-lg transition-all
+                      ${activeTab === 'hrms-employees'
+                      ? 'bg-white border-blue-600 text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
+                      : 'bg-gray-200 border-transparent text-gray-500 hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
+                    }
+                  `}
+                >
+                  HRMS Employees
                 </button>
               )}
             </div>
@@ -465,6 +482,11 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
             {/* Manage Users tab */}
             {activeTab === 'manage-users' && (
               <ManageUsersTab />
+            )}
+
+            {/* HRMS Employees tab */}
+            {activeTab === 'hrms-employees' && (
+              <HrmsEmployeesTab />
             )}
           </>
         )}

@@ -508,7 +508,7 @@ const VendorOnboardDrawerContent: React.FC<VendorOnboardDrawerProps & { onTitleC
             {sectionHeader(3, 'contract')}
             <fieldset disabled={!editable || !!busy} className="min-w-0">
               <Step4BusinessProcurement
-                currencyOptions={choices.onboarding_currencies}
+                currencyOptions={choices.onboarding_currencies?.length ? choices.onboarding_currencies : (choices.currencies ?? [])}
                 paymentTermOptions={choices.payment_terms}
                 billingFrequencyOptions={choices.billing_frequencies}
               />

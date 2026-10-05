@@ -345,7 +345,9 @@ class Milestone(models.Model):
     underlying transactions:
 
         Milestone -> Invoice (finances.Invoice.milestone) -> InvoicePayment
-        Milestone -> Expense (finances.Expense.milestone) -> actual_cost
+        Milestone -> Expense (finances.Expense.milestone) -> expense_cost
+        Milestone -> Task (Task.milestone) -> timer hours x charges_per_hour -> labour_cost
+        actual_cost = expense_cost + labour_cost
     """
 
     STATUS_CHOICES = [
@@ -426,14 +428,108 @@ class Milestone(models.Model):
     # ---------------------------
     # Derived financials (Section 14: never store what can be computed)
     # ---------------------------
+    # Employee time reaches the milestone through task timers (labour_cost),
+    # so employee_cost expenses are left out to avoid counting it twice.
+    LABOUR_EXPENSE_CATEGORIES = ('employee_cost',)
+
+    @property
+    def expense_cost(self):
+        total = self.expenses.exclude(
+            category__in=self.LABOUR_EXPENSE_CATEGORIES
+        ).aggregate(total=models.Sum('amount'))['total']
+        return total or Decimal("0.00")
+
+    @property
+    def labour_cost(self):
+        """Hours worked on this milestone's tasks x each assignee's hourly cost rate."""
+        from .utils.timer import live_consumed_hours
+
+        total = Decimal("0.00")
+        for task in self.tasks.select_related('assigned_to'):
+            if not task.assigned_to:
+                continue
+            rate = task.assigned_to.charges_per_hour or Decimal("0")
+            total += live_consumed_hours(task) * Decimal(rate)
+        return total.quantize(Decimal("0.01"))
+
     @property
     def actual_cost(self):
-        total = self.expenses.aggregate(total=models.Sum('amount'))['total']
-        return total or Decimal("0.00")
+        return (self.expense_cost + self.labour_cost).quantize(Decimal("0.01"))
 
     @property
     def margin(self):
         return (self.billing_amount or Decimal("0.00")) - self.actual_cost
+
+    @property
+    def quotation_amount(self):
+        """This milestone's share of the project quotation."""
+        return self.billing_amount or Decimal("0.00")
+
+    # ---------------------------
+    # Percentage-based entry: budget_amount is a % of the project's user
+    # budget, billing_amount is a % of the project's quotation (pre-tax,
+    # since invoices add tax on top).
+    # ---------------------------
+    @staticmethod
+    def project_budget_base_for(project):
+        budget = getattr(project, 'budget', None) if project else None
+        if budget is not None:
+            return budget.cost_budget or Decimal("0.00")
+        return (project.contract_value if project else None) or Decimal("0.00")
+
+    @staticmethod
+    def quotation_base_for(project):
+        if project and project.created_from_quotation:
+            return project.created_from_quotation.sub_total or Decimal("0.00")
+        return (project.contract_value if project else None) or Decimal("0.00")
+
+    @property
+    def project_budget_base(self):
+        return self.project_budget_base_for(self.project)
+
+    @property
+    def quotation_base(self):
+        return self.quotation_base_for(self.project)
+
+    @property
+    def tax_percentage(self):
+        """Tax % of the project's quotation - added on top when this milestone is invoiced."""
+        quotation = self.project.created_from_quotation if self.project_id else None
+        return (quotation.tax_percentage if quotation else None) or Decimal("0.00")
+
+    @property
+    def budget_percent(self):
+        base = self.project_budget_base
+        if not base:
+            return Decimal("0.00")
+        return ((self.budget_amount or Decimal("0.00")) / base * 100).quantize(Decimal("0.01"))
+
+    @property
+    def bill_percent(self):
+        base = self.quotation_base
+        if not base:
+            return Decimal("0.00")
+        return ((self.billing_amount or Decimal("0.00")) / base * 100).quantize(Decimal("0.01"))
+
+    @property
+    def remaining_budget(self):
+        return (self.budget_amount or Decimal("0.00")) - self.actual_cost
+
+    @property
+    def remaining_billable_amount(self):
+        return self.quotation_amount - self.billed_base_amount
+
+    @property
+    def budget_utilization_percent(self):
+        if not self.budget_amount:
+            return Decimal("0.00")
+        return (self.actual_cost / self.budget_amount * 100).quantize(Decimal("0.01"))
+
+    @property
+    def billing_percent(self):
+        if not self.quotation_amount:
+            return Decimal("0.00")
+        return (self.billed_base_amount / self.quotation_amount * 100).quantize(Decimal("0.01"))
 
     def _billing_invoices(self):
         return self.invoices.exclude(status='Cancelled')
@@ -441,6 +537,12 @@ class Milestone(models.Model):
     @property
     def billed_amount(self):
         total = self._billing_invoices().aggregate(total=models.Sum('total_amount'))['total']
+        return total or Decimal("0.00")
+
+    @property
+    def billed_base_amount(self):
+        """Billed so far before tax - compared against the (pre-tax) quotation amount."""
+        total = self._billing_invoices().aggregate(total=models.Sum('sub_total'))['total']
         return total or Decimal("0.00")
 
     @property
@@ -458,7 +560,7 @@ class Milestone(models.Model):
         invoices = self._billing_invoices()
         if not invoices.exists():
             return 'not_billed'
-        if self.billing_amount and self.billed_amount >= self.billing_amount:
+        if self.billing_amount and self.billed_base_amount >= self.billing_amount:
             return 'invoiced'
         return 'partially_invoiced'
 
@@ -593,6 +695,12 @@ class Task(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         related_name='assigned_tasks'
+    )
+    milestone = models.ForeignKey(
+        Milestone,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='tasks'
     )
     allocated_hours = models.DecimalField(max_digits=5, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planned')
