@@ -632,13 +632,20 @@ class VendorApprovalConfigResolveView(APIView):
 def _choices_payload():
     from core.app_constants import CURRENCY_CHOICES
     from .models import VendorChangeRequest
+    currency_options = [{"value": k, "label": v} for k, v in CURRENCY_CHOICES]
     return {
         "vendor_types": [{"value": k, "label": v} for k, v in Vendor.VENDOR_TYPE_CHOICES],
         "vendor_statuses": [{"value": k, "label": v} for k, v in Vendor.STATUS_CHOICES],
         "msme_categories": [{"value": k, "label": v} for k, v in VendorOnboardingProfile.MSME_CATEGORY_CHOICES],
         "document_categories": [{"value": k, "label": v} for k, v in VendorDocument.CATEGORY_CHOICES],
+        "document_statuses": [{"value": k, "label": v} for k, v in VendorDocument.STATUS_CHOICES],
         "change_request_sections": [{"value": k, "label": v} for k, v in VendorChangeRequest.SECTION_CHOICES],
-        "currencies": [{"value": k, "label": v} for k, v in CURRENCY_CHOICES],
+        "currencies": currency_options,
+        # Same currency list under the name the Contract step's frontend code
+        # actually reads (VendorOnboardingChoices.onboarding_currencies) - was
+        # missing entirely, which crashed the onboarding drawer for every new
+        # vendor (Step4BusinessProcurement.currencyOptions is undefined.map()).
+        "onboarding_currencies": currency_options,
     }
 
 
