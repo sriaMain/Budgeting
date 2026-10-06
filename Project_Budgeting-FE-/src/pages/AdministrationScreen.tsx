@@ -6,7 +6,8 @@ import axiosInstance from '../utils/axiosInstance';
 import AddRoleForm from '../components/AddRoleForm';
 import ModulesTab from '../components/ModulesTab';
 import ManageUsersTab from '../components/ManageUsersTab';
-import HrmsEmployeesTab from '../components/HrmsEmployeesTab';
+// TEMPORARILY HIDDEN - uncomment together with the HRMS Employees tab below.
+// import HrmsEmployeesTab from '../components/HrmsEmployeesTab';
 
 interface AdministrationScreenProps {
   userRole: 'admin' | 'user' | 'manager';
@@ -254,8 +255,10 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                 </button>
               )}
 
-              {/* HRMS Employees - Only for admin */}
-              {userRole === 'admin' && (
+              {/* HRMS Employees - Only for admin.
+                  TEMPORARILY HIDDEN until the hrms_integration migrations are applied on the
+                  database; uncomment this block (and the tab content below) to turn it back on. */}
+              {/* {userRole === 'admin' && (
                 <button
                   onClick={() => setActiveTab('hrms-employees')}
                   className={`
@@ -268,7 +271,7 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                 >
                   HRMS Employees
                 </button>
-              )}
+              )} */}
             </div>
 
             {activeTab === 'manage-roles' && (
@@ -484,10 +487,10 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
               <ManageUsersTab />
             )}
 
-            {/* HRMS Employees tab */}
-            {activeTab === 'hrms-employees' && (
+            {/* HRMS Employees tab - TEMPORARILY HIDDEN (see the tab button above) */}
+            {/* {activeTab === 'hrms-employees' && (
               <HrmsEmployeesTab />
-            )}
+            )} */}
           </>
         )}
       </div>

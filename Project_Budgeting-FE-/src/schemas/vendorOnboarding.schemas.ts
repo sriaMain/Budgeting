@@ -60,6 +60,7 @@ export const vendorDetailsSchema = z
     // Internal vendor-master fields - admin only, never required, never sent by the portal.
     headcount: z.string().optional().default("").refine((v) => !v || /^\d+$/.test(v), "Enter a whole number"),
     rating: z.number().int().min(0).max(5).default(0), // 0 = not rated
+    manual_amount_spent: z.string().optional().default("").refine((v) => !v || /^\d+(\.\d{1,2})?$/.test(v), "Enter an amount, e.g. 150000 or 1500.50"),
   })
   .refine((v) => !v.msme_registered || !!v.udyam_number, {
     message: "UDYAM number is required when MSME registered",
@@ -333,7 +334,7 @@ export const EMPTY_FORM_VALUES: VendorOnboardingFormValues = {
     msme_registered: false, udyam_number: "", msme_category: "", address_line1: "", address_line2: "",
     city: "", district: "", state: "", pin_code: "", landmark: "", vendor_introduction: "",
     finance_manager_name: "", finance_manager_email: "", finance_manager_mobile: "",
-    headcount: "", rating: 0,
+    headcount: "", rating: 0, manual_amount_spent: "",
   },
   step2: {
     country_of_tax_residence: "", pan: "", cin: "", incorporation_date: "", tan: "", tan_mobile: "",

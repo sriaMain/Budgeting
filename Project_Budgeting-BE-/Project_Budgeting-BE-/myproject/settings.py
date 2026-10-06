@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     'vendor_onboarding',
     'employee_onboarding',
     'freelancer_onboarding',
+    'hrms_integration',
 
 
 ]
@@ -322,6 +323,13 @@ if EMPLOYEE_PORTAL_URL not in CORS_ALLOWED_ORIGINS:
 # Public URL the Freelancer Onboarding portal is reachable at - same idea as
 # VENDOR_PORTAL_URL/EMPLOYEE_PORTAL_URL above.
 FREELANCER_PORTAL_URL = os.environ.get("FREELANCER_PORTAL_URL", FRONTEND_BASE_URL).rstrip("/")
+
+# HRMS external employees API (read-only, active employees only). The key is
+# a secret issued by the HRMS team - set it in .env, never commit it. Sync is
+# manual (the Refresh button on Administration > HRMS Employees).
+HRMS_EMPLOYEES_API_URL = os.environ.get("HRMS_EMPLOYEES_API_URL", "https://aira.nxsys.in/api/external/employees/")
+HRMS_API_KEY = os.environ.get("HRMS_API_KEY", "")
+HRMS_API_TIMEOUT_SECONDS = int(os.environ.get("HRMS_API_TIMEOUT_SECONDS", "20"))
 
 if FREELANCER_PORTAL_URL not in CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS.append(FREELANCER_PORTAL_URL)

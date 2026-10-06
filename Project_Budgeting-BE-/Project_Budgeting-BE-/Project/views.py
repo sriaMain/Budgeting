@@ -832,6 +832,11 @@ class ProjectGenerateTMInvoiceAPIView(APIView):
             billing_period_start=period_start,
             billing_period_end=period_end,
             status='Draft',
+            # Same tax as the quotation the project was created from (as milestone invoices do).
+            tax_percentage=(
+                (project.created_from_quotation.tax_percentage if project.created_from_quotation else None)
+                or Decimal("0.00")
+            ),
             issue_date=timezone.now().date(),
             due_date=timezone.now().date() + timedelta(days=due_days),
             created_by=request.user,

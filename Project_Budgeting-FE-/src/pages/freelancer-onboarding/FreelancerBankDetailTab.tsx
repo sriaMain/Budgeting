@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '../../components/Button';
@@ -7,11 +7,14 @@ import { SelectField } from '../../components/SelectField';
 import * as api from '../../services/freelancerOnboarding';
 import { parseApiErrors } from '../../utils/parseApiErrors';
 import type { FreelancerBankDetailPayload } from '../../types/freelancerOnboarding.types';
+import type { EmbeddedSectionHandle } from './FreelancerEquipmentTab';
 
 interface Props {
     freelancerId: number;
     paymentMethods: { value: string; label: string }[];
     panVerificationStatuses: { value: string; label: string }[];
+    /** Inside the onboarding drawer: no own Save button - the drawer's Save calls save() via ref. */
+    embedded?: boolean;
 }
 
 const EMPTY: FreelancerBankDetailPayload = {
@@ -25,8 +28,9 @@ const EMPTY: FreelancerBankDetailPayload = {
     ifsc_code: '',
 };
 
-export const FreelancerBankDetailTab: React.FC<Props> = ({ freelancerId, paymentMethods, panVerificationStatuses }) => {
+export const FreelancerBankDetailTab = forwardRef<EmbeddedSectionHandle, Props>(({ freelancerId, paymentMethods, panVerificationStatuses, embedded = false }, ref) => {
     const [values, setValues] = useState<FreelancerBankDetailPayload>(EMPTY);
+    const [dirty, setDirty] = useState(false);
     const [accountNumberMasked, setAccountNumberMasked] = useState<string | null>(null);
     const [revealedAccountNumber, setRevealedAccountNumber] = useState<string | null>(null);
     const [panMasked, setPanMasked] = useState<string | null>(null);
@@ -57,6 +61,7 @@ export const FreelancerBankDetailTab: React.FC<Props> = ({ freelancerId, payment
             }
             setRevealedAccountNumber(null);
             setRevealedPan(null);
+            setDirty(false);
         } catch {
             toast.error('Failed to load bank details');
         } finally {
@@ -70,9 +75,10 @@ export const FreelancerBankDetailTab: React.FC<Props> = ({ freelancerId, payment
         e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
     ) => {
         setValues((v) => ({ ...v, [field]: e.target.value as never }));
+        setDirty(true);
     };
 
-    const handleSave = async () => {
+    const handleSave = async (): Promise<boolean> => {
         setErrors({});
         const nextErrors: Record<string, string> = {};
         // PAN/account number are only re-required when nothing is on file yet -
@@ -86,8 +92,8 @@ export const FreelancerBankDetailTab: React.FC<Props> = ({ freelancerId, payment
 
         if (Object.keys(nextErrors).length > 0) {
             setErrors(nextErrors);
-            toast.error('Please fill in all mandatory fields');
-            return;
+            toast.error(embedded ? 'Bank & KYC: please fill in all mandatory fields' : 'Please fill in all mandatory fields');
+            return false;
         }
 
         setIsSaving(true);
@@ -96,14 +102,19 @@ export const FreelancerBankDetailTab: React.FC<Props> = ({ freelancerId, payment
             if (!payload.account_number) delete payload.account_number;
             if (!payload.tax_number) delete payload.tax_number;
             await api.updateBankDetail(freelancerId, payload);
-            toast.success('Bank details saved');
+            if (!embedded) toast.success('Bank details saved');
             load();
+            return true;
         } catch (err) {
             toast.error(parseApiErrors(err).general || 'Failed to save bank details');
+            return false;
         } finally {
             setIsSaving(false);
         }
     };
+
+    // Untouched bank details are left alone, so saving the rest of the form never trips their validation.
+    useImperativeHandle(ref, () => ({ save: async () => (dirty ? handleSave() : true) }));
 
     const handleToggleReveal = async () => {
         if (revealedAccountNumber) { setRevealedAccountNumber(null); return; }
@@ -198,9 +209,13 @@ export const FreelancerBankDetailTab: React.FC<Props> = ({ freelancerId, payment
                 </div>
             </div>
 
-            <div className="flex justify-end">
-                <Button className="!w-auto px-8" onClick={handleSave} isLoading={isSaving}>Save Bank Details</Button>
-            </div>
+            {!embedded && (
+                <div className="flex justify-end">
+                    <Button className="!w-auto px-8" onClick={handleSave} isLoading={isSaving}>Save Bank Details</Button>
+                </div>
+            )}
         </div>
     );
-};
+});
+
+FreelancerBankDetailTab.displayName = 'FreelancerBankDetailTab';

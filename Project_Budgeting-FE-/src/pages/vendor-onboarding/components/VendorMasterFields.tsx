@@ -13,10 +13,14 @@ interface Props {
   disabled?: boolean;
 }
 
-/** Internal vendor-master fields (admin views only): headcount, 1-5 star rating, and the
- * read-only FY spend, which is always computed from the vendor's bills - never entered here. */
+/** Internal vendor-master fields (admin views only): headcount, 1-5 star rating and the FY amount
+ * spent that isn't recorded as vendor bills. The total FY spend adds the bill-based spend to it. */
 export const VendorMasterFields: React.FC<Props> = ({ financials, disabled }) => {
-  const { register, control, formState: { errors } } = useFormContext<VendorOnboardingFormValues>();
+  const { register, control, watch, formState: { errors } } = useFormContext<VendorOnboardingFormValues>();
+  const fy = fyLabel(financials?.fy_start);
+  // Recomputed from what's on screen so the total updates while typing, before saving.
+  const manual = Number(watch('step1.manual_amount_spent') || 0);
+  const billed = Number(financials?.billed_fy_spend ?? financials?.fy_spend ?? 0);
 
   return (
     <section className="border-t pt-6 dark:border-gray-800">
@@ -47,13 +51,26 @@ export const VendorMasterFields: React.FC<Props> = ({ financials, disabled }) =>
             )}
           />
         </div>
-        <div className="mb-5">
-          <label className={COMPACT_LABEL}>{fyLabel(financials?.fy_start)} Amount Spent</label>
-          <p className="py-2 text-lg font-bold text-gray-900 dark:text-white">{formatAmount(financials?.fy_spend)}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            From vendor bills{financials ? ` · ${financials.po_count} PO${financials.po_count === 1 ? '' : 's'} worth ${formatAmount(financials.po_total)}` : ''}
-          </p>
-        </div>
+        <InputField
+          label={`${fy} Amount Spent (₹)`}
+          type="number"
+          min={0}
+          step="0.01"
+          inputMode="decimal"
+          placeholder="e.g. 150000"
+          disabled={disabled}
+          {...register('step1.manual_amount_spent')}
+          error={errors.step1?.manual_amount_spent?.message}
+        />
+      </div>
+
+      <div className="-mt-1 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-800/40">
+        <span className="text-gray-500 dark:text-gray-400">Total {fy} spend: </span>
+        <span className="font-bold text-gray-900 dark:text-white">{formatAmount(String(billed + manual))}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          {' '}= {formatAmount(String(billed))} from vendor bills + {formatAmount(String(manual))} entered above
+          {financials ? ` · ${financials.po_count} PO${financials.po_count === 1 ? '' : 's'} worth ${formatAmount(financials.po_total)}` : ''}
+        </span>
       </div>
     </section>
   );

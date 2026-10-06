@@ -90,7 +90,15 @@ const VendorOnboardDrawerContent: React.FC<VendorOnboardDrawerProps & { onTitleC
   const [confirmSend, setConfirmSend] = useState(false);
   const [revealedAccount, setRevealedAccount] = useState<string | null>(null);
 
-  const perms: VendorPermissions = vendor?.permissions ?? NEW_VENDOR_PERMISSIONS;
+  // A saved vendor without a permissions payload (older backend) is only treated as editable in
+  // the statuses the backend accepts edits in - otherwise every save would be refused with a 403.
+  const perms: VendorPermissions = !vendor
+    ? NEW_VENDOR_PERMISSIONS
+    : vendor.permissions ?? {
+        ...NEW_VENDOR_PERMISSIONS,
+        edit: ['invited', 'draft', 'action_required'].includes(vendor.status),
+        edit_master: true,
+      };
   const editable = !vendor || perms.edit;
   const canReview = !!vendor && perms.verify && vendor.status !== 'approved';
   // Rating / headcount stay editable after submission and approval.

@@ -703,6 +703,15 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
                 "End date cannot be before start date."
             )
 
+        # 🔒 Clients & KYC: a project can only be created for a client whose KYC/onboarding
+        # is fully approved. This is the one real enforcement point - the frontend's
+        # ?ready_only=1 client-dropdown filter is just UX around this, not the gate itself.
+        client = data.get('client')
+        if client is not None and not client.is_project_ready:
+            raise serializers.ValidationError({
+                "client": "This client is not yet approved for project creation."
+            })
+
         # =============================
         # 🔹 PROJECT FINANCIAL MANAGEMENT: engagement type
         # =============================

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/Button';
 import { InputField } from '../../components/InputField';
@@ -7,10 +7,18 @@ import * as api from '../../services/freelancerOnboarding';
 import { parseApiErrors } from '../../utils/parseApiErrors';
 import type { FreelancerEquipmentPayload } from '../../types/freelancerOnboarding.types';
 
+/** Lets the onboarding drawer save this section together with the rest of the form. */
+export interface EmbeddedSectionHandle {
+    /** Saves when something was edited; resolves false if validation or the request failed. */
+    save: () => Promise<boolean>;
+}
+
 interface Props {
     freelancerId: number;
     ownerships: { value: string; label: string }[];
     conditions: { value: string; label: string }[];
+    /** Inside the onboarding drawer: no own Save button - the drawer's Save calls save() via ref. */
+    embedded?: boolean;
 }
 
 const EMPTY: FreelancerEquipmentPayload = {
@@ -29,8 +37,9 @@ const EMPTY: FreelancerEquipmentPayload = {
     remarks: '',
 };
 
-export const FreelancerEquipmentTab: React.FC<Props> = ({ freelancerId, ownerships, conditions }) => {
+export const FreelancerEquipmentTab = forwardRef<EmbeddedSectionHandle, Props>(({ freelancerId, ownerships, conditions, embedded = false }, ref) => {
     const [values, setValues] = useState<FreelancerEquipmentPayload>(EMPTY);
+    const [dirty, setDirty] = useState(false);
     const [loading, setLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -50,6 +59,7 @@ export const FreelancerEquipmentTab: React.FC<Props> = ({ freelancerId, ownershi
             } else {
                 setValues(EMPTY);
             }
+            setDirty(false);
         } catch {
             toast.error('Failed to load equipment details');
         } finally {
@@ -63,20 +73,25 @@ export const FreelancerEquipmentTab: React.FC<Props> = ({ freelancerId, ownershi
         e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
     ) => {
         setValues((v) => ({ ...v, [field]: e.target.value as never }));
+        setDirty(true);
     };
 
-    const handleSave = async () => {
+    const handleSave = async (): Promise<boolean> => {
         setIsSaving(true);
         try {
             await api.updateEquipment(freelancerId, values);
-            toast.success('Equipment details saved');
+            if (!embedded) toast.success('Equipment details saved');
             load();
+            return true;
         } catch (err) {
             toast.error(parseApiErrors(err).general || 'Failed to save equipment details');
+            return false;
         } finally {
             setIsSaving(false);
         }
     };
+
+    useImperativeHandle(ref, () => ({ save: async () => (dirty ? handleSave() : true) }));
 
     if (loading) {
         return <div className="text-center p-8 text-gray-500 dark:text-gray-400">Loading equipment details...</div>;
@@ -122,9 +137,13 @@ export const FreelancerEquipmentTab: React.FC<Props> = ({ freelancerId, ownershi
                 </div>
             )}
 
-            <div className="flex justify-end">
-                <Button className="!w-auto px-8" onClick={handleSave} isLoading={isSaving}>Save Equipment Details</Button>
-            </div>
+            {!embedded && (
+                <div className="flex justify-end">
+                    <Button className="!w-auto px-8" onClick={handleSave} isLoading={isSaving}>Save Equipment Details</Button>
+                </div>
+            )}
         </div>
     );
-};
+});
+
+FreelancerEquipmentTab.displayName = 'FreelancerEquipmentTab';

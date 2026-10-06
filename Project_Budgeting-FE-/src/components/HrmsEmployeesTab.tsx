@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Info, Loader2, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Info, Loader2, RefreshCw, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ReusableTable } from './ReusableTable';
 import type { Column } from './ReusableTable';
@@ -9,9 +9,19 @@ import axiosInstance from '../utils/axiosInstance';
 import { parseApiErrors } from '../utils/parseApiErrors';
 import type { Role } from '../types';
 import {
-  getHrmsEmployees, grantHrmsAccess, revokeHrmsAccess, syncHrmsEmployees,
+  getHrmsEmployees, grantHrmsAccess, revokeHrmsAccess, syncHrmsEmployees, needsSetup,
   type HrmsEmployee, type HrmsSyncRun,
 } from '../services/hrms';
+
+interface ModuleOption {
+  id: number;
+  product_service_name: string;
+  is_active?: boolean;
+}
+
+const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AUD', 'CAD', 'SGD', 'JPY'];
+const FIELD_CLASS = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500';
+const LABEL_CLASS = 'block text-base font-medium text-gray-900 mb-2 dark:text-gray-200';
 
 const PAGE_SIZE = 25;
 
@@ -22,7 +32,7 @@ const formatDateTime = (value: string | null) => (value ? new Date(value).toLoca
 const errorMessage = (err: unknown) => parseApiErrors(err).general || 'Something went wrong. Please try again.';
 
 type HrmsStatus = 'active' | 'removed' | 'all';
-type AccessFilter = 'all' | 'granted' | 'none';
+type AccessFilter = 'all' | 'granted' | 'setup' | 'none';
 
 /**
  * Administration > HRMS Employees. Lists employees synced from HRMS and lets
@@ -34,6 +44,7 @@ const HrmsEmployeesTab: React.FC = () => {
   const [employees, setEmployees] = useState<HrmsEmployee[]>([]);
   const [lastSync, setLastSync] = useState<HrmsSyncRun | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
+  const [modules, setModules] = useState<ModuleOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -45,6 +56,10 @@ const HrmsEmployeesTab: React.FC = () => {
 
   const [editing, setEditing] = useState<HrmsEmployee | null>(null);
   const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>([]);
+  const [moduleId, setModuleId] = useState('');
+  const [chargesPerHour, setChargesPerHour] = useState('');
+  const [currency, setCurrency] = useState('INR');
+  const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [revoking, setRevoking] = useState<HrmsEmployee | null>(null);
 
@@ -59,8 +74,13 @@ const HrmsEmployeesTab: React.FC = () => {
       setIsLoading(true);
       setLoadError(null);
       try {
-        const [, rolesRes] = await Promise.all([loadEmployees(), axiosInstance.get('/roles/roles/')]);
+        const [, rolesRes, modulesRes] = await Promise.all([
+          loadEmployees(),
+          axiosInstance.get('/roles/roles/'),
+          axiosInstance.get('/product-services/'),
+        ]);
         setRoles(rolesRes.data);
+        setModules(modulesRes.data);
       } catch (err) {
         setLoadError(errorMessage(err));
       } finally {
@@ -75,6 +95,7 @@ const HrmsEmployeesTab: React.FC = () => {
       if (statusFilter === 'active' && !e.is_active_in_hrms) return false;
       if (statusFilter === 'removed' && e.is_active_in_hrms) return false;
       if (accessFilter === 'granted' && !e.is_eligible) return false;
+      if (accessFilter === 'setup' && !needsSetup(e)) return false;
       if (accessFilter === 'none' && e.is_eligible) return false;
       return !q || [e.full_name, e.email, e.employee_id, e.department, e.designation, e.branch]
         .some((v) => (v || '').toLowerCase().includes(q));
@@ -83,6 +104,8 @@ const HrmsEmployeesTab: React.FC = () => {
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const activeRoles = roles.filter((r) => r.is_active);
+  const activeModules = modules.filter((m) => m.is_active !== false);
+  const setupCount = employees.filter(needsSetup).length;
 
   const replaceEmployee = (updated: HrmsEmployee) =>
     setEmployees((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
@@ -109,18 +132,38 @@ const HrmsEmployeesTab: React.FC = () => {
   const openAccess = (employee: HrmsEmployee) => {
     setEditing(employee);
     setSelectedRoleIds(employee.roles.map((r) => r.id));
+    setModuleId(employee.modules[0] ? String(employee.modules[0].id) : '');
+    setChargesPerHour(employee.charges_per_hour ?? '');
+    setCurrency(employee.currency || 'INR');
+    setFormError(null);
   };
 
   const toggleRole = (id: number) =>
     setSelectedRoleIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]));
 
   const handleSaveAccess = async () => {
-    if (!editing || selectedRoleIds.length === 0) return;
+    if (!editing) return;
+    const rate = Number(chargesPerHour);
+    const missing = [
+      selectedRoleIds.length === 0 && 'a role',
+      !moduleId && 'a module',
+      (chargesPerHour.trim() === '' || Number.isNaN(rate) || rate < 0) && 'the charges per hour',
+    ].filter(Boolean);
+    if (missing.length) {
+      setFormError(`Select ${missing.join(', ')}.`);
+      return;
+    }
+    setFormError(null);
     setIsSaving(true);
     try {
       const wasEligible = editing.is_eligible;
-      replaceEmployee(await grantHrmsAccess(editing.id, selectedRoleIds));
-      toast.success(wasEligible ? 'Roles updated.' : `Access granted to ${editing.full_name}.`);
+      replaceEmployee(await grantHrmsAccess(editing.id, {
+        roles: selectedRoleIds,
+        modules: [Number(moduleId)],
+        charges_per_hour: rate.toFixed(2),
+        currency,
+      }));
+      toast.success(wasEligible ? 'Access updated.' : `Access granted to ${editing.full_name}.`);
       setEditing(null);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -175,10 +218,26 @@ const HrmsEmployeesTab: React.FC = () => {
     {
       header: 'Budgeting Access',
       accessor: (e) => e.is_eligible ? (
-        <div className="flex flex-wrap gap-1">
-          {e.roles.map((r) => (
-            <span key={r.id} className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">{r.role_name}</span>
-          ))}
+        <div className="space-y-1">
+          <div className="flex flex-wrap gap-1">
+            {e.roles.map((r) => (
+              <span key={r.id} className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">{r.role_name}</span>
+            ))}
+          </div>
+          {needsSetup(e) ? (
+            <button
+              type="button"
+              onClick={() => openAccess(e)}
+              className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline dark:text-amber-300"
+              title="Without an hourly rate, this person's logged time is costed at zero on projects"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" /> Add module &amp; rate
+            </button>
+          ) : (
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {e.modules.map((m) => m.product_service_name).join(', ')} · {e.currency} {Number(e.charges_per_hour).toLocaleString('en-IN', { minimumFractionDigits: 2 })}/hr
+            </div>
+          )}
         </div>
       ) : (
         <span className="text-gray-400 italic dark:text-gray-500">
@@ -195,7 +254,7 @@ const HrmsEmployeesTab: React.FC = () => {
               onClick={() => openAccess(e)}
               className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap"
             >
-              {e.is_eligible ? 'Edit Roles' : 'Grant Access'}
+              {e.is_eligible ? 'Edit Access' : 'Grant Access'}
             </button>
           )}
           {e.is_eligible && (
@@ -228,6 +287,7 @@ const HrmsEmployeesTab: React.FC = () => {
             <select value={accessFilter} onChange={(e) => { setAccessFilter(e.target.value as AccessFilter); setPage(1); }} className={SELECT_CLASS}>
               <option value="all">Any Access</option>
               <option value="granted">Has Access</option>
+              <option value="setup">Needs Module &amp; Rate{setupCount ? ` (${setupCount})` : ''}</option>
               <option value="none">No Access</option>
             </select>
             <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none dark:text-gray-500" />
@@ -288,7 +348,7 @@ const HrmsEmployeesTab: React.FC = () => {
       <Modal
         isOpen={!!editing}
         onClose={() => !isSaving && setEditing(null)}
-        title={editing?.is_eligible ? 'Edit Budgeting Roles' : 'Grant Budgeting Access'}
+        title={editing?.is_eligible ? 'Edit Budgeting Access' : 'Grant Budgeting Access'}
         footer={
           <div className="flex justify-end gap-3">
             <button
@@ -300,11 +360,11 @@ const HrmsEmployeesTab: React.FC = () => {
             </button>
             <button
               onClick={handleSaveAccess}
-              disabled={isSaving || selectedRoleIds.length === 0}
+              disabled={isSaving}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold"
             >
               {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-              {editing?.is_eligible ? 'Save Roles' : 'Grant Access'}
+              {editing?.is_eligible ? 'Save Access' : 'Grant Access'}
             </button>
           </div>
         }
@@ -335,6 +395,40 @@ const HrmsEmployeesTab: React.FC = () => {
                 ))}
               </div>
             </div>
+
+            {/* Budgeting-only fields - HRMS doesn't provide these */}
+            <div>
+              <label htmlFor="hrms-module" className={LABEL_CLASS}>Module <span className="text-red-500">*</span></label>
+              <select id="hrms-module" value={moduleId} onChange={(ev) => setModuleId(ev.target.value)} className={FIELD_CLASS}>
+                <option value="">Select module</option>
+                {activeModules.map((m) => (
+                  <option key={m.id} value={m.id}>{m.product_service_name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="hrms-rate" className={LABEL_CLASS}>Charges per hr <span className="text-red-500">*</span></label>
+              <div className="flex gap-2">
+                <select aria-label="Currency" value={currency} onChange={(ev) => setCurrency(ev.target.value)} className={`${FIELD_CLASS} !w-28`}>
+                  {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input
+                  id="hrms-rate"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={chargesPerHour}
+                  onChange={(ev) => setChargesPerHour(ev.target.value)}
+                  className={FIELD_CLASS}
+                />
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Used to cost this person's logged hours on projects. HRMS doesn't send it, so it's set here.
+              </p>
+            </div>
+            {formError && <p className="text-sm text-red-600 dark:text-red-400">{formError}</p>}
           </div>
         )}
       </Modal>

@@ -87,6 +87,8 @@ export interface VendorOnboardingProfile {
   headcount?: number | null;
   /** 1-5 stars; null = not rated yet. */
   rating?: number | null;
+  /** This FY's spend not recorded as vendor bills (decimal string), added to the bill-based spend. */
+  manual_amount_spent?: string | null;
 }
 
 export interface VendorKYC {
@@ -333,7 +335,12 @@ export interface VendorFinancials {
   paid_total: string;
   outstanding_total: string;
   pending_bills: number;
+  /** This FY's total spend = billed_fy_spend + manual_spend. */
   fy_spend: string;
+  /** From vendor bills dated this FY. */
+  billed_fy_spend?: string;
+  /** Entered manually on the vendor (spend not billed in the system). */
+  manual_spend?: string;
   fy_start: string;
   po_consumption_percent: number | null;
 }

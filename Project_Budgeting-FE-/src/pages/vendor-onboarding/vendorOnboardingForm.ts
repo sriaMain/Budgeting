@@ -57,6 +57,7 @@ function recordToFormValues(r: VendorRecordLike): VendorOnboardingFormValues {
       finance_manager_name: s(p?.finance_manager_name), finance_manager_email: s(p?.finance_manager_email),
       finance_manager_mobile: s(p?.finance_manager_mobile),
       headcount: p?.headcount != null ? String(p.headcount) : '', rating: p?.rating ?? 0,
+      manual_amount_spent: p?.manual_amount_spent != null ? String(Number(p.manual_amount_spent)) : '',
     },
     step2: {
       country_of_tax_residence: s(k?.country_of_tax_residence), pan: s(k?.pan), cin: s(k?.cin),
@@ -136,10 +137,11 @@ export const publicSectionApi = (token: string): VendorSectionApi => ({
 
 const nullIfBlank = (v: string) => (v && v.trim() ? v : null);
 
-/** The internal vendor-master fields in their API shape (blank headcount / 0 stars = null). */
+/** The internal vendor-master fields in their API shape (blank headcount / amount, 0 stars = null). */
 export const vendorMasterPayload = (step1: VendorOnboardingFormValues['step1']) => ({
   headcount: step1.headcount.trim() ? Number(step1.headcount) : null,
   rating: step1.rating || null,
+  manual_amount_spent: step1.manual_amount_spent.trim() ? step1.manual_amount_spent.trim() : null,
 });
 
 /** Saves one form section through the existing endpoints. Drafts may be partial - no validation here. */
@@ -147,8 +149,8 @@ export async function persistVendorSection(values: VendorOnboardingFormValues, s
   const { step1, step2, step3, step4 } = values;
   if (section === 1) {
     await target.patchIdentity({ name: step1.name, vendor_type: step1.vendor_type, email: step1.email, phone: step1.phone });
-    const { name: _n, vendor_type: _t, email: _e, phone: _p, headcount: _h, rating: _r, ...profile } = step1;
-    void _n; void _t; void _e; void _p; void _h; void _r;
+    const { name: _n, vendor_type: _t, email: _e, phone: _p, headcount: _h, rating: _r, manual_amount_spent: _m, ...profile } = step1;
+    void _n; void _t; void _e; void _p; void _h; void _r; void _m;
     await target.patchProfile(target.internal ? { ...profile, ...vendorMasterPayload(step1) } : profile);
   } else if (section === 2) {
     // GST is stored on the profile but edited on the Tax & KYC step.

@@ -1,4 +1,7 @@
+import logging
+import os
 import time
+from datetime import timedelta
 
 import cloudinary.utils
 from django.conf import settings
@@ -7,6 +10,7 @@ from django.db.models import Count, Q
 from django.http import HttpResponse, HttpResponseNotFound
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -19,16 +23,23 @@ from accounts.models import Vendor
 from roles.permission import HasPermissionCode
 
 from .models import (
-    VendorOnboardingProfile, VendorDocument,
+    VendorOnboardingProfile, VendorDocument, VendorKYC, VendorBankDetail, VendorProcurementDetail,
     VendorApprovalWorkflowConfig, VendorApprovalLevel,
 )
 from .serializers import (
+    VendorReviewSerializer, VendorDocumentVerifySerializer, VendorAuditLogSerializer,
     VendorRaiseRequestSerializer, VendorOnboardingDraftSerializer, VendorOnboardingProfileSerializer,
+    VendorPublicOnboardingProfileSerializer,
     VendorKYCSerializer, VendorBankDetailSerializer, VendorBankDetailUnmaskedSerializer,
     VendorProcurementDetailSerializer, VendorDocumentSerializer, VendorOnboardingDetailSerializer,
     VendorPublicDetailSerializer, VendorSubmitForApprovalSerializer, RequestChangesSerializer,
     VendorApprovalHistorySerializer, VendorApprovalWorkflowConfigSerializer, VendorApprovalLevelSerializer,
     VendorSubmissionVersionSerializer,
+)
+from .audit import changed_fields, log_vendor_audit
+from .progress import (
+    build_vendor_financials, vendor_requirement_issues,
+    MAX_VENDOR_KYC_DOCUMENTS, NON_KYC_DOCUMENT_CATEGORIES, BANK_PROOF_CATEGORIES,
 )
 from .services import (
     submit_vendor_for_approval, apply_approval_action, apply_request_changes_action,
@@ -44,12 +55,117 @@ from .tasks import (
 )
 from core.notifications import notify
 
+logger = logging.getLogger(__name__)
+
 
 def _client_ip(request):
     forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR")
+
+
+MAX_VENDOR_DOCUMENT_SIZE = 10 * 1024 * 1024  # 10 MB, same as client KYC documents
+ALLOWED_VENDOR_DOCUMENT_TYPES = {
+    ".pdf": {"application/pdf"},
+    ".jpg": {"image/jpeg", "image/pjpeg"},
+    ".jpeg": {"image/jpeg", "image/pjpeg"},
+    ".png": {"image/png"},
+}
+# Minimum gap between onboarding emails to the same vendor (spam guard).
+ONBOARDING_EMAIL_COOLDOWN = timedelta(seconds=60)
+STEP_AUDIT_ACTIONS = {
+    "onboarding_profile": "updated",
+    "kyc": "kyc_updated",
+    "bank_detail": "updated",
+    "procurement_detail": "contract_updated",
+}
+
+
+def _document_error(message, error, http_status=400):
+    return Response({"success": False, "message": message, "detail": message, "error": error}, status=http_status)
+
+
+def _validate_vendor_upload(vendor, file, category):
+    """Server-side checks for a vendor document upload. Returns an error Response, or None."""
+    if not file:
+        return _document_error("Please choose a file to upload.", "file_required")
+    if file.size == 0:
+        return _document_error("The selected file is empty.", "file_empty")
+    if file.size > MAX_VENDOR_DOCUMENT_SIZE:
+        return _document_error("File is too large. Maximum size is 10 MB.", "file_too_large")
+    ext = os.path.splitext(file.name or "")[1].lower()
+    content_type = (file.content_type or "").lower()
+    allowed = ALLOWED_VENDOR_DOCUMENT_TYPES.get(ext)
+    if not allowed or (content_type and content_type != "application/octet-stream" and content_type not in allowed):
+        return _document_error("Only PDF, JPG, JPEG and PNG files are allowed.", "unsupported_file_type")
+    if category not in NON_KYC_DOCUMENT_CATEGORIES:
+        kyc_docs = vendor.documents.exclude(category__in=NON_KYC_DOCUMENT_CATEGORIES).count()
+        if kyc_docs >= MAX_VENDOR_KYC_DOCUMENTS:
+            return _document_error(
+                f"Maximum {MAX_VENDOR_KYC_DOCUMENTS} KYC documents are allowed. Delete a document to upload another.",
+                "document_limit_reached",
+            )
+    if vendor.documents.filter(file_name=file.name, file_size=file.size).exists():
+        return _document_error("This document has already been uploaded for this vendor.", "duplicate_document")
+    return None
+
+
+def _save_vendor_document(request, vendor, user=None, actor_label=""):
+    """Shared by the admin and portal upload endpoints. The file is read before any early
+    return, so a rejected large upload still gets a proper JSON error instead of a dropped connection."""
+    file = request.FILES.get("file")
+    category = request.data.get("category", "")
+    error = _validate_vendor_upload(vendor, file, category)
+    if error:
+        return error
+    was_invited = vendor.status == "invited"
+    ensure_draft_status(vendor)
+    data = request.data.copy()
+    data["vendor"] = vendor.id
+    serializer = VendorDocumentSerializer(data=data, context={"request": request})
+    if not serializer.is_valid():
+        if "category" in serializer.errors:
+            return _document_error("Please select a valid document type.", "invalid_document_type")
+        return Response(serializer.errors, status=400)
+    try:
+        document = serializer.save()
+    except Exception:
+        logger.exception("Vendor %s document upload failed while storing the file", vendor.id)
+        return _document_error("Server could not process the document. Please try again.", "storage_failed", 502)
+    if was_invited:
+        log_vendor_audit(vendor, "onboarding_started", user, actor_label=actor_label)
+    log_vendor_audit(vendor, "document_uploaded", user, field_name=document.category,
+                     new_value=document.get_category_display(), remarks=document.file_name, actor_label=actor_label)
+    # A bank proof on file moves bank verification from "not verified" to "documents uploaded".
+    if document.category in BANK_PROOF_CATEGORIES:
+        bank = getattr(vendor, "bank_detail", None)
+        if bank and bank.verification_status == "not_verified":
+            bank.verification_status = "documents_uploaded"
+            bank.save(update_fields=["verification_status"])
+    return Response(VendorDocumentSerializer(document, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+
+def _save_vendor_step(vendor, serializer_class, related_name, data, user=None, actor_label=""):
+    """Shared by the admin and portal per-step PATCH endpoints (partial update + audit)."""
+    was_invited = vendor.status == "invited"
+    ensure_draft_status(vendor)
+    instance = getattr(vendor, related_name, None)
+    serializer = serializer_class(instance, data=data, partial=True)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    changes = changed_fields(instance, serializer.validated_data)
+    serializer.save(vendor=vendor)
+    if was_invited:
+        log_vendor_audit(vendor, "onboarding_started", user, actor_label=actor_label)
+    if changes:
+        log_vendor_audit(
+            vendor, STEP_AUDIT_ACTIONS.get(related_name, "updated"), user,
+            field_name=related_name,
+            new_value=", ".join(field for field, _old, _new in changes),
+            actor_label=actor_label,
+        )
+    return Response(serializer.data)
 
 
 def _can_edit_vendor(vendor):
@@ -65,6 +181,17 @@ def _can_edit(vendor, user):
     return _can_edit_vendor(vendor)
 
 
+# Vendor-master attributes (not part of the reviewed submission), so they stay editable
+# by an internal user after the vendor is submitted or approved.
+VENDOR_MASTER_FIELDS = ("rating", "headcount", "manual_amount_spent")
+
+
+def _can_edit_master_fields(vendor, user):
+    if user.is_superuser or user.has_role_permission("vendor.edit_any"):
+        return True
+    return vendor.created_by_id == user.id and user.has_role_permission("vendor.edit_own")
+
+
 # ===========================================================================
 # Admin (JWT-authenticated) endpoints
 # ===========================================================================
@@ -77,7 +204,7 @@ class VendorOnboardingListCreateView(APIView):
     def get(self, request):
         qs = Vendor.objects.select_related(
             "onboarding_profile", "kyc", "bank_detail", "procurement_detail", "approval_instance"
-        ).all()
+        ).prefetch_related("documents", "change_requests", "product_groups")
 
         status_filter = request.GET.get("status")
         vendor_type = request.GET.get("vendor_type")
@@ -128,7 +255,12 @@ class VendorOnboardingListCreateView(APIView):
                 | Q(onboarding_profile__gstin__icontains=search)
             )
 
-        serializer = VendorOnboardingDetailSerializer(qs.distinct(), many=True, context={"request": request})
+        vendors = list(qs.distinct())
+        serializer = VendorOnboardingDetailSerializer(
+            vendors,
+            many=True,
+            context={"request": request, "vendor_financials": build_vendor_financials(v.id for v in vendors)},
+        )
         return Response(serializer.data)
 
     def post(self, request):
@@ -142,6 +274,7 @@ class VendorOnboardingListCreateView(APIView):
         vendor = serializer.save(created_by=request.user, status="draft")
         vendor.assign_reference_number()
         vendor.save(update_fields=["vendor_reference_no"])
+        log_vendor_audit(vendor, "created", request.user, remarks="Created by an internal user")
 
         return Response(
             VendorOnboardingDetailSerializer(vendor, context={"request": request}).data,
@@ -161,6 +294,7 @@ class VendorRaiseRequestView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         vendor, raw_token = raise_vendor_request(serializer.validated_data, request.user)
+        log_vendor_audit(vendor, "created", request.user, remarks="Vendor request raised - onboarding link emailed")
 
         transaction.on_commit(
             lambda: send_vendor_invited_notification.delay(vendor.id, raw_token)
@@ -184,12 +318,22 @@ class VendorResendInviteView(APIView):
         vendor = get_object_or_404(Vendor, pk=pk)
         if vendor.status == "approved":
             return Response({"detail": "This vendor request has already been approved."}, status=400)
+        if not vendor.email:
+            return Response({"detail": "Add the vendor's contact email before sending the onboarding email."}, status=400)
+        last = vendor.email_logs.filter(template="vendor_invited.html").first()
+        if last and timezone.now() - last.created_at < ONBOARDING_EMAIL_COOLDOWN:
+            return Response({"detail": "An onboarding email was just sent. Please wait a minute before resending."}, status=429)
 
         raw_token = generate_access_token(vendor, created_by=request.user)
         transaction.on_commit(
-            lambda: send_vendor_invited_notification.delay(vendor.id, raw_token)
+            lambda: send_vendor_invited_notification.delay(vendor.id, raw_token, request.user.id)
         )
-        return Response({"detail": "Invitation resent."})
+        # In dev (eager Celery) the send has already happened; in production it's queued.
+        latest = vendor.email_logs.filter(template="vendor_invited.html").first()
+        return Response({
+            "detail": "Invitation resent.",
+            "email_status": latest.status if latest else "queued",
+        })
 
 
 class VendorArchiveView(APIView):
@@ -280,19 +424,20 @@ class _VendorStepDetailView(APIView):
         vendor = get_object_or_404(Vendor, pk=pk)
         if not _can_edit(vendor, request.user):
             return Response({"detail": "This vendor is not editable in its current state."}, status=403)
-
-        ensure_draft_status(vendor)
-        instance = getattr(vendor, self.related_name, None)
-        serializer = self.serializer_class(instance, data=request.data, partial=True)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        serializer.save(vendor=vendor)
-        return Response(serializer.data)
+        return _save_vendor_step(vendor, self.serializer_class, self.related_name, request.data, request.user)
 
 
 class VendorProfileStepView(_VendorStepDetailView):
     serializer_class = VendorOnboardingProfileSerializer
     related_name = "onboarding_profile"
+
+    def patch(self, request, pk):
+        vendor = get_object_or_404(Vendor, pk=pk)
+        if not _can_edit(vendor, request.user):
+            # Locked for review/approval - only the vendor-master fields may still change.
+            if not (set(request.data) <= set(VENDOR_MASTER_FIELDS) and _can_edit_master_fields(vendor, request.user)):
+                return Response({"detail": "This vendor is not editable in its current state."}, status=403)
+        return _save_vendor_step(vendor, self.serializer_class, self.related_name, request.data, request.user)
 
 
 class VendorKYCStepView(_VendorStepDetailView):
@@ -334,20 +479,11 @@ class VendorDocumentListView(APIView):
         return Response(VendorDocumentSerializer(docs, many=True, context={"request": request}).data)
 
     def post(self, request, pk):
+        request.FILES.get("file")  # consume the upload body before any early return
         vendor = get_object_or_404(Vendor, pk=pk)
         if not _can_edit(vendor, request.user):
             return Response({"detail": "This vendor is not editable in its current state."}, status=403)
-        if not request.FILES.get("file"):
-            return Response({"file": ["This field is required."]}, status=400)
-
-        ensure_draft_status(vendor)
-        data = request.data.copy()
-        data["vendor"] = vendor.id
-        serializer = VendorDocumentSerializer(data=data, context={"request": request})
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=400)
+        return _save_vendor_document(request, vendor, request.user)
 
 
 class VendorDocumentDetailView(APIView):
@@ -360,6 +496,8 @@ class VendorDocumentDetailView(APIView):
         document = get_object_or_404(VendorDocument, pk=doc_id, vendor=vendor)
         if not _can_edit(vendor, request.user):
             return Response({"detail": "This vendor is not editable in its current state."}, status=403)
+        log_vendor_audit(vendor, "document_deleted", request.user, field_name=document.category,
+                         old_value=document.get_category_display(), remarks=document.file_name)
         document.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -401,6 +539,7 @@ class VendorSubmitForApprovalView(APIView):
             submit_vendor_for_approval(vendor, actor=request.user)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
+        log_vendor_audit(vendor, "submitted", request.user, remarks="Resubmitted" if was_resubmission else "")
 
         if was_resubmission:
             transaction.on_commit(lambda: send_vendor_resubmitted_notification.delay(vendor.id))
@@ -463,8 +602,22 @@ class VendorApproveView(APIView):
         if not instance or not user_is_authorized_for_level(request.user, instance.current_level()):
             return Response({"detail": "You are not the approver for this vendor's current stage."}, status=403)
 
+        outstanding = vendor_requirement_issues(vendor)
+        if outstanding:
+            return Response(
+                {
+                    "detail": "Vendor cannot be approved.",
+                    "missing": [issue["message"] for issue in outstanding],
+                },
+                status=400,
+            )
+
         comments = request.data.get("comments", "")
         apply_approval_action(vendor, request.user, comments=comments)
+        log_vendor_audit(
+            vendor, "approved", request.user, remarks=comments,
+            new_value="Approved" if vendor.status == "approved" else "Approval level advanced",
+        )
 
         if vendor.status == "approved":
             transaction.on_commit(lambda: send_vendor_approved_notification.delay(vendor.id))
@@ -506,6 +659,8 @@ class VendorRequestChangesView(APIView):
             return Response(serializer.errors, status=400)
 
         change_request = apply_request_changes_action(vendor, request.user, **serializer.validated_data)
+        log_vendor_audit(vendor, "changes_requested", request.user, field_name=change_request.section,
+                         remarks=change_request.required_changes)
 
         transaction.on_commit(
             lambda: send_vendor_request_changes_notification.delay(vendor.id, change_request.id)
@@ -632,20 +787,25 @@ class VendorApprovalConfigResolveView(APIView):
 def _choices_payload():
     from core.app_constants import CURRENCY_CHOICES
     from .models import VendorChangeRequest
-    currency_options = [{"value": k, "label": v} for k, v in CURRENCY_CHOICES]
     return {
         "vendor_types": [{"value": k, "label": v} for k, v in Vendor.VENDOR_TYPE_CHOICES],
         "vendor_statuses": [{"value": k, "label": v} for k, v in Vendor.STATUS_CHOICES],
         "msme_categories": [{"value": k, "label": v} for k, v in VendorOnboardingProfile.MSME_CATEGORY_CHOICES],
         "document_categories": [{"value": k, "label": v} for k, v in VendorDocument.CATEGORY_CHOICES],
-        "document_statuses": [{"value": k, "label": v} for k, v in VendorDocument.STATUS_CHOICES],
         "change_request_sections": [{"value": k, "label": v} for k, v in VendorChangeRequest.SECTION_CHOICES],
-        "currencies": currency_options,
-        # Same currency list under the name the Contract step's frontend code
-        # actually reads (VendorOnboardingChoices.onboarding_currencies) - was
-        # missing entirely, which crashed the onboarding drawer for every new
-        # vendor (Step4BusinessProcurement.currencyOptions is undefined.map()).
-        "onboarding_currencies": currency_options,
+        "currencies": [{"value": k, "label": v} for k, v in CURRENCY_CHOICES],
+        "onboarding_currencies": [{"value": c, "label": c} for c in ("INR", "USD", "EUR", "GBP", "AED", "SGD")],
+        "payment_terms": [
+            {"value": "due_on_receipt", "label": "Due on Receipt"}, {"value": "net_15", "label": "Net 15"},
+            {"value": "net_30", "label": "Net 30"}, {"value": "net_45", "label": "Net 45"},
+            {"value": "net_60", "label": "Net 60"}, {"value": "net_90", "label": "Net 90"},
+            {"value": "custom", "label": "Custom"},
+        ],
+        "billing_frequencies": [{"value": k, "label": v} for k, v in VendorProcurementDetail.BILLING_FREQUENCY_CHOICES],
+        "kyc_statuses": [{"value": k, "label": v} for k, v in VendorKYC.KYC_STATUS_CHOICES],
+        "risk_ratings": [{"value": k, "label": v} for k, v in VendorKYC.RISK_RATING_CHOICES],
+        "bank_verification_statuses": [{"value": k, "label": v} for k, v in VendorBankDetail.VERIFICATION_STATUS_CHOICES],
+        "document_statuses": [{"value": k, "label": v} for k, v in VendorDocument.STATUS_CHOICES],
     }
 
 
@@ -670,6 +830,8 @@ class VendorPublicChoicesView(APIView):
         payload = _choices_payload()
         payload.pop("vendor_statuses", None)
         payload.pop("change_request_sections", None)
+        for internal in ("kyc_statuses", "risk_ratings", "bank_verification_statuses"):
+            payload.pop(internal, None)
         return Response(payload)
 
 
@@ -712,18 +874,11 @@ class _VendorPublicStepDetailView(_VendorPublicView):
         vendor = self.get_vendor(request, token)
         if not _can_edit_vendor(vendor):
             return Response({"detail": "This request is not editable in its current state."}, status=403)
-
-        ensure_draft_status(vendor)
-        instance = getattr(vendor, self.related_name, None)
-        serializer = self.serializer_class(instance, data=request.data, partial=True)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        serializer.save(vendor=vendor)
-        return Response(serializer.data)
+        return _save_vendor_step(vendor, self.serializer_class, self.related_name, request.data, actor_label="vendor")
 
 
 class VendorPublicProfileStepView(_VendorPublicStepDetailView):
-    serializer_class = VendorOnboardingProfileSerializer
+    serializer_class = VendorPublicOnboardingProfileSerializer
     related_name = "onboarding_profile"
 
 
@@ -766,20 +921,11 @@ class VendorPublicDocumentListView(_VendorPublicView):
         return Response(VendorDocumentSerializer(docs, many=True, context={"request": request}).data)
 
     def post(self, request, token):
+        request.FILES.get("file")  # consume the upload body before any early return
         vendor = self.get_vendor(request, token)
         if not _can_edit_vendor(vendor):
             return Response({"detail": "This request is not editable in its current state."}, status=403)
-        if not request.FILES.get("file"):
-            return Response({"file": ["This field is required."]}, status=400)
-
-        ensure_draft_status(vendor)
-        data = request.data.copy()
-        data["vendor"] = vendor.id
-        serializer = VendorDocumentSerializer(data=data, context={"request": request})
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=400)
+        return _save_vendor_document(request, vendor, actor_label="vendor")
 
 
 class VendorPublicDocumentDetailView(_VendorPublicView):
@@ -788,6 +934,10 @@ class VendorPublicDocumentDetailView(_VendorPublicView):
         document = get_object_or_404(VendorDocument, pk=doc_id, vendor=vendor)
         if not _can_edit_vendor(vendor):
             return Response({"detail": "This request is not editable in its current state."}, status=403)
+        if document.status == "verified":
+            return Response({"detail": "A verified document can't be removed. Contact the team that invited you."}, status=403)
+        log_vendor_audit(vendor, "document_deleted", actor_label="vendor", field_name=document.category,
+                         old_value=document.get_category_display(), remarks=document.file_name)
         document.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -821,6 +971,7 @@ class VendorPublicSubmitView(_VendorPublicView):
             submit_vendor_for_approval(vendor, actor=None)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
+        log_vendor_audit(vendor, "submitted", actor_label="vendor", remarks="Resubmitted" if was_resubmission else "")
 
         if was_resubmission:
             transaction.on_commit(lambda: send_vendor_resubmitted_notification.delay(vendor.id))
@@ -906,3 +1057,91 @@ def vendor_email_preview(request, template_key=None):
 
     template, context = entry
     return HttpResponse(render_to_string(f"emails/vendor_onboarding/{template}", context))
+
+
+class VendorReviewView(APIView):
+    """Internal reviewer update: KYC status, risk rating, compliance remarks, bank verification.
+    Allowed at any stage before approval - review happens while the vendor is under approval."""
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    authentication_classes = [JWTAuthentication]
+    permission_code = "vendor.verify"
+
+    def patch(self, request, pk):
+        vendor = get_object_or_404(Vendor, pk=pk)
+        if vendor.status == "approved":
+            return Response({"detail": "This vendor is already approved."}, status=400)
+        serializer = VendorReviewSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+        data = serializer.validated_data
+
+        kyc_fields = {k: data[k] for k in ("kyc_status", "risk_rating", "compliance_remarks") if k in data}
+        if kyc_fields:
+            kyc, _ = VendorKYC.objects.get_or_create(vendor=vendor)
+            for field, old, new in changed_fields(kyc, kyc_fields):
+                log_vendor_audit(vendor, "kyc_updated", request.user, field_name=field, old_value=old, new_value=new)
+            for field, value in kyc_fields.items():
+                setattr(kyc, field, value)
+            kyc.save()
+
+        bank_fields = {
+            model_field: data[key]
+            for key, model_field in (("bank_verification_status", "verification_status"),
+                                     ("bank_verification_remarks", "verification_remarks"))
+            if key in data
+        }
+        if bank_fields:
+            bank, _ = VendorBankDetail.objects.get_or_create(vendor=vendor)
+            for field, old, new in changed_fields(bank, bank_fields):
+                action = "banking_verified" if field == "verification_status" and new == "verified" else "banking_updated"
+                log_vendor_audit(vendor, action, request.user, field_name=field, old_value=old, new_value=new,
+                                 remarks=bank_fields.get("verification_remarks", ""))
+            for field, value in bank_fields.items():
+                setattr(bank, field, value)
+            bank.save()
+
+        vendor.refresh_from_db()
+        return Response(VendorOnboardingDetailSerializer(vendor, context={"request": request}).data)
+
+
+class VendorDocumentVerifyView(APIView):
+    """Marks a document Under Review / Verified / Rejected (rejection needs a reason).
+    Uploading never verifies - this is the only way a document becomes Verified."""
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    authentication_classes = [JWTAuthentication]
+    permission_code = "vendor.verify"
+
+    def post(self, request, pk, doc_id):
+        vendor = get_object_or_404(Vendor, pk=pk)
+        document = get_object_or_404(VendorDocument, pk=doc_id, vendor=vendor)
+        if vendor.status == "approved":
+            return Response({"detail": "This vendor is already approved."}, status=400)
+        serializer = VendorDocumentVerifySerializer(data=request.data)
+        if not serializer.is_valid():
+            first = next(iter(serializer.errors.values()))
+            message = first[0] if isinstance(first, list) else str(first)
+            return Response({"success": False, "message": message, "detail": message, **serializer.errors}, status=400)
+
+        new_status = serializer.validated_data["status"]
+        old_status = document.status
+        document.status = new_status
+        document.remarks = serializer.validated_data["remarks"].strip()
+        document.verified_by = request.user
+        document.verified_at = timezone.now()
+        document.save()
+
+        action = {"verified": "document_verified", "rejected": "document_rejected"}.get(new_status, "updated")
+        log_vendor_audit(vendor, action, request.user, field_name=document.category,
+                         old_value=old_status, new_value=new_status, remarks=document.remarks or document.file_name)
+        return Response(VendorDocumentSerializer(document, context={"request": request}).data)
+
+
+class VendorAuditLogListView(APIView):
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    authentication_classes = [JWTAuthentication]
+    permission_code = "vendor.view"
+
+    def get(self, request, pk):
+        vendor = get_object_or_404(Vendor, pk=pk)
+        logs = vendor.audit_logs.select_related("performed_by")[:200]
+        return Response(VendorAuditLogSerializer(logs, many=True).data)

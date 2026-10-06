@@ -31,6 +31,7 @@ urlpatterns = [
     path('api/vendor-onboarding/', include('vendor_onboarding.urls')),
     path('api/employee-onboarding/', include('employee_onboarding.urls')),
     path('api/freelancer-onboarding/', include('freelancer_onboarding.urls')),
+    path('api/hrms/', include('hrms_integration.urls')),
 ]
 
 from django.conf import settings
