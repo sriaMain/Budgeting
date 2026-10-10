@@ -22,6 +22,9 @@ urlpatterns = [
     path("vendors/<int:pk>/documents/", views.VendorDocumentListView.as_view(), name="vendor-onboarding-documents"),
     path("vendors/<int:pk>/documents/<int:doc_id>/", views.VendorDocumentDetailView.as_view(), name="vendor-onboarding-document-detail"),
     path("vendors/<int:pk>/documents/<int:doc_id>/download/", views.VendorDocumentDownloadView.as_view(), name="vendor-onboarding-document-download"),
+    path("vendors/<int:pk>/documents/<int:doc_id>/verify/", views.VendorDocumentVerifyView.as_view(), name="vendor-onboarding-document-verify"),
+    path("vendors/<int:pk>/review/", views.VendorReviewView.as_view(), name="vendor-onboarding-review"),
+    path("vendors/<int:pk>/audit-logs/", views.VendorAuditLogListView.as_view(), name="vendor-onboarding-audit-logs"),
 
     path("vendors/<int:pk>/submit/", views.VendorSubmitForApprovalView.as_view(), name="vendor-onboarding-submit"),
     path("vendors/<int:pk>/approve/", views.VendorApproveView.as_view(), name="vendor-onboarding-approve"),

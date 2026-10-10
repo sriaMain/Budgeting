@@ -92,6 +92,10 @@ class VendorOnboardingProfile(models.Model):
     finance_manager_email = models.EmailField(blank=True)
     finance_manager_mobile = models.CharField(max_length=15, blank=True)
 
+    # Intake
+    service_category = models.CharField(max_length=150, blank=True)
+    registration_number = models.CharField(max_length=50, blank=True)
+
     # Internal vendor-master attributes ("Vendor Summary" in the admin drawer) - kept editable
     # after submission/approval (see views.VENDOR_MASTER_FIELDS) and never exposed to or
     # writable by the vendor portal (VendorPublicOnboardingProfileSerializer).
@@ -100,7 +104,8 @@ class VendorOnboardingProfile(models.Model):
     rating = models.PositiveSmallIntegerField(
         null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(5)],
     )
-    # This financial year's spend that isn't recorded as vendor bills (e.g. paid before go-live).
+    # This financial year's spend that isn't recorded as vendor bills in the system (e.g. paid
+    # before go-live). Added on top of the bill-based FY spend - see the serializer's financials.
     manual_amount_spent = models.DecimalField(
         max_digits=15, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)],
     )
@@ -128,6 +133,27 @@ class VendorKYC(models.Model):
     esic_number = models.CharField(max_length=30, blank=True)
     esic_district = models.CharField(max_length=100, blank=True)
 
+    # Overseas equivalent of PAN / GSTIN (VAT / EIN / Tax ID) - free text, no format validation.
+    tax_id = models.CharField(max_length=50, blank=True)
+    beneficial_ownership_details = models.TextField(blank=True)
+
+    # --- Internal review (never exposed to or writable by the vendor portal) ---
+    KYC_STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('under_review', 'Under Review'),
+        ('verified', 'Verified'),
+        ('enhanced_review', 'Enhanced Review'),
+        ('rejected', 'Rejected'),
+    ]
+    RISK_RATING_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    ]
+    kyc_status = models.CharField(max_length=20, choices=KYC_STATUS_CHOICES, default='draft')
+    risk_rating = models.CharField(max_length=10, choices=RISK_RATING_CHOICES, default='low')
+    compliance_remarks = models.TextField(blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -150,6 +176,23 @@ class VendorBankDetail(models.Model):
     region = models.CharField(max_length=100, blank=True)
     street = models.CharField(max_length=255, blank=True)
     city = models.CharField(max_length=100, blank=True)
+
+    # Overseas routing
+    swift_code = models.CharField(max_length=11, blank=True)
+    iban = models.CharField(max_length=34, blank=True)
+    bank_country = models.CharField(max_length=100, blank=True)
+    bank_address = models.CharField(max_length=255, blank=True)
+
+    # --- Internal verification (never exposed to or writable by the vendor portal) ---
+    VERIFICATION_STATUS_CHOICES = [
+        ('not_verified', 'Not Verified'),
+        ('documents_uploaded', 'Documents Uploaded'),
+        ('under_review', 'Under Review'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    ]
+    verification_status = models.CharField(max_length=20, choices=VERIFICATION_STATUS_CHOICES, default='not_verified')
+    verification_remarks = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -180,6 +223,25 @@ class VendorProcurementDetail(models.Model):
     gr_based_invoice_verification = models.BooleanField(default=False)
     check_double_invoice = models.BooleanField(default=False)
 
+    # --- Contract / commercial terms ---
+    BILLING_FREQUENCY_CHOICES = [
+        ('one_time', 'One Time'),
+        ('monthly', 'Monthly'),
+        ('milestone_based', 'Milestone Based'),
+        ('custom', 'Custom'),
+    ]
+    contract_number = models.CharField(max_length=50, blank=True)
+    po_number = models.CharField(max_length=50, blank=True)
+    contract_start_date = models.DateField(null=True, blank=True)
+    contract_end_date = models.DateField(null=True, blank=True)
+    custom_payment_terms = models.CharField(max_length=255, blank=True)
+    billing_frequency = models.CharField(max_length=20, choices=BILLING_FREQUENCY_CHOICES, blank=True)
+    service_rate = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    rate_unit = models.CharField(max_length=30, blank=True)
+    withholding_tax_applicable = models.BooleanField(default=False)
+    withholding_tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    tax_remarks = models.CharField(max_length=255, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -198,12 +260,21 @@ class VendorDocument(models.Model):
         ('bank_proof_cancelled_cheque', 'Bank Proof - Cancelled Cheque'),
         ('bank_proof_bank_statement', 'Bank Proof - Bank Statement'),
         ('bank_proof_bank_certificate', 'Bank Proof - Bank Certificate'),
+        ('authorised_signatory_proof', 'Authorised Signatory Proof'),
+        ('beneficial_ownership_proof', 'Beneficial Ownership Document'),
+        ('registration_certificate', 'Company Registration Document'),
+        ('tax_id_certificate', 'VAT / EIN / Tax ID Certificate'),
+        ('tax_residency_certificate', 'Tax Residency Document'),
+        ('tax_form', 'W-8BEN-E / Applicable Tax Form'),
+        ('contract_document', 'Contract Document'),
         ('other', 'Other Document'),
     ]
 
     STATUS_CHOICES = [
         ('uploaded', 'Uploaded'),
+        ('under_review', 'Under Review'),
         ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
     ]
 
     UPLOADED_BY_ROLE_CHOICES = [
@@ -234,6 +305,14 @@ class VendorDocument(models.Model):
     )
     uploaded_by_role = models.CharField(max_length=10, choices=UPLOADED_BY_ROLE_CHOICES, default='vendor')
     uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    # Only ever set by the verify endpoint - uploading never verifies a document.
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='vendor_documents_verified',
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    remarks = models.TextField(blank=True)
 
     def __str__(self):
         return f"{self.file_name} ({self.vendor.name})"
@@ -396,3 +475,71 @@ class VendorApprovalHistory(models.Model):
 
     def __str__(self):
         return f"{self.vendor.name}: {self.action} @ {self.created_at}"
+
+
+class VendorEmailLog(models.Model):
+    """One row per onboarding email attempt, so the UI can show Sent / Failed and when."""
+    STATUS_CHOICES = [
+        ('sent', 'Sent'),
+        ('failed', 'Failed'),
+    ]
+
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name='email_logs')
+    template = models.CharField(max_length=100)
+    subject = models.CharField(max_length=255)
+    recipient = models.CharField(max_length=255)
+    sender = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)
+    error = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.template} -> {self.recipient} ({self.status})"
+
+
+class VendorAuditLog(models.Model):
+    """Onboarding audit trail - mirrors client.ClientAuditLog. The FK is SET_NULL and the name is
+    snapshotted so entries survive a vendor being deleted. Bank values must be masked by the caller."""
+    ACTION_CHOICES = [
+        ('created', 'Vendor Created'),
+        ('onboarding_started', 'Onboarding Started'),
+        ('updated', 'Vendor Edited'),
+        ('document_uploaded', 'Document Uploaded'),
+        ('document_verified', 'Document Verified'),
+        ('document_rejected', 'Document Rejected'),
+        ('document_deleted', 'Document Deleted'),
+        ('kyc_updated', 'KYC Updated'),
+        ('banking_verified', 'Banking Verified'),
+        ('banking_updated', 'Banking Review Updated'),
+        ('contract_updated', 'Contract Updated'),
+        ('email_sent', 'Onboarding Email Sent'),
+        ('email_failed', 'Onboarding Email Failed'),
+        ('submitted', 'Vendor Submitted'),
+        ('changes_requested', 'Changes Requested'),
+        ('approved', 'Vendor Approved'),
+        ('rejected', 'Vendor Rejected'),
+    ]
+
+    vendor = models.ForeignKey(Vendor, on_delete=models.SET_NULL, null=True, blank=True, related_name='audit_logs')
+    vendor_name = models.CharField(max_length=255, blank=True)
+    action = models.CharField(max_length=30, choices=ACTION_CHOICES)
+    field_name = models.CharField(max_length=100, blank=True)
+    old_value = models.TextField(blank=True)
+    new_value = models.TextField(blank=True)
+    remarks = models.TextField(blank=True)
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='vendor_audit_logs',
+    )
+    # "vendor" when the action came through the self-service portal (no user account).
+    performed_by_label = models.CharField(max_length=150, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.get_action_display()} - {self.vendor_name}"

@@ -38,6 +38,8 @@ def _base_context(vendor):
         "vendor_email": vendor.email,
         "vendor_type": vendor.get_vendor_type_display(),
         "vendor_reference": vendor.vendor_reference_no,
+        # Not rendered - lets _send() record the email against the vendor.
+        "vendor_id": vendor.id,
     }
 
 
@@ -69,7 +71,32 @@ def _admin_recipients(vendor):
     return []
 
 
-def _send(template, subject, recipients, context):
+def _log_email(context, template, subject, recipients, status, error="", actor_id=None):
+    """Records the attempt (VendorEmailLog) and, for the onboarding invite, the audit trail."""
+    from accounts.models import Vendor
+    from .audit import log_vendor_audit
+    from .models import VendorEmailLog
+
+    vendor = Vendor.objects.filter(pk=context.get("vendor_id")).first()
+    if not vendor:
+        return
+    for recipient in recipients:
+        VendorEmailLog.objects.create(
+            vendor=vendor, template=template, subject=subject[:255], recipient=recipient,
+            sender=settings.DEFAULT_FROM_EMAIL or "", status=status, error=error[:255],
+        )
+    if template == "vendor_invited.html":
+        actor = None
+        if actor_id:
+            from django.contrib.auth import get_user_model
+            actor = get_user_model().objects.filter(pk=actor_id).first()
+        log_vendor_audit(
+            vendor, "email_sent" if status == "sent" else "email_failed", actor,
+            new_value=", ".join(recipients), remarks=error[:255],
+        )
+
+
+def _send(template, subject, recipients, context, actor_id=None):
     if not recipients:
         return
     html_message = render_to_string(f"emails/vendor_onboarding/{template}", context)
@@ -86,14 +113,17 @@ def _send(template, subject, recipients, context):
         # Vendor row and its data are untouched either way, and the admin can
         # always use "Resend Invitation" once the underlying issue is fixed.
         email.send(fail_silently=False)
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "Vendor onboarding email '%s' failed to send to %s", template, recipients
         )
+        _log_email(context, template, subject, recipients, "failed", error=type(exc).__name__, actor_id=actor_id)
+        return
+    _log_email(context, template, subject, recipients, "sent", actor_id=actor_id)
 
 
 @shared_task
-def send_vendor_invited_notification(vendor_id, raw_token):
+def send_vendor_invited_notification(vendor_id, raw_token, actor_id=None):
     from accounts.models import Vendor
     vendor = Vendor.objects.filter(pk=vendor_id).first()
     if not vendor:
@@ -104,9 +134,10 @@ def send_vendor_invited_notification(vendor_id, raw_token):
     }
     _send(
         "vendor_invited.html",
-        f"Vendor Onboarding Request – {vendor.vendor_reference_no}",
+        f"Vendor Onboarding Request – {vendor.name}",
         _vendor_recipients(vendor),
         context,
+        actor_id=actor_id,
     )
 
 
