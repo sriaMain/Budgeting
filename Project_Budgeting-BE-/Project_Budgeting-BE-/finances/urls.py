@@ -10,7 +10,7 @@ from .views import (DownloadAttachmentView, ProjectAttachmentView, QuotationDeta
                     ProjectPaymentAPIView, ProjectPaymentSummaryAPIView, ProjectPaymentsListAPIView,
                     PurchaseOrderCreateAPIView, QuotePurchaseOrderListAPIView, PurchaseOrderDetailAPIView,ProjectPurchaseOrderListAPIView,SendPurchaseOrderEmailView,DownloadPurchaseOrderView,
                     PurchaseOrderStatusUpdateAPIView, VendorBillCreateAPIView, VendorBillListAPIView,VendorBillByNumberAPIView,
-                    OutgoingPaymentCreateAPIView, VendorBillPaymentListAPIView, ProjectOutgoingPaymentsAPIView, ExpenseAPIView, ProjectExpenseListAPIView, ExpenseCategoryAPIView,ExpensePaymentAPIView,
+                    OutgoingPaymentCreateAPIView, VendorBillPaymentListAPIView, ProjectOutgoingPaymentsAPIView, ProjectCostEntriesAPIView, VendorBillTagsAPIView, ExpenseAPIView, ProjectExpenseListAPIView, ExpenseCategoryAPIView,ExpensePaymentAPIView,
                     FinancialAuditLogListView)
 
 urlpatterns = [
@@ -47,6 +47,8 @@ path("vendor-bills/<str:bill_no>/",VendorBillByNumberAPIView.as_view(),name="ven
 path("vendor-bills/<int:bill_id>/payments/", OutgoingPaymentCreateAPIView.as_view()),
 path("vendor-bills/<int:bill_id>/payments/list/", VendorBillPaymentListAPIView.as_view()),
 path("projects/<int:project_id>/outgoing-payments/", ProjectOutgoingPaymentsAPIView.as_view()),
+path("projects/<int:project_id>/cost-entries/", ProjectCostEntriesAPIView.as_view()),
+path("vendor-bills/<int:bill_id>/tags/", VendorBillTagsAPIView.as_view()),
 path("projects/<int:project_id>/attachments/",ProjectAttachmentView.as_view(),name="project-attachments",),
 path("attachments/<int:attachment_id>/",ProjectAttachmentView.as_view(),name="delete-attachment",),
 path("attachments/<int:attachment_id>/download/",DownloadAttachmentView.as_view(),name="download-attachment",),

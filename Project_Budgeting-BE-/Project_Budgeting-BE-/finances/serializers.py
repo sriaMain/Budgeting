@@ -329,8 +329,12 @@ class InvoiceListSerializer(serializers.ModelSerializer):
             'payment_percentage',
             'created_at',
             'project',
+            # T&M month this invoice bills (Project.ProjectPeriod)
+            'billing_period',
+            'billing_period_start',
+            'billing_period_end',
         ]
-    
+
     def get_client_email(self, obj):
         """Get client email if available"""
         return getattr(obj.client, 'email', '')
@@ -674,6 +678,8 @@ class VendorBillSerializer(serializers.ModelSerializer):
             'vendor_name',
             'purchase_order',
             'po_no',
+            'gl_account',
+            'milestone',
             'bill_date',
             'due_date',
             'total_amount',
@@ -830,6 +836,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
     freelancer_name = serializers.CharField(source='freelancer.full_name', read_only=True, default=None)
     employee_name = serializers.CharField(source='employee.get_full_name', read_only=True, default=None)
     vendor_name = serializers.CharField(source='vendor.name', read_only=True, default=None)
+    milestone_name = serializers.CharField(source='milestone.name', read_only=True, default=None)
+    vendor_bill_no = serializers.CharField(source='vendor_bill.bill_no', read_only=True, default=None)
 
     class Meta:
         model = Expense
@@ -842,6 +850,20 @@ class ExpenseSerializer(serializers.ModelSerializer):
             # settable directly, or it could drift out of sync with them.
             'status',
         )
+
+    def validate(self, attrs):
+        # A linked bill / milestone must belong to the expense's own project,
+        # otherwise its cost would roll up into the wrong project.
+        project = attrs.get('project', getattr(self.instance, 'project', None))
+        bill = attrs.get('vendor_bill')
+        if bill and project:
+            bill_project_id = bill.project_id or (bill.purchase_order.project_id if bill.purchase_order_id else None)
+            if bill_project_id != project.pk:
+                raise serializers.ValidationError({'vendor_bill': 'Linked bill must belong to the same project.'})
+        milestone = attrs.get('milestone')
+        if milestone and project and milestone.project_id != project.pk:
+            raise serializers.ValidationError({'milestone': 'Milestone must belong to the same project.'})
+        return attrs
 
     def get_total_paid(self, obj):
         return obj.total_paid()

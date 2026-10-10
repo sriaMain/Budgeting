@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from rest_framework import serializers
 from .models import (Project, ProjectBudget, BudgetLine, Milestone, ResourceAssignment, Task, Timesheet,
@@ -404,10 +405,20 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     status_display = serializers.CharField(source='get_status_display', read_only=True)
 
-    expense_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    # Actual cost = resource_cost + expenses_amount + bills_amount, where
+    # resource_cost = labour_cost (task allocated hours x rate) + assigned_resource_cost.
     labour_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    allocated_hours = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    unrated_hours = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    assigned_resource_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    resource_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    expenses_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    bills_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    expense_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     actual_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    # Profit (billing amount - actual cost) and its % of the billing amount.
     margin = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    margin_percent = serializers.DecimalField(max_digits=9, decimal_places=2, read_only=True, allow_null=True)
     quotation_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     billed_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     billed_base_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
@@ -456,10 +467,17 @@ class MilestoneSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'is_active',
-            'expense_cost',
             'labour_cost',
+            'allocated_hours',
+            'unrated_hours',
+            'assigned_resource_cost',
+            'resource_cost',
+            'expenses_amount',
+            'bills_amount',
+            'expense_cost',
             'actual_cost',
             'margin',
+            'margin_percent',
             'quotation_amount',
             'billed_amount',
             'billed_base_amount',
@@ -565,9 +583,11 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
 class ResourceAssignmentSerializer(serializers.ModelSerializer):
     """
-    A resource (employee or freelancer) staffed on a T&M project.
-    Monthly Cost / Monthly Billing are derived (cost_rate/billing_rate x
-    working_hours), not stored, so they always match the underlying rates.
+    A resource (employee, freelancer or vendor) staffed on a T&M project, or
+    on a Fixed Budget milestone (`milestone` set). Monthly Cost / Monthly
+    Billing are derived (cost_rate/billing_rate x working_hours); for a
+    milestone, `assigned_cost` (cost_amount, else cost_rate x working_hours)
+    is the resource cost. Nothing here reads timers or timesheets.
     """
 
     resource_type_display = serializers.CharField(source='get_resource_type_display', read_only=True)
@@ -575,6 +595,11 @@ class ResourceAssignmentSerializer(serializers.ModelSerializer):
     resource_name = serializers.CharField(read_only=True)
     monthly_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     monthly_billing = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    assigned_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    is_cost_overridden = serializers.BooleanField(read_only=True)
+    milestone_name = serializers.CharField(source='milestone.name', read_only=True, default=None)
+    # Defaults to the milestone's planned start (or today) when omitted - see validate().
+    start_date = serializers.DateField(required=False)
 
     created_by_name = serializers.SerializerMethodField()
     updated_by_name = serializers.SerializerMethodField()
@@ -584,15 +609,21 @@ class ResourceAssignmentSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'project',
+            'milestone',
+            'milestone_name',
             'resource_type',
             'resource_type_display',
             'resource_id',
+            'external_name',
             'resource_name',
             'role',
             'start_date',
             'end_date',
             'cost_rate',
             'billing_rate',
+            'cost_amount',
+            'assigned_cost',
+            'is_cost_overridden',
             'allocation_percent',
             'working_hours',
             'status',
@@ -617,10 +648,28 @@ class ResourceAssignmentSerializer(serializers.ModelSerializer):
         resource_type = data.get('resource_type', getattr(self.instance, 'resource_type', None))
         resource_id = data.get('resource_id', getattr(self.instance, 'resource_id', None))
 
+        project = self.context.get('project') or getattr(self.instance, 'project', None)
+        milestone = data.get('milestone', getattr(self.instance, 'milestone', None))
+        if milestone and project and milestone.project_id != project.pk:
+            raise serializers.ValidationError({"milestone": "Milestone must belong to this project."})
+        if resource_type == 'external':
+            name = data.get('external_name', getattr(self.instance, 'external_name', ''))
+            if not (name or '').strip():
+                raise serializers.ValidationError({"external_name": "Enter the external resource's name."})
+            data['resource_id'] = None
+        elif not resource_id:
+            raise serializers.ValidationError({"resource_id": "Select a resource."})
+        if not self.instance and not data.get('start_date'):
+            data['start_date'] = (milestone.planned_start_date if milestone else None) or date.today()
+
         if resource_type and resource_id:
             if resource_type == 'employee':
                 if not Account.objects.filter(pk=resource_id).exists():
                     raise serializers.ValidationError({"resource_id": "No employee found with this ID."})
+            elif resource_type == 'vendor':
+                from accounts.models import Vendor
+                if not Vendor.objects.filter(pk=resource_id).exists():
+                    raise serializers.ValidationError({"resource_id": "No vendor found with this ID."})
             else:
                 # Freelancers are their own model (freelancer_onboarding.Freelancer),
                 # not an accounts.Vendor row - matches ProjectPOCOptionsAPIView,
@@ -661,6 +710,7 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
             'payment_terms',
             'billing_frequency',
             'monthly_billing_amount',
+            'monthly_budget',
             # Project Contract: a slice of the Contract Value for this
             # project. remaining_amount is read-only - it's always derived,
             # never accepted as input (see validate() below).
@@ -931,6 +981,7 @@ class ProjectListSerializer(serializers.ModelSerializer):
             'payment_terms',
             'billing_frequency',
             'monthly_billing_amount',
+            'monthly_budget',
             'project_percentage',
             'project_amount',
             'remaining_amount',
@@ -977,6 +1028,11 @@ class TaskSerializer(serializers.ModelSerializer):
         allow_null=True
     )
     milestone_name = serializers.SerializerMethodField(read_only=True)
+    # Assign a freelancer instead of an employee (freelancer_onboarding.Freelancer id).
+    # Stored as a FreelancerTaskAssignment - Task.assigned_to stays employee-only.
+    # Omit to leave unchanged, null to unassign.
+    freelancer = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    assigned_freelancer = serializers.SerializerMethodField(read_only=True)
     consumed_hours = serializers.SerializerMethodField(read_only=True)
     remaining_hours = serializers.SerializerMethodField(read_only=True)
     allocated_formatted = serializers.SerializerMethodField(read_only=True)
@@ -1010,6 +1066,8 @@ class TaskSerializer(serializers.ModelSerializer):
             "consumed_formatted",
             "remaining_formatted_hms",
             "assigned_to",
+            "freelancer",
+            "assigned_freelancer",
             "project",
             "project_name",
             "milestone",
@@ -1067,7 +1125,162 @@ class TaskSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"milestone": "Milestone does not belong to this task's project."}
             )
+
+        if attrs.get("freelancer") is not None:
+            from freelancer_onboarding.models import Freelancer
+            if attrs.get("assigned_to"):
+                raise serializers.ValidationError(
+                    {"freelancer": "Assign the task to either an employee or a freelancer, not both."}
+                )
+            freelancer = Freelancer.objects.filter(pk=attrs["freelancer"], is_archived=False).first()
+            if freelancer is None:
+                raise serializers.ValidationError({"freelancer": "Freelancer not found."})
+            # Freelancers already staffed on the task's milestone (or project) are fine;
+            # anyone else must be onboarded, and gets staffed there on save (_set_freelancer).
+            if not self._freelancer_resource(project, milestone, freelancer) and freelancer.status not in ('completed', 'active'):
+                raise serializers.ValidationError(
+                    {"freelancer": f"{freelancer.full_name} hasn't finished freelancer onboarding yet."}
+                )
+            attrs["freelancer"] = freelancer
         return attrs
+
+    def create(self, validated_data):
+        from django.db import transaction
+        freelancer = validated_data.pop("freelancer", None)
+        with transaction.atomic():
+            task = super().create(validated_data)
+            if freelancer is not None:
+                self._set_freelancer(task, freelancer)
+        return task
+
+    def update(self, instance, validated_data):
+        from django.db import transaction
+        has_freelancer = "freelancer" in validated_data
+        freelancer = validated_data.pop("freelancer", None)
+        if has_freelancer and freelancer is not None:
+            validated_data["assigned_to"] = None
+        with transaction.atomic():
+            task = super().update(instance, validated_data)
+            if has_freelancer:
+                self._set_freelancer(task, freelancer)
+            elif task.assigned_to_id and "assigned_to" in validated_data:
+                self._set_freelancer(task, None)  # assigned to an employee instead
+            else:
+                self._active_freelancer_assignments(task).update(allocated_hours=task.allocated_hours)
+        return task
+
+    @staticmethod
+    def _active_freelancer_assignments(task):
+        return task.freelancer_assignments.exclude(status='cancelled')
+
+    @staticmethod
+    def _freelancer_resource(project, milestone, freelancer):
+        """The freelancer's Resources-tab row on this milestone (or project-level, without one)."""
+        return ResourceAssignment.objects.filter(
+            project=project, milestone=milestone, resource_type='freelancer',
+            resource_id=freelancer.pk, is_active=True,
+        ).exclude(status='removed').first()
+
+    @staticmethod
+    def _freelancer_hourly_rates(freelancer):
+        """(cost, billing) per hour from the freelancer's current rate card - daily rates are
+        divided by their hours per day (default 8); other pricing models have no hourly rate."""
+        from django.db.models import Q
+        from django.utils import timezone
+        today = timezone.localdate()
+        card = (
+            freelancer.rate_cards.filter(is_active=True, effective_from__lte=today)
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=today))
+            .order_by('-effective_from').first()
+        )
+        if card is None or card.pricing_model not in ('hourly', 'daily'):
+            return Decimal("0.00"), Decimal("0.00")
+        per = Decimal("1")
+        if card.pricing_model == 'daily':
+            per = Decimal(str(freelancer.hours_per_day or 8)) or Decimal("8")
+        q = Decimal("0.01")
+        return (card.cost_rate / per).quantize(q), (card.billing_rate / per).quantize(q)
+
+    def _staff_freelancer(self, task, freelancer):
+        """Add the freelancer to the task's milestone (or project) in the Resources tab."""
+        milestone = task.milestone
+        cost_rate, billing_rate = self._freelancer_hourly_rates(freelancer)
+        request = self.context.get("request")
+        user = request.user if request else None
+        return ResourceAssignment.objects.create(
+            project=task.project,
+            milestone=milestone,
+            resource_type='freelancer',
+            resource_id=freelancer.pk,
+            role=freelancer.professional_title or '',
+            start_date=(milestone.planned_start_date if milestone else None) or date.today(),
+            end_date=milestone.planned_end_date if milestone else None,
+            cost_rate=cost_rate,
+            billing_rate=billing_rate,
+            status='active',
+            created_by=user,
+            updated_by=user,
+        )
+
+    def _set_freelancer(self, task, freelancer):
+        """Make `freelancer` (or nobody, when None) the task's only active freelancer.
+        Replaced assignments are cancelled, not deleted - they may carry time entries."""
+        from freelancer_onboarding.models import FreelancerProjectAssignment, FreelancerTaskAssignment
+
+        self._active_freelancer_assignments(task).exclude(
+            freelancer=freelancer
+        ).update(status='cancelled')
+        if freelancer is None:
+            return
+
+        resource = self._freelancer_resource(task.project, task.milestone, freelancer)
+        if resource is None:
+            resource = self._staff_freelancer(task, freelancer)
+
+        project_assignment = (
+            FreelancerProjectAssignment.objects
+            .filter(freelancer=freelancer, project=task.project)
+            .exclude(status='cancelled')
+            .order_by('-created_at')
+            .first()
+        )
+        if project_assignment is None:
+            # Staffed via the Resources tab only - create the project link the
+            # freelancer module needs, snapshotting the resource's rates.
+            request = self.context.get("request")
+            project_assignment = FreelancerProjectAssignment.objects.create(
+                freelancer=freelancer,
+                project=task.project,
+                role=resource.role,
+                start_date=resource.start_date,
+                end_date=resource.end_date,
+                allocated_hours=task.allocated_hours,
+                pricing_model_snapshot='hourly',
+                cost_rate_snapshot=resource.cost_rate,
+                billing_rate_snapshot=resource.billing_rate,
+                currency_snapshot=freelancer.currency or '',
+                status='active',
+                created_by=request.user if request else None,
+            )
+
+        assignment, created = FreelancerTaskAssignment.objects.get_or_create(
+            freelancer=freelancer, task=task,
+            defaults={
+                "project_assignment": project_assignment,
+                "allocated_hours": task.allocated_hours,
+            },
+        )
+        if not created:
+            assignment.allocated_hours = task.allocated_hours
+            if assignment.status == 'cancelled':
+                assignment.status = 'planned'
+            assignment.save(update_fields=["allocated_hours", "status", "updated_at"])
+
+    def get_assigned_freelancer(self, obj):
+        assignment = self._active_freelancer_assignments(obj).select_related('freelancer').first()
+        if assignment is None:
+            return None
+        return {"id": assignment.freelancer_id, "name": assignment.freelancer.full_name}
 
 
     def get_created_by(self, obj):

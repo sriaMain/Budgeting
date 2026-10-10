@@ -13,7 +13,6 @@ BRANCH="master"
 HEALTH_URL="https://project.nxsys.in/"
 
 cd "$REPO_DIR"
-
 OLD_HEAD=$(git rev-parse HEAD)
 
 echo "==> Fetching origin/$BRANCH"

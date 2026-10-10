@@ -80,11 +80,11 @@ def get_all_tab_data(filters):
             # profit) wrong whenever a project had logged expenses that
             # weren't tied to a purchase order/vendor bill.
             expenses = OutgoingPayment.objects.filter(
-                vendor_bill__purchase_order__project=project
+                vendor_bill__project=project
             ).aggregate(
                 total=Coalesce(Sum("amount"), Decimal("0.00"))
             )["total"]
-            expenses += Expense.objects.filter(project=project).aggregate(
+            expenses += Expense.objects.filter(project=project).cost_bearing().aggregate(
                 total=Coalesce(Sum("amount"), Decimal("0.00"))
             )["total"]
 
@@ -146,10 +146,10 @@ def get_all_tab_data(filters):
     outgoing_qs = OutgoingPayment.objects.all()
     expense_qs = Expense.objects.all()
     if filters.get("project"):
-        outgoing_qs = outgoing_qs.filter(vendor_bill__purchase_order__project_id=filters["project"])
+        outgoing_qs = outgoing_qs.filter(vendor_bill__project_id=filters["project"])
         expense_qs = expense_qs.filter(project_id=filters["project"])
     if filters.get("client"):
-        outgoing_qs = outgoing_qs.filter(vendor_bill__purchase_order__project__client_id=filters["client"])
+        outgoing_qs = outgoing_qs.filter(vendor_bill__project__client_id=filters["client"])
         expense_qs = expense_qs.filter(project__client_id=filters["client"])
     if filters.get("from_date"):
         outgoing_qs = outgoing_qs.filter(payment_date__gte=filters["from_date"])
@@ -268,7 +268,7 @@ def get_project_tab_data(filters):
         )["total"]
 
         outgoing_qs = OutgoingPayment.objects.filter(
-            vendor_bill__purchase_order__project=pb.project
+            vendor_bill__project=pb.project
         )
         if from_date:
             outgoing_qs = outgoing_qs.filter(payment_date__gte=from_date)
@@ -278,7 +278,7 @@ def get_project_tab_data(filters):
             total=Coalesce(Sum("amount"), Decimal("0.00"))
         )["total"]
 
-        expense_qs = Expense.objects.filter(project=pb.project)
+        expense_qs = Expense.objects.filter(project=pb.project).cost_bearing()
         if from_date:
             expense_qs = expense_qs.filter(expense_date__gte=from_date)
         if to_date:

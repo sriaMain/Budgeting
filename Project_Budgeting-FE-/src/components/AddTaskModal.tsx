@@ -45,12 +45,16 @@ interface StatusChoice {
     label: string;
 }
 
+// Values must match Task.STATUS_CHOICES on the backend, or task create/update is rejected.
 const DEFAULT_STATUS_OPTIONS = [
-    { value: 'planned', label: 'planned' },
-    { value: 'In Progress', label: 'In Progress' },
-    { value: 'Completed', label: 'Completed' },
-    { value: 'Needs Attention', label: 'Needs Attention' },
+    { value: 'planned', label: 'Planned' },
+    { value: 'in_progress', label: 'In Progress' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'needs_attention', label: 'Needs Attention' },
 ];
+
+const statusLabel = (value: string) =>
+    value.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
 export function AddTaskModal({
     isOpen,
@@ -73,7 +77,7 @@ export function AddTaskModal({
     // Helper function to convert HH:MM format to decimal hours
     const hhmmToDecimal = (hhmmString: string): number => {
         const [hours, minutes] = hhmmString.split(':').map(Number);
-        // Round to 2 decimal places — allocated_hours is a DecimalField(max_digits=5,
+        // Round to 2 decimal places — allocated_hours is a DecimalField(max_digits=10,
         // decimal_places=2) on the backend, and an unrounded division (e.g. 20/60 =
         // 0.3333333333333333) has far more significant digits than that field allows,
         // which the API rejects with "Ensure that there are no more than 5 digits in total."
@@ -100,6 +104,12 @@ export function AddTaskModal({
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
     const [projects, setProjects] = useState<Project[]>([]);
     const [milestones, setMilestones] = useState<{ id: number; name: string; sequence: number }[]>([]);
+    // Assign to an employee (Task.assigned_to) or a freelancer staffed on the selected milestone
+    const [assignMode, setAssignMode] = useState<'employee' | 'freelancer'>('employee');
+    // staffed = already a resource on the selected milestone (else added to it on save)
+    const [freelancers, setFreelancers] = useState<{ id: number; name: string; role?: string; staffed: boolean }[]>([]);
+    const [isLoadingFreelancers, setIsLoadingFreelancers] = useState(false);
+    const [selectedFreelancerId, setSelectedFreelancerId] = useState<number | null>(null);
     const [statusChoices, setStatusChoices] = useState<StatusChoice[]>(DEFAULT_STATUS_OPTIONS);
     const [isLoadingUsers, setIsLoadingUsers] = useState(true);
     const [isLoadingProjects, setIsLoadingProjects] = useState(true);
@@ -112,6 +122,7 @@ export function AddTaskModal({
         project?: string;
         status?: string;
         allocated_hours?: string;
+        freelancer?: string;
     }>({});
 
     // Assignee search/dropdown state
@@ -125,6 +136,7 @@ export function AddTaskModal({
     const [showProjectDropdown, setShowProjectDropdown] = useState(false);
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const projectDropdownRef = useRef<HTMLDivElement>(null);
+    const formRef = useRef<HTMLFormElement>(null);
 
     const isProjectReadOnly = !!prefilledProjectId && !!prefilledProjectName;
 
@@ -145,21 +157,73 @@ export function AddTaskModal({
         return () => { cancelled = true; };
     }, [isOpen, formData.project]);
 
+    // Freelancers for the picker: those staffed on the selected milestone (or on the project
+    // when no milestone is picked) in the Resources tab first, then every other onboarded
+    // freelancer - picking one of those adds them to the milestone on save (backend).
+    useEffect(() => {
+        if (!isOpen || assignMode !== 'freelancer' || !formData.project) {
+            setFreelancers([]);
+            return;
+        }
+        let cancelled = false;
+        setIsLoadingFreelancers(true);
+        Promise.all([
+            axiosInstance.get(`/projects/${formData.project}/resources/`, {
+                params: formData.milestone ? { milestone: formData.milestone } : {},
+            }).catch(() => ({ data: [] })),
+            axiosInstance.get('/projects/poc-options/').catch(() => ({ data: [] })),
+        ])
+            .then(([resourcesRes, optionsRes]) => {
+                if (cancelled) return;
+                const rows = Array.isArray(resourcesRes.data) ? resourcesRes.data : [];
+                const staffed = rows
+                    .filter((r: any) => r.resource_type === 'freelancer' && r.status !== 'removed' && r.resource_id)
+                    .map((r: any) => ({ id: r.resource_id, name: r.resource_name || `Freelancer #${r.resource_id}`, role: r.role, staffed: true }));
+                const options = Array.isArray(optionsRes.data) ? optionsRes.data : [];
+                const others = options
+                    .filter((o: any) => o.type === 'freelancer')
+                    .map((o: any) => ({ id: o.id, name: o.name, role: o.subtitle, staffed: false }));
+                const list = [...staffed, ...others];
+                // One entry per freelancer (staffed entry wins)
+                setFreelancers(list.filter((f, i) => list.findIndex(x => x.id === f.id) === i));
+            })
+            .catch(() => {
+                if (!cancelled) setFreelancers([]);
+            })
+            .finally(() => {
+                if (!cancelled) setIsLoadingFreelancers(false);
+            });
+        return () => { cancelled = true; };
+    }, [isOpen, assignMode, formData.project, formData.milestone]);
+
+    const selectedMilestoneName = milestones.find(m => m.id === formData.milestone)?.name;
+
+    // Drop a picked freelancer who is no longer in the list
+    useEffect(() => {
+        if (selectedFreelancerId && !isLoadingFreelancers && !freelancers.some(f => f.id === selectedFreelancerId)) {
+            setSelectedFreelancerId(null);
+        }
+    }, [freelancers, isLoadingFreelancers, selectedFreelancerId]);
+
     // Fetch users and projects on mount
     useEffect(() => {
         if (isOpen) {
             fetchUsers();
             fetchServicesAndUsers();
             fetchStatusChoices();
-            // Always fetch projects to populate the dropdown
-            fetchProjects();
+            // Projects are only needed for the dropdown when the project isn't prefilled
+            if (isProjectReadOnly) {
+                setIsLoadingProjects(false);
+            } else {
+                fetchProjects();
+            }
 
             // Reset form
             setFormData({
                 title: '',
                 assignee_id: 0,
                 project: prefilledProjectId || 0,
-                status: '',
+                status: 'planned',
                 allocated_hours: '00:00',
                 due_date: '',
                 milestone: 0
@@ -170,6 +234,8 @@ export function AddTaskModal({
             setSelectedProject(null);
             setSelectedService('');
             setSelectedUserId(null);
+            setAssignMode('employee');
+            setSelectedFreelancerId(null);
             setErrors({});
 
             // If editing, prefill form
@@ -191,6 +257,9 @@ export function AddTaskModal({
                 // prefill assignment service/user if assigned
                 if (editingTask.assigned_to?.id) {
                     setSelectedUserId(editingTask.assigned_to.id);
+                } else if (editingTask.assigned_freelancer?.id) {
+                    setAssignMode('freelancer');
+                    setSelectedFreelancerId(editingTask.assigned_freelancer.id);
                 }
             }
 
@@ -309,12 +378,15 @@ export function AddTaskModal({
         setIsLoadingStatus(true);
         try {
             const response = await axiosInstance.get('task-status-choices/');
-            if (response.status === 200 && response.data.length > 0) {
-                setStatusChoices(response.data);
+            // Backend returns { status_choices: ['planned', 'in_progress', ...] }
+            const raw = Array.isArray(response.data) ? response.data : response.data?.status_choices;
+            if (response.status === 200 && Array.isArray(raw) && raw.length > 0) {
+                const choices: StatusChoice[] = raw.map((c: any) =>
+                    typeof c === 'string' ? { value: c, label: statusLabel(c) } : c
+                );
+                setStatusChoices(choices);
                 // Set first status as default if form status is empty
-                if (!formData.status) {
-                    setFormData(prev => ({ ...prev, status: response.data[0].value }));
-                }
+                setFormData(prev => (prev.status ? prev : { ...prev, status: choices[0].value }));
             }
         } catch (error) {
             console.error('Failed to fetch status choices:', error);
@@ -367,8 +439,9 @@ export function AddTaskModal({
             newErrors.title = 'Task title must be at least 3 characters';
         }
 
-        // Validate HH:MM format for allocated hours
-        const timePattern = /^([0-9]{1,2}):([0-5][0-9])$/;
+        // Validate HH:MM format for allocated hours — hours are not capped at 24/99;
+        // up to 8 digits fits the backend DecimalField(max_digits=10, decimal_places=2)
+        const timePattern = /^([0-9]{1,8}):([0-5][0-9])$/;
         if (!formData.allocated_hours) {
             newErrors.allocated_hours = 'Allocated hours is required';
         } else if (!timePattern.test(formData.allocated_hours)) {
@@ -380,8 +453,19 @@ export function AddTaskModal({
             }
         }
 
+        // Backend requires a project
+        if (!formData.project) {
+            newErrors.project = 'Project is required';
+        }
+
         setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
+        const firstError = Object.values(newErrors)[0] as string | undefined;
+        if (firstError) {
+            // Field errors can be scrolled out of view in the modal - surface them
+            toast.error(firstError);
+            formRef.current?.closest('.overflow-y-auto')?.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        return !firstError;
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -397,9 +481,16 @@ export function AddTaskModal({
             title: formData.title.trim(),
             allocated_hours: hhmmToDecimal(formData.allocated_hours),
             ...(formData.status && { status: formData.status }),
-            // prefer selectedUserId (from service->user selector) over freeform assignee_id
-            ...(selectedUserId && { assigned_to: selectedUserId }),
-            ...(formData.assignee_id && !selectedUserId && formData.assignee_id !== 0 && { assignee_id: formData.assignee_id }),
+            // An employee (assigned_to) or a freelancer - never both; sending the other as
+            // null clears it when switching on an edit.
+            ...(assignMode === 'freelancer'
+                ? { freelancer: selectedFreelancerId, assigned_to: null }
+                : {
+                    freelancer: null,
+                    // prefer selectedUserId (from service->user selector) over freeform assignee_id
+                    ...(selectedUserId && { assigned_to: selectedUserId }),
+                    ...(formData.assignee_id && !selectedUserId && formData.assignee_id !== 0 && { assignee_id: formData.assignee_id }),
+                }),
             ...(formData.project && formData.project !== 0 && { project: formData.project }),
             milestone: formData.milestone || null,
             // Always send due_date (even when cleared) so removing it on an edit
@@ -433,10 +524,12 @@ export function AddTaskModal({
                     }, 500);
                 }
             }
-        } catch (error) {
-            const apiErrors = parseApiErrors(error);
+        } catch (error: any) {
+            // PATCH wraps serializer errors as { errors: {...} }
+            const nested = error?.response?.data?.errors;
+            const apiErrors = parseApiErrors(nested && typeof nested === 'object' ? { response: { data: nested } } : error);
             setErrors(apiErrors);
-            toast.error(apiErrors.general || 'Failed to add task');
+            toast.error(apiErrors.freelancer || apiErrors.general || (editingTask ? 'Failed to update task' : 'Failed to add task'));
         } finally {
             setIsSaving(false);
         }
@@ -489,7 +582,7 @@ export function AddTaskModal({
                             </div>
                         )}
 
-                        <form onSubmit={handleSubmit} className="space-y-5">
+                        <form ref={formRef} onSubmit={handleSubmit} noValidate className="space-y-5">
                             {/* Task Title */}
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -509,63 +602,6 @@ export function AddTaskModal({
                                 {errors.title && (
                                     <p className="text-xs text-red-600 mt-1">{errors.title}</p>
                                 )}
-                            </div>
-
-                            {/* Assignee selector: service type -> user */}
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Assign to</label>
-
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select Type</label>
-                                        <div className="relative">
-                                            <select
-                                                value={selectedService || ''}
-                                                onChange={(e) => {
-                                                    const value = e.target.value;
-                                                    setSelectedService(value);
-                                                    const svc = services.find(s => s.name === value);
-                                                    setServiceUsers(svc ? svc.users : []);
-                                                    setSelectedUserId(null);
-                                                    setErrors(prev => ({ ...prev, assignee_id: '' }));
-                                                }}
-                                                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.assignee_id ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'}`}
-                                                disabled={services.length === 0}
-                                            >
-                                                <option value="">{services.length === 0 ? (isLoadingUsers ? 'Loading...' : 'No types') : 'Select type'}</option>
-                                                {services.map(s => (
-                                                    <option key={s.name} value={s.name}>{s.name}</option>
-                                                ))}
-                                            </select>
-                                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select User</label>
-                                        <div className="relative">
-                                            <select
-                                                value={selectedUserId || ''}
-                                                onChange={(e) => {
-                                                    const value = e.target.value ? Number(e.target.value) : null;
-                                                    setSelectedUserId(value);
-                                                    setErrors(prev => ({ ...prev, assignee_id: '' }));
-                                                }}
-                                                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.assignee_id ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'}`}
-                                                disabled={!selectedService}
-                                            >
-                                                <option value="">{!selectedService ? 'Select type first' : serviceUsers.length === 0 ? 'No users available' : 'Select user'}</option>
-                                                {serviceUsers.map(user => (
-                                                    <option key={user.id} value={user.id}>{user.username || user.name || user.email}</option>
-                                                ))}
-                                            </select>
-                                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
-                                        </div>
-                                        {errors.assignee_id && (
-                                            <p className="text-xs text-red-600 mt-1">{errors.assignee_id}</p>
-                                        )}
-                                    </div>
-                                </div>
                             </div>
 
                             {/* Project - Prefilled (read-only) or Searchable Dropdown */}
@@ -631,10 +667,132 @@ export function AddTaskModal({
                                         ))}
                                     </select>
                                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                                        Timer hours on this task are costed into the milestone's actual cost.
+                                        Allocated hours on this task (x the assignee's cost rate) are costed into the milestone's actual cost.
                                     </p>
                                 </div>
                             )}
+
+                            {/* Assignee selector: service type -> user */}
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-3">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Assign to</label>
+                                    <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-700 p-0.5 text-xs" role="tablist">
+                                        {(['employee', 'freelancer'] as const).map(mode => (
+                                            <button
+                                                key={mode}
+                                                type="button"
+                                                role="tab"
+                                                aria-selected={assignMode === mode}
+                                                onClick={() => {
+                                                    setAssignMode(mode);
+                                                    setErrors(prev => ({ ...prev, assignee_id: '', freelancer: '' }));
+                                                }}
+                                                className={`px-3 py-1 rounded-md font-medium transition-colors ${assignMode === mode
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                                                    }`}
+                                            >
+                                                {mode === 'employee' ? 'Employee' : 'Freelancer'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {assignMode === 'employee' ? (
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select Type</label>
+                                        <div className="relative">
+                                            <select
+                                                value={selectedService || ''}
+                                                onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    setSelectedService(value);
+                                                    const svc = services.find(s => s.name === value);
+                                                    setServiceUsers(svc ? svc.users : []);
+                                                    setSelectedUserId(null);
+                                                    setErrors(prev => ({ ...prev, assignee_id: '' }));
+                                                }}
+                                                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.assignee_id ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'}`}
+                                                disabled={services.length === 0}
+                                            >
+                                                <option value="">{services.length === 0 ? (isLoadingUsers ? 'Loading...' : 'No types') : 'Select type'}</option>
+                                                {services.map(s => (
+                                                    <option key={s.name} value={s.name}>{s.name}</option>
+                                                ))}
+                                            </select>
+                                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select User</label>
+                                        <div className="relative">
+                                            <select
+                                                value={selectedUserId || ''}
+                                                onChange={(e) => {
+                                                    const value = e.target.value ? Number(e.target.value) : null;
+                                                    setSelectedUserId(value);
+                                                    setErrors(prev => ({ ...prev, assignee_id: '' }));
+                                                }}
+                                                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.assignee_id ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'}`}
+                                                disabled={!selectedService}
+                                            >
+                                                <option value="">{!selectedService ? 'Select type first' : serviceUsers.length === 0 ? 'No users available' : 'Select user'}</option>
+                                                {serviceUsers.map(user => (
+                                                    <option key={user.id} value={user.id}>{user.username || user.name || user.email}</option>
+                                                ))}
+                                            </select>
+                                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
+                                        </div>
+                                        {errors.assignee_id && (
+                                            <p className="text-xs text-red-600 mt-1">{errors.assignee_id}</p>
+                                        )}
+                                    </div>
+                                </div>
+                                ) : (
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select Freelancer</label>
+                                    <div className="relative">
+                                        <select
+                                            value={selectedFreelancerId || ''}
+                                            onChange={(e) => {
+                                                setSelectedFreelancerId(e.target.value ? Number(e.target.value) : null);
+                                                setErrors(prev => ({ ...prev, freelancer: '' }));
+                                            }}
+                                            className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.freelancer ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'}`}
+                                            disabled={isLoadingFreelancers || freelancers.length === 0}
+                                        >
+                                            <option value="">
+                                                {isLoadingFreelancers ? 'Loading...' : freelancers.length === 0 ? 'No onboarded freelancers found' : 'Select freelancer'}
+                                            </option>
+                                            {[
+                                                { label: selectedMilestoneName ? `On milestone "${selectedMilestoneName}"` : 'On this project', staffed: true },
+                                                { label: 'Other freelancers', staffed: false },
+                                            ].map(group => {
+                                                const items = freelancers.filter(f => f.staffed === group.staffed);
+                                                return items.length > 0 && (
+                                                    <optgroup key={group.label} label={group.label}>
+                                                        {items.map(f => (
+                                                            <option key={f.id} value={f.id}>{f.name}{f.role ? ` — ${f.role}` : ''}</option>
+                                                        ))}
+                                                    </optgroup>
+                                                );
+                                            })}
+                                        </select>
+                                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
+                                    </div>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                        {freelancers.find(f => f.id === selectedFreelancerId && !f.staffed)
+                                            ? `Will be added to ${selectedMilestoneName ? `milestone "${selectedMilestoneName}"` : 'this project'} in the Resources tab, at their rate-card cost rate.`
+                                            : `Freelancers already on ${selectedMilestoneName ? `milestone "${selectedMilestoneName}"` : 'this project'} are listed first.`}
+                                    </p>
+                                    {errors.freelancer && (
+                                        <p className="text-xs text-red-600 mt-1">{errors.freelancer}</p>
+                                    )}
+                                </div>
+                                )}
+                            </div>
 
                             {/* Status (Optional) */}
                             <div className="space-y-2">
@@ -695,8 +853,8 @@ export function AddTaskModal({
                                     }}
                                     className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm font-mono dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500 ${errors.allocated_hours ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'
                                         }`}
-                                    placeholder="HH:MM (e.g., 08:30)"
-                                    pattern="[0-9]{1,2}:[0-5][0-9]"
+                                    placeholder="HH:MM (e.g., 08:30 or 120:00)"
+                                    pattern="[0-9]{1,8}:[0-5][0-9]"
                                 />
                                 {errors.allocated_hours && (
                                     <p className="text-xs text-red-600 mt-1">{errors.allocated_hours}</p>
@@ -715,7 +873,7 @@ export function AddTaskModal({
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={isSaving || isLoadingUsers || isLoadingProjects}
+                                    disabled={isSaving}
                                     className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 shadow-md hover:shadow-lg transform active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                                 >
                                     <UploadCloud className="w-4 h-4" />

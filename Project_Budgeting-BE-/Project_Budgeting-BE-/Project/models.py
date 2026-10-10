@@ -5,6 +5,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from django.utils import timezone
+from django.utils.functional import cached_property
 from decimal import Decimal
 
 
@@ -67,6 +68,13 @@ class Project(models.Model):
     )
     billing_frequency = models.CharField(
         max_length=20, choices=BILLING_FREQUENCY_CHOICES, default='monthly', blank=True
+    )
+    # Cost budget for one month (T&M). Seeds each ProjectPeriod's budget_amount;
+    # falls back to monthly_billing_amount when blank.
+    monthly_budget = models.DecimalField(
+        max_digits=15, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Monthly cost budget (T&M). Defaults to the monthly billing amount."
     )
     # Shared by both engagement types
     payment_terms = models.CharField(
@@ -158,6 +166,13 @@ class Project(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
 
+    @property
+    def quotation_tax_percentage(self):
+        """Tax % of the quotation this project was created from (0 without one) - added on top
+        of the pre-tax amount when a milestone or a T&M month is invoiced."""
+        quotation = self.created_from_quotation
+        return (quotation.tax_percentage if quotation else None) or Decimal("0.00")
+
     def __str__(self):
         return f"{self.project_name} ({self.project_no})"
     
@@ -214,16 +229,20 @@ class ProjectBudget(models.Model):
     @property
     def actual_expenses(self):
         """
-        Real expenses logged against the project (Finances > Expenses tab).
-        Falls back to the quoted/manual bills_and_expenses estimate when no
-        real expense has been logged yet.
+        Real expenses logged against the project (Finances > Expenses tab)
+        plus amounts paid against its vendor bills (unpaid bill balances
+        don't count). Falls back to the quoted/manual bills_and_expenses
+        estimate when neither exists yet.
         """
         if not self.project:
             return self.bills_and_expenses or 0
 
-        logged = self.project.expenses.aggregate(
+        from finances.models import vendor_bills_paid_for_project
+
+        # cost_bearing(): expenses linked to a bill are counted via the bill.
+        logged = (self.project.expenses.cost_bearing().aggregate(
             total=models.Sum('amount')
-        )['total']
+        )['total'] or 0) + vendor_bills_paid_for_project(self.project)
 
         if logged:
             return logged
@@ -313,14 +332,22 @@ class BudgetLine(models.Model):
     # ---------------------------
     @property
     def actual_amount(self):
-        """Real spend logged against this project under this GL Account."""
+        """Real spend logged against this project under this GL Account:
+        expenses plus amounts paid on vendor bills tagged with the same GL
+        Account (bill-linked expenses are counted via their bill only)."""
         if not self.budget_id or not self.budget.project_id:
             return Decimal("0.00")
 
-        total = self.budget.project.expenses.filter(
+        from finances.models import project_vendor_bills
+
+        project = self.budget.project
+        expenses = project.expenses.cost_bearing().filter(
             gl_account=self.gl_account
-        ).aggregate(total=models.Sum('amount'))['total']
-        return total or Decimal("0.00")
+        ).aggregate(total=models.Sum('amount'))['total'] or Decimal("0.00")
+        bills_paid = project_vendor_bills(project).filter(
+            gl_account=self.gl_account
+        ).aggregate(total=models.Sum('paid_amount'))['total'] or Decimal("0.00")
+        return expenses + bills_paid
 
     @property
     def remaining_amount(self):
@@ -336,6 +363,55 @@ class BudgetLine(models.Model):
         return self.actual_amount > (self.planned_amount or Decimal("0.00"))
 
 
+class ProjectPeriod(models.Model):
+    """
+    One calendar month of a Time & Material project, from the project's start
+    month through its end month (first/last months clipped to the project
+    dates). Created and kept in step with the project by
+    Project/utils/tm_periods.py:sync_tm_periods().
+
+    Only the configured amounts are stored. Costs, invoices and payments are
+    derived from the underlying transactions by date (tm_periods.py), so a
+    period never holds fake or duplicated figures:
+
+        Expense.expense_date             -> expenses
+        OutgoingPayment.payment_date     -> vendor bills (paid)
+        Task due date (else created)     -> labour (allocated hours x rate)
+        ResourceAssignment active months -> flat-fee / vendor / external resource cost
+        finances.Invoice.billing_period  -> invoiced / received / outstanding
+    """
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='periods')
+    # First day of the calendar month - the period's identity.
+    month = models.DateField()
+    period_start = models.DateField()
+    period_end = models.DateField()
+    budget_amount = models.DecimalField(
+        max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(0)]
+    )
+    billing_amount = models.DecimalField(
+        max_digits=15, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(0)]
+    )
+    # Set when someone edits this month's amounts - project-level changes then
+    # no longer overwrite them.
+    amounts_overridden = models.BooleanField(default=False)
+    # False when the month falls outside the project dates after they changed,
+    # but the period is kept because it has invoices.
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['month']
+        constraints = [
+            models.UniqueConstraint(fields=['project', 'month'], name='unique_project_period_month'),
+        ]
+
+    def __str__(self):
+        return f"{self.project.project_name} - {self.month:%b %Y}"
+
+
 class Milestone(models.Model):
     """
     A phase of a Fixed Budget / Milestone-Based project's contract (see
@@ -345,9 +421,15 @@ class Milestone(models.Model):
     underlying transactions:
 
         Milestone -> Invoice (finances.Invoice.milestone) -> InvoicePayment
-        Milestone -> Expense (finances.Expense.milestone) -> expense_cost
-        Milestone -> Task (Task.milestone) -> timer hours x charges_per_hour -> labour_cost
-        actual_cost = expense_cost + labour_cost
+        Milestone -> Task (milestone) -> allocated hours x assignee cost rate -> labour_cost
+        Milestone -> ResourceAssignment (milestone) -> flat / non-employee cost -> assigned_resource_cost
+        resource_cost = labour_cost + assigned_resource_cost
+        Milestone -> Expense (finances.Expense.milestone) -> expenses_amount
+        Milestone -> VendorBill (finances.VendorBill.milestone) -> paid amount -> bills_amount
+        actual_cost = resource_cost + expenses_amount + bills_amount
+
+    Employees and freelancers on a rate are costed on the allocated hours of this milestone's
+    tasks assigned to them - see Project/utils/labour_cost.py.
     """
 
     STATUS_CHOICES = [
@@ -428,37 +510,81 @@ class Milestone(models.Model):
     # ---------------------------
     # Derived financials (Section 14: never store what can be computed)
     # ---------------------------
-    # Employee time reaches the milestone through task timers (labour_cost),
-    # so employee_cost expenses are left out to avoid counting it twice.
-    LABOUR_EXPENSE_CATEGORIES = ('employee_cost',)
+    # Employee / freelancer cost reaches the milestone through its assigned
+    # resources (resource_cost), so expenses in those categories are left out
+    # to avoid counting the same person twice - same rule as the project
+    # financial summary (FinancialSummaryAPIView.RESOURCE_COST_CATEGORIES).
+    RESOURCE_EXPENSE_CATEGORIES = ('employee_cost', 'freelancer')
 
-    @property
-    def expense_cost(self):
-        total = self.expenses.exclude(
-            category__in=self.LABOUR_EXPENSE_CATEGORIES
-        ).aggregate(total=models.Sum('amount'))['total']
-        return total or Decimal("0.00")
+    @cached_property
+    def _labour(self):
+        from .utils.labour_cost import allocated_labour_cost
+        return allocated_labour_cost(self.project, milestone=self)
 
     @property
     def labour_cost(self):
-        """Hours worked on this milestone's tasks x each assignee's hourly cost rate."""
-        from .utils.timer import live_consumed_hours
+        """Cost of this milestone's tasks (allocated hours x assignee cost rate)."""
+        return self._labour.cost
 
-        total = Decimal("0.00")
-        for task in self.tasks.select_related('assigned_to'):
-            if not task.assigned_to:
-                continue
-            rate = task.assigned_to.charges_per_hour or Decimal("0")
-            total += live_consumed_hours(task) * Decimal(rate)
-        return total.quantize(Decimal("0.01"))
+    @property
+    def allocated_hours(self):
+        """Total allocated hours of this milestone's tasks."""
+        return self._labour.hours
+
+    @property
+    def unrated_hours(self):
+        """Allocated hours with no cost rate to price them (unassigned, or no assignment rate / charges/hour)."""
+        return self._labour.unrated_hours
+
+    @property
+    def assigned_resource_cost(self):
+        """Assigned cost of resources not costed from task hours - flat-fee and vendor /
+        external resources. Removed ones excluded."""
+        from .utils.labour_cost import is_task_costed
+        return sum(
+            (
+                a.assigned_cost
+                for a in self.resource_assignments.filter(is_active=True).exclude(status='removed')
+                if not is_task_costed(a)
+            ),
+            Decimal("0.00"),
+        )
+
+    @property
+    def resource_cost(self):
+        return (self.labour_cost + self.assigned_resource_cost).quantize(Decimal("0.01"))
+
+    @property
+    def expenses_amount(self):
+        """Expenses tagged to this milestone (bill-linked expenses are counted via their bill only)."""
+        return self.expenses.cost_bearing().exclude(
+            category__in=self.RESOURCE_EXPENSE_CATEGORIES
+        ).aggregate(total=models.Sum('amount'))['total'] or Decimal("0.00")
+
+    @property
+    def bills_amount(self):
+        """Amount paid so far on vendor bills tagged to this milestone."""
+        return self.vendor_bills.aggregate(total=models.Sum('paid_amount'))['total'] or Decimal("0.00")
+
+    @property
+    def expense_cost(self):
+        """Expenses + paid bills (non-resource cost)."""
+        return self.expenses_amount + self.bills_amount
 
     @property
     def actual_cost(self):
-        return (self.expense_cost + self.labour_cost).quantize(Decimal("0.01"))
+        return (self.resource_cost + self.expense_cost).quantize(Decimal("0.01"))
 
     @property
     def margin(self):
+        """Profit: billing amount - actual cost."""
         return (self.billing_amount or Decimal("0.00")) - self.actual_cost
+
+    @property
+    def margin_percent(self):
+        if not self.billing_amount:
+            return None
+        return (self.margin / self.billing_amount * 100).quantize(Decimal("0.01"))
 
     @property
     def quotation_amount(self):
@@ -494,8 +620,7 @@ class Milestone(models.Model):
     @property
     def tax_percentage(self):
         """Tax % of the project's quotation - added on top when this milestone is invoiced."""
-        quotation = self.project.created_from_quotation if self.project_id else None
-        return (quotation.tax_percentage if quotation else None) or Decimal("0.00")
+        return self.project.quotation_tax_percentage if self.project_id else Decimal("0.00")
 
     @property
     def budget_percent(self):
@@ -593,11 +718,22 @@ class ResourceAssignment(models.Model):
     working_hours is the resource's actual/planned hours for one billing
     period (not multiplied by allocation_percent again - allocation_percent
     is informational context for how that figure was reached).
+
+    The same record also staffs a Fixed Budget milestone (`milestone` set).
+    There the resource's cost is `assigned_cost`: the project/milestone-
+    specific `cost_amount` when given, else cost_rate x working_hours
+    (planned units). cost_rate starts from the resource master (employee
+    charges_per_hour / freelancer rate card) but is a per-assignment copy, so
+    overriding it never changes the master. Never derived from timers or
+    timesheets.
     """
 
     RESOURCE_TYPE_CHOICES = [
         ('employee', 'Employee'),
         ('freelancer', 'Freelancer'),
+        ('vendor', 'Vendor'),
+        # Someone with no Employee / Freelancer / Vendor master record - named on the assignment itself.
+        ('external', 'External Resource'),
     ]
     STATUS_CHOICES = [
         ('active', 'Active'),
@@ -607,20 +743,33 @@ class ResourceAssignment(models.Model):
     ]
 
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='resource_assignments')
+    # Set for a Fixed Budget milestone's resources; null for T&M project-level staffing.
+    milestone = models.ForeignKey(
+        Milestone, on_delete=models.CASCADE, null=True, blank=True, related_name='resource_assignments'
+    )
     resource_type = models.CharField(max_length=20, choices=RESOURCE_TYPE_CHOICES)
     resource_id = models.PositiveIntegerField(
-        help_text="ID in accounts.Account (employee) or accounts.Vendor (freelancer), per resource_type."
+        null=True, blank=True,
+        help_text="ID in accounts.Account (employee), freelancer_onboarding.Freelancer (freelancer) "
+                  "or accounts.Vendor (vendor), per resource_type. Empty for an external resource."
     )
+    # Name of an external resource (resource_type='external') - there is no master record for these.
+    external_name = models.CharField(max_length=150, blank=True)
     role = models.CharField(max_length=100, blank=True)
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
     cost_rate = models.DecimalField(
-        max_digits=10, decimal_places=2, validators=[MinValueValidator(0)],
+        max_digits=10, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(0)],
         help_text="Hourly cost rate."
     )
     billing_rate = models.DecimalField(
-        max_digits=10, decimal_places=2, validators=[MinValueValidator(0)],
+        max_digits=10, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(0)],
         help_text="Hourly rate billed to the client."
+    )
+    # Project/milestone-specific total cost for this resource. When set it is the
+    # resource cost (overrides cost_rate x working_hours); the master rate is untouched.
+    cost_amount = models.DecimalField(
+        max_digits=15, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)],
     )
     allocation_percent = models.PositiveIntegerField(default=100, validators=[MaxValueValidator(100)])
     working_hours = models.DecimalField(
@@ -652,6 +801,13 @@ class ResourceAssignment(models.Model):
     def clean(self):
         if self.end_date and self.start_date and self.end_date < self.start_date:
             raise ValidationError({"end_date": "End date cannot be before start date."})
+        if self.milestone_id and self.project_id and self.milestone.project_id != self.project_id:
+            raise ValidationError({"milestone": "Milestone must belong to the same project."})
+        if self.resource_type == 'external':
+            if not self.external_name.strip():
+                raise ValidationError({"external_name": "Enter the external resource's name."})
+        elif not self.resource_id:
+            raise ValidationError({"resource_id": "Select a resource."})
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -659,15 +815,33 @@ class ResourceAssignment(models.Model):
 
     @property
     def resource_name(self):
+        if self.resource_type == 'external':
+            return self.external_name or None
         if self.resource_type == 'employee':
             from accounts.models import Account
             account = Account.objects.filter(pk=self.resource_id).first()
             return account.display_name if account else None
+        if self.resource_type == 'vendor':
+            from accounts.models import Vendor
+            vendor = Vendor.objects.filter(pk=self.resource_id).first()
+            return vendor.name if vendor else None
         # Freelancers are their own model (freelancer_onboarding.Freelancer),
         # not an accounts.Vendor row - see ResourceAssignmentSerializer.validate().
         from freelancer_onboarding.models import Freelancer
         freelancer = Freelancer.objects.filter(pk=self.resource_id).first()
         return freelancer.full_name if freelancer else None
+
+    @property
+    def assigned_cost(self):
+        """This resource's cost on the project/milestone: the specific cost_amount when set,
+        else cost_rate x planned units (working_hours). Not based on timers or timesheets."""
+        if self.cost_amount is not None:
+            return self.cost_amount
+        return (self.cost_rate or Decimal("0.00")) * (self.working_hours or Decimal("0.00"))
+
+    @property
+    def is_cost_overridden(self):
+        return self.cost_amount is not None
 
     @property
     def monthly_cost(self):
@@ -702,7 +876,7 @@ class Task(models.Model):
         null=True, blank=True,
         related_name='tasks'
     )
-    allocated_hours = models.DecimalField(max_digits=5, decimal_places=2)
+    allocated_hours = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planned')
     due_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
@@ -846,10 +1020,10 @@ class TaskExtraHoursRequest(models.Model):
     requested_hours = models.DecimalField(max_digits=7, decimal_places=2)
     reason = models.TextField()
     previous_allocated_hours = models.DecimalField(
-        max_digits=5, decimal_places=2, null=True, blank=True
+        max_digits=10, decimal_places=2, null=True, blank=True
     )
     approved_allocated_hours = models.DecimalField(
-        max_digits=5, decimal_places=2, null=True, blank=True
+        max_digits=10, decimal_places=2, null=True, blank=True
     )
 
     status = models.CharField(

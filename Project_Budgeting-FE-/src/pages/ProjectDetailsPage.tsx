@@ -1,29 +1,22 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Layout } from '../components/Layout';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Filter, Edit2, X } from 'lucide-react';
-import type { DropResult } from '@hello-pangea/dnd';
 import axiosInstance from '../utils/axiosInstance';
 import { ReusableTable, type Column } from '../components/ReusableTable';
 import { StatusBadge } from '../components/StatusBadge';
 import { AddTaskModal } from '../components/AddTaskModal';
 import { AssignTaskModal } from '../components/AssignTaskModal';
-import { AddExpenseModal } from '../components/AddExpenseModal';
+import { ProjectCostEntriesPanel } from '../components/ProjectCostEntriesPanel';
 import { BudgetLinesPanel } from '../components/BudgetLinesPanel';
 import { MilestonesPanel } from '../components/MilestonesPanel';
 import { ResourcesPanel } from '../components/ResourcesPanel';
 import { FinancialSummaryPanel } from '../components/FinancialSummaryPanel';
-import { FreelancerAssignmentsPanel } from '../components/FreelancerAssignmentsPanel';
-import { TaskBoardView } from '../components/TaskBoardView';
-import { TaskCalendarView } from '../components/TaskCalendarView';
-import { TaskGanttView } from '../components/TaskGanttView';
-import { ProjectTimeTrackingView } from '../components/ProjectTimeTrackingView';
+import { GenerateMonthlyInvoiceDrawer } from '../components/GenerateMonthlyInvoiceDrawer';
+import { InvoiceDrawer } from '../components/InvoiceDrawer';
+import { BillDrawer } from '../components/BillDrawer';
+import { ExpenseDrawer } from '../components/ExpenseDrawer';
 import { toast } from 'react-hot-toast';
-import { parseApiErrors } from '../utils/parseApiErrors';
-import store from '../store/store';
-
-const fmtCurrency = (value: number | string | null | undefined, currency?: string) =>
-    `${(Number(value) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || 'INR'}`;
 
 interface Task {
     id: string;
@@ -44,23 +37,6 @@ interface Task {
     remainingHoursNum: number;
 }
 
-const TASK_STATUS_TO_API: Record<Task['status'], string> = {
-    'Planned': 'planned',
-    'In Progress': 'in_progress',
-    'Completed': 'completed',
-    'Needs Attention': 'needs_attention',
-};
-
-interface Payment {
-    id: number;
-    date: string;
-    type: 'Incoming' | 'Outgoing';
-    amount: number;
-    clientVendor: string;
-    reference: string;
-    paymentMethod: string;
-}
-
 interface ProjectDetailsPageProps {
     userRole: 'admin' | 'user' | 'manager';
     currentPage: string;
@@ -72,14 +48,17 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const [activeTab, setActiveTab] = useState<string>('Tasks');
-    const [activeSubTab, setActiveSubTab] = useState<string>('Task list');
     const [budgetSubTab, setBudgetSubTab] = useState<string>('Budget health');
     const [budgetViewMode, setBudgetViewMode] = useState<string>('Budget');
     const [paymentSearch, setPaymentSearch] = useState<string>('');
     const [paymentTypeFilter, setPaymentTypeFilter] = useState<string>('All');
     const [showPaymentFilter, setShowPaymentFilter] = useState<boolean>(false);
-    const [expenseSearch, setExpenseSearch] = useState<string>('');
     const [invoiceSearch, setInvoiceSearch] = useState<string>('');
+    const [isMonthlyInvoiceOpen, setIsMonthlyInvoiceOpen] = useState(false);
+    // Invoice / bill / expense details open in a drawer on this page
+    const [openInvoiceId, setOpenInvoiceId] = useState<number | null>(null);
+    const [openBillId, setOpenBillId] = useState<number | null>(null);
+    const [openExpenseId, setOpenExpenseId] = useState<number | null>(null);
     const [project, setProject] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
@@ -90,37 +69,24 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const [editingConsumedTaskId, setEditingConsumedTaskId] = useState<string | null>(null);
     const [consumedInput, setConsumedInput] = useState<string>('');
     const [isLoadingTasks, setIsLoadingTasks] = useState(true);
-    const [firstQuoteId, setFirstQuoteId] = useState<number | null>(null);
     const [invoices, setInvoices] = useState<any[]>([]);
     const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
-    const [projectQuotes, setProjectQuotes] = useState<any[]>([]);
-    const [isLoadingQuotation, setIsLoadingQuotation] = useState(false);
     const [payments, setPayments] = useState<any[]>([]);
     const [isLoadingPayments, setIsLoadingPayments] = useState(false);
     const [paymentSummary, setPaymentSummary] = useState<any>(null);
     const [outgoingPayments, setOutgoingPayments] = useState<any[]>([]);
-    const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
-    const [isLoadingPOs, setIsLoadingPOs] = useState(false);
-    const [bills, setBills] = useState<any[]>([]);
-    const [isLoadingBills, setIsLoadingBills] = useState(false);
-    const [billsSummary, setBillsSummary] = useState<any>(null);
-    const [attachments, setAttachments] = useState<any[]>([]);
-    const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
-    const [isUploading, setIsUploading] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [expenses, setExpenses] = useState<any[]>([]);
-    const [isLoadingExpenses, setIsLoadingExpenses] = useState(false);
-    const [isAddExpenseModalOpen, setIsAddExpenseModalOpen] = useState(false);
-    // GL Account id -> "CODE - Name" display label, for the Expenses tab table.
-    // The expense list endpoint only returns the gl_account id, so this is
-    // fetched from the same endpoint AddExpenseModal already uses.
-    const [glAccountsById, setGlAccountsById] = useState<Record<number, string>>({});
 
     // Handle tab query parameter
     useEffect(() => {
         const tabParam = searchParams.get('tab');
         if (tabParam) {
-            setActiveTab(tabParam);
+            // The Finances tab is now "Payment" (Details was removed) - keep old links working.
+            if (tabParam === 'Finances' || tabParam === 'Details' || tabParam === 'Payments') {
+                setActiveTab('Payment');
+                return;
+            }
+            // Budget and Time tabs were removed - fall back to Tasks for old ?tab=Budget / ?tab=Time links.
+            setActiveTab(tabParam === 'Budget' || tabParam === 'Time' ? 'Tasks' : tabParam);
         }
     }, [searchParams]);
 
@@ -137,10 +103,13 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         const consumedHoursNum = Number(task.consumed_hours) || 0;
         const remainingHoursNum = task.remaining_hours != null ? Number(task.remaining_hours) : Math.max(0, allocatedHoursNum - consumedHoursNum);
 
+        // Employee (assigned_to) or freelancer (assigned_freelancer)
+        const assigneeName = task.assigned_to?.username || task.assigned_freelancer?.name;
+
         return {
             id: task.id?.toString() || '',
-            assignee: task.assigned_to?.username || 'Unassigned',
-            assigneeAvatar: task.assigned_to?.username?.substring(0, 2).toUpperCase() || '○',
+            assignee: assigneeName || 'Unassigned',
+            assigneeAvatar: assigneeName?.substring(0, 2).toUpperCase() || '○',
             title: task.title || 'Untitled Task',
             status: normalizedStatus as Task['status'],
             activityType: task.activity_type || 'Development',
@@ -217,16 +186,14 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
         fetchProjectDetails();
         fetchProjectTasks();
-        fetchFirstQuote();
-        fetchAttachments();
     }, [projectId]);
 
     // Invoices are only ever populated from this one project-detail fetch,
     // which the mount effect above runs once. Anything that creates an
     // invoice elsewhere on this page (Milestones tab billing, T&M period
-    // billing in Financial Summary) has no way to tell that effect to
-    // re-run, so the Finances tab kept showing stale ("No invoices") data
-    // until a full page reload. Refetching whenever the Finances tab is
+    // billing from this tab's Generate Invoice drawer) has no way to tell that effect to
+    // re-run, so the invoice list kept showing stale ("No invoices") data
+    // until a full page reload. Refetching whenever the Invoices tab is
     // opened keeps it current without needing every child component to
     // know about the parent's state.
     const refreshInvoices = useCallback(async () => {
@@ -251,24 +218,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
             refreshInvoices();
         }
     }, [activeTab, refreshInvoices]);
-
-    // Fetch first available quote for invoice generation
-    const fetchFirstQuote = async () => {
-        try {
-            const response = await axiosInstance.get('/pipeline-data/');
-            if (response.data && response.data.stages) {
-                // Find first quote from any stage
-                for (const stage of response.data.stages) {
-                    if (stage.quotes && stage.quotes.length > 0) {
-                        setFirstQuoteId(stage.quotes[0].quote_no);
-                        return;
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Error fetching quotes:', error);
-        }
-    };
 
     // Fetch payments for all project invoices
     const fetchProjectPayments = async () => {
@@ -321,235 +270,19 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         }
     };
 
-    // Fetch every quote linked to this project (the original quote it was
-    // created from, plus any follow-up/phase quotes added afterwards)
-    const fetchProjectQuotes = async () => {
-        if (!projectId) return;
-        try {
-            setIsLoadingQuotation(true);
-            const response = await axiosInstance.get(`/quotes/?project=${projectId}`);
-            const quotesForProject: any[] = response.data || [];
-
-            // The quote a project was originally created from is linked via
-            // Project.created_from_quotation, not Quote.project, so fetch it
-            // separately and merge it in if it isn't already in the list.
-            if (project?.created_from_quotation &&
-                !quotesForProject.some((q) => q.quote_no === project.created_from_quotation)) {
-                try {
-                    const originalQuote = await axiosInstance.get(`/quotes/${project.created_from_quotation}/`);
-                    quotesForProject.push(originalQuote.data);
-                } catch (err) {
-                    console.error('Error fetching originating quote:', err);
-                }
-            }
-
-            setProjectQuotes(quotesForProject);
-        } catch (error) {
-            console.error('Error fetching project quotes:', error);
-            setProjectQuotes([]);
-        } finally {
-            setIsLoadingQuotation(false);
-        }
-    };
-
-    // Fetch purchase orders for the project
-    const fetchPurchaseOrders = async () => {
-        if (!projectId) return;
-
-        try {
-            setIsLoadingPOs(true);
-            const response = await axiosInstance.get(`/projects/${projectId}/purchase-orders/`);
-            if (response.status === 200 && response.data.purchase_orders) {
-                setPurchaseOrders(response.data.purchase_orders);
-                console.log('Fetched purchase orders:', response.data.purchase_orders);
-            }
-        } catch (error) {
-            console.error('Error fetching purchase orders:', error);
-        } finally {
-            setIsLoadingPOs(false);
-        }
-    };
-
-    // Fetch bills (outgoing payments) for the project
-    const fetchBills = async () => {
-        if (!projectId) return;
-
-        try {
-            setIsLoadingBills(true);
-            const response = await axiosInstance.get(`/projects/${projectId}/outgoing-payments/`);
-            if (response.status === 200) {
-                // Use vendor_bills from the response
-                setBills(response.data.vendor_bills || []);
-                setBillsSummary({
-                    total_paid: response.data.total_paid,
-                    project_name: response.data.project_name,
-                    project_no: response.data.project_no,
-                    payment_count: response.data.debug?.payment_count || 0,
-                    vendor_bill_count: response.data.debug?.vendor_bill_count || 0
-                });
-                console.log('Fetched bills:', response.data);
-            }
-        } catch (error) {
-            console.error('Error fetching bills:', error);
-        } finally {
-            setIsLoadingBills(false);
-        }
-    };
-
-    // Fetch attachments for the project
-    const fetchAttachments = async () => {
-        if (!projectId) return;
-
-        try {
-            setIsLoadingAttachments(true);
-            const response = await axiosInstance.get(`/projects/${projectId}/attachments/`);
-            setAttachments(response.data || []);
-            console.log('Fetched attachments:', response.data);
-        } catch (error) {
-            console.error('Error fetching attachments:', error);
-            toast.error('Failed to load attachments');
-        } finally {
-            setIsLoadingAttachments(false);
-        }
-    };
-
-    // Handle file selection and upload
-    const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file || !projectId) return;
-
-        setIsUploading(true);
-
-        // Create FormData with only file and category
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('category', 'other');
-
-        try {
-            // Don't set Content-Type - let browser handle it automatically
-            await axiosInstance.post(`/projects/${projectId}/attachments/`, formData);
-            toast.success('File uploaded successfully');
-            fetchAttachments();
-        } catch (error) {
-            console.error('Error uploading file:', error);
-            toast.error('Failed to upload file');
-        } finally {
-            setIsUploading(false);
-            if (fileInputRef.current) {
-                fileInputRef.current.value = '';
-            }
-        }
-    };
-
-    // Handle file download
-    const handleFileDownload = async (attachment: any) => {
-        try {
-            const response = await axiosInstance.get(`/attachments/${attachment.id}/download/`, {
-                responseType: 'blob'
-            });
-
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', attachment.file_name);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-        } catch (error) {
-            console.error('Error downloading file:', error);
-            toast.error('Failed to download file');
-        }
-    };
-
-    // Get file icon based on file type
-    const getFileIcon = (fileType: string) => {
-        if (fileType.includes('pdf')) return '📄';
-        if (fileType.includes('image')) return '🖼️';
-        if (fileType.includes('spreadsheet') || fileType.includes('excel')) return '📊';
-        if (fileType.includes('word') || fileType.includes('document')) return '📝';
-        if (fileType.includes('zip') || fileType.includes('compressed')) return '📦';
-        return '📎';
-    };
-
-    // Format file size
-    const formatFileSize = (bytes: number) => {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-    };
-
-    // Fetch expenses for the project
-    const fetchExpenses = async () => {
-        if (!projectId) return;
-
-        try {
-            setIsLoadingExpenses(true);
-            const response = await axiosInstance.get(`/expenses/?project=${projectId}`);
-            setExpenses(response.data || []);
-            console.log('Fetched expenses:', response.data);
-        } catch (error) {
-            console.error('Error fetching expenses:', error);
-            toast.error('Failed to load expenses');
-        } finally {
-            setIsLoadingExpenses(false);
-        }
-    };
-
-    // Handle expense added
-    const handleExpenseAdded = async () => {
-        console.log('Expense added, refreshing list...');
-        await fetchExpenses();
-    };
-
-    // Fetch GL Accounts (id -> "CODE - Name") for the Expenses tab's GL Account
-    // column - the expense list endpoint only returns the gl_account id.
-    // Reuses the same endpoint AddExpenseModal already calls for its GL
-    // Account picker.
-    const fetchGlAccountsForExpenses = async () => {
-        try {
-            const response = await axiosInstance.get<{ id: number; code: string; name: string }[]>(
-                '/gl-accounts/?active_only=true'
-            );
-            const map: Record<number, string> = {};
-            (response.data || []).forEach((acc) => {
-                map[acc.id] = `${acc.code} - ${acc.name}`;
-            });
-            setGlAccountsById(map);
-        } catch (error) {
-            console.error('Error fetching GL accounts for expenses table:', error);
-        }
-    };
-
-
-
-    // Fetch quotes when Finances tab is active
-    useEffect(() => {
-        if (activeTab === 'Finances') {
-            // Fetch every quote linked to this project (original + phase quotes)
-            fetchProjectQuotes();
-            // Fetch purchase orders
-            fetchPurchaseOrders();
-            // Fetch bills (outgoing payments)
-            fetchBills();
-        }
-        if (activeTab === 'Expenses') {
-            fetchExpenses();
-        }
-        if (activeTab === 'Expenses') {
-            fetchGlAccountsForExpenses();
-        }
-    }, [activeTab, projectId, project]);
-
-
     // Fetch payments when the Payments tab, or the Budget tab's Revenue/Profit
     // sub-tabs (which reuse the same invoiced/received figures), are active.
     useEffect(() => {
-        if (activeTab === 'Payments' || activeTab === 'Budget') {
+        if (activeTab === 'Payment' || activeTab === 'Budget') {
             fetchProjectPayments();
         }
     }, [activeTab, projectId]);
+
+    // After a payment / edit / delete in an invoice, bill or expense drawer
+    const refreshFinancials = () => {
+        refreshInvoices();
+        if (activeTab === 'Payment' || activeTab === 'Budget') fetchProjectPayments();
+    };
 
     const handleTaskAdded = async (newTask: any) => {
         console.log('Task created for project:', newTask);
@@ -630,7 +363,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         }
     };
 
-    // Opens a task in the edit modal — shared by the Task list, Task Board, Calendar and Gantt views.
+    // Opens a task in the edit modal from the Task list.
     const openTaskForEdit = async (taskId: string) => {
         try {
             const resp = await axiosInstance.get(`tasks/${taskId}/`);
@@ -639,30 +372,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         } catch (err) {
             console.error('Failed to fetch task details', err);
             toast.error('Failed to load task for editing');
-        }
-    };
-
-    // Drag-and-drop handler for the Task Board (Kanban) view — moves a task between
-    // status columns, optimistically updating the UI and reverting on failure
-    // (mirrors the pattern used by the Pipeline board's drag-and-drop).
-    const handleTaskDragEnd = async (result: DropResult) => {
-        const { destination, source, draggableId } = result;
-        if (!destination || destination.droppableId === source.droppableId) return;
-
-        const newStatus = destination.droppableId as Task['status'];
-        const taskId = draggableId;
-        const previousTasks = tasks;
-
-        setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
-
-        try {
-            await axiosInstance.patch(`tasks/${taskId}/`, { status: TASK_STATUS_TO_API[newStatus] });
-            toast.success(`Task moved to ${newStatus}`);
-        } catch (error) {
-            console.error('Failed to update task status:', error);
-            const apiErrors = parseApiErrors(error);
-            toast.error(apiErrors.general || 'Failed to update task status');
-            setTasks(previousTasks);
         }
     };
 
@@ -739,11 +448,13 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     // relevant to this project's engagement model (Fixed -> Milestones,
     // T&M -> Resources); Financial Summary is common to both.
     const engagementType: 'fixed' | 'time_and_material' = project?.engagement_type || 'fixed';
+    // Budget tab is hidden for now (its content below is kept, just unreachable).
+    // Resources (assignment + resource cost) applies to every project; Milestones only to Fixed Budget ones.
     const mainTabs = [
-        'Tasks', 'Time', 'Budget', 'Expenses', 'Invoices',
-        ...(engagementType === 'fixed' ? ['Milestones'] : ['Resources']),
+        'Tasks', 'Expenses', 'Resources', 'Invoices',
+        ...(engagementType === 'fixed' ? ['Milestones'] : []),
         'Financials',
-        'Details', 'Payments', 'Finances',
+        'Payment', // incoming / outgoing payments (formerly "Finances")
     ];
 
     const budgetHealth = totalBudgetAmount <= 0
@@ -780,8 +491,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const forecastedProfitAmount = project?.budget?.forecasted_profit != null
         ? Number(project.budget.forecasted_profit)
         : null;
-
-    const currentUsername = store.getState().auth.username;
 
     const overdueTasksCount = tasks.filter(t => {
         if (!t.dueDateRaw || t.status === 'Completed') return false;
@@ -830,14 +539,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 {project.status || 'In Progress'}
                             </span>
                         </div>
-                        <div className="flex gap-4">
-                            <button
-                                onClick={() => setActiveTab('Budget')}
-                                className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors duration-200"
-                            >
-                                Monthly Budget
-                            </button>
-                        </div>
                     </div>
 
                     {/* Project Title */}
@@ -861,7 +562,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                     </div>
 
                     <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">User budget</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Total Budget</p>
                         <p className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{totalBudgetAmount.toLocaleString()} {project?.budget?.currency || 'INR'}</p>
                         <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
                             Used: {usedBudgetAmount.toLocaleString()} {project?.budget?.currency || 'INR'} ({budgetUsedPercent}%)
@@ -883,12 +584,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 <button
                                     type="button"
                                     key={tab}
-                                    onClick={() => {
-                                        setActiveTab(tab);
-                                        if (tab === 'Tasks') {
-                                            setActiveSubTab('Task list');
-                                        }
-                                    }}
+                                    onClick={() => setActiveTab(tab)}
                                     className={`py-4 px-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab
                                         ? 'text-gray-900 dark:text-white border-blue-600'
                                         : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-white'
@@ -900,32 +596,10 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                         </div>
                     </div>
 
-                    {/* Sub Tabs - Only for Tasks */}
-                    {activeTab === 'Tasks' && (
-                        <div className="border-b border-gray-200 dark:border-gray-800 px-6 bg-gray-50 dark:bg-gray-800">
-                            <div className="flex gap-6 overflow-x-auto">
-                                {['Task list', 'Gantt', 'Task Board', 'Calendar'].map((subTab) => (
-                                    <button
-                                        key={subTab}
-                                        onClick={() => setActiveSubTab(subTab)}
-                                        className={`py-3 px-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${activeSubTab === subTab
-                                            ? 'text-gray-900 dark:text-white border-gray-900'
-                                            : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-white'
-                                            }`}
-                                    >
-                                        {subTab}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
                     {/* Tab Content */}
                     <div className="p-6">
                         {activeTab === 'Tasks' && (
                             <>
-                                {activeSubTab === 'Task list' && (
-                                    <>
                                         <div className="overflow-x-auto">
                                             <table className="w-full">
                                                 <thead>
@@ -1054,41 +728,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 Add task
                                             </button>
                                         </div>
-                                    </>
-                                )}
-
-                                {activeSubTab === 'Gantt' && (
-                                    <TaskGanttView
-                                        tasks={tasks}
-                                        projectStartDate={project?.start_date}
-                                        projectEndDate={project?.end_date}
-                                        onTaskClick={(task) => openTaskForEdit(task.id)}
-                                    />
-                                )}
-
-                                {activeSubTab === 'Task Board' && (
-                                    <TaskBoardView
-                                        tasks={tasks}
-                                        onDragEnd={handleTaskDragEnd}
-                                        onTaskClick={(task) => openTaskForEdit(task.id)}
-                                    />
-                                )}
-
-                                {activeSubTab === 'Calendar' && (
-                                    <TaskCalendarView
-                                        tasks={tasks}
-                                        onTaskClick={(task) => openTaskForEdit(task.id)}
-                                    />
-                                )}
                             </>
-                        )}
-
-                        {activeTab === 'Time' && (
-                            <ProjectTimeTrackingView
-                                tasks={tasks}
-                                currentUsername={currentUsername}
-                                onTimerChange={refreshTaskById}
-                            />
                         )}
 
                         {activeTab === 'Budget' && (
@@ -1354,125 +994,18 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                             </div>
                         )}
 
-                        {/* Expenses — dedicated tab. The Finances tab below keeps its own
-                            Expenses accordion section too (not removed); this is additive. */}
-                        {activeTab === 'Expenses' && (
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between gap-3">
-                                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Expenses</h3>
-                                    <div className="flex items-center gap-3">
-                                        <div className="relative w-64">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
-                                            <input
-                                                type="text"
-                                                placeholder="Search expenses..."
-                                                value={expenseSearch}
-                                                onChange={(e) => setExpenseSearch(e.target.value)}
-                                                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-900 dark:text-gray-100"
-                                            />
-                                        </div>
-                                        <button
-                                            onClick={() => setIsAddExpenseModalOpen(true)}
-                                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                                        >
-                                            <Plus className="w-4 h-4" />
-                                            Add Expense
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {isLoadingExpenses ? (
-                                    <div className="text-center py-12">
-                                        <div className="inline-flex flex-col items-center">
-                                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-3"></div>
-                                            <p className="text-sm text-gray-500 dark:text-gray-400">Loading expenses...</p>
-                                        </div>
-                                    </div>
-                                ) : (() => {
-                                    const searchLower = expenseSearch.toLowerCase();
-                                    const filteredExpenses = expenses.filter((expense: any) => {
-                                        if (!searchLower) return true;
-                                        return (
-                                            expense.expense_no?.toLowerCase().includes(searchLower) ||
-                                            expense.category?.toLowerCase().includes(searchLower) ||
-                                            expense.description?.toLowerCase().includes(searchLower) ||
-                                            expense.freelancer_name?.toLowerCase().includes(searchLower) ||
-                                            expense.employee_name?.toLowerCase().includes(searchLower)
-                                        );
-                                    });
-
-                                    const expenseColumns: Column<any>[] = [
-                                        {
-                                            header: 'Expense No',
-                                            accessor: (expense) => (
-                                                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                                    {expense.expense_no}
-                                                </span>
-                                            ),
-                                        },
-                                        {
-                                            header: 'Date',
-                                            accessor: (expense) => expense.expense_date
-                                                ? new Date(expense.expense_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                                                : '-',
-                                        },
-                                        {
-                                            header: 'Category',
-                                            accessor: (expense) => expense.category
-                                                ? (expense.category.charAt(0).toUpperCase() + expense.category.slice(1)).replace(/_/g, ' ')
-                                                : '-',
-                                        },
-                                        {
-                                            header: 'Description',
-                                            accessor: (expense) => (
-                                                <span className="text-sm text-gray-600 dark:text-gray-300">{expense.description || '-'}</span>
-                                            ),
-                                        },
-                                        {
-                                            header: 'Amount',
-                                            accessor: (expense) => (
-                                                <span className="font-semibold text-gray-900 dark:text-white">
-                                                    ₹{parseFloat(expense.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </span>
-                                            ),
-                                        },
-                                        {
-                                            header: 'Status',
-                                            accessor: (expense) => {
-                                                const isPaid = expense.is_fully_paid;
-                                                const isPartial = !isPaid && Number(expense.total_paid) > 0;
-                                                const status = isPaid ? 'paid' : isPartial ? 'partially_paid' : 'unpaid';
-                                                const variant: 'success' | 'warning' | 'neutral' = isPaid ? 'success' : isPartial ? 'warning' : 'neutral';
-                                                const label = isPaid ? 'Paid' : isPartial ? 'Partially Paid' : 'Unpaid';
-                                                return <StatusBadge status={status} variant={variant} label={label} />;
-                                            },
-                                        },
-                                        {
-                                            header: 'GL Account',
-                                            accessor: (expense) => expense.gl_account
-                                                ? (glAccountsById[expense.gl_account] || `#${expense.gl_account}`)
-                                                : '-',
-                                        },
-                                        {
-                                            header: 'Employee / Freelancer / Vendor',
-                                            accessor: (expense) => expense.freelancer_name || expense.employee_name || expense.vendor_name || '-',
-                                        },
-                                    ];
-
-                                    return (
-                                        <ReusableTable<any>
-                                            data={filteredExpenses}
-                                            columns={expenseColumns}
-                                            keyField="id"
-                                            onRowClick={(expense) => navigate(`/expenses/${expense.id}`)}
-                                            emptyMessage="No expenses found for this project"
-                                        />
-                                    );
-                                })()}
-                            </div>
+                        {/* Expenses — project expenses and bills in one table */}
+                        {activeTab === 'Expenses' && projectId && (
+                            <ProjectCostEntriesPanel
+                                projectId={projectId}
+                                currency={budgetCurrency}
+                                engagementType={engagementType}
+                                projectStart={project?.start_date}
+                                projectEnd={project?.end_date}
+                            />
                         )}
 
-                        {/* Invoices — dedicated tab. The Finances tab below keeps its own
+                        {/* Invoices — dedicated tab. The Payment tab below keeps its own
                             Invoices accordion section too (not removed); this is additive. */}
                         {activeTab === 'Invoices' && (
                             <div className="space-y-4">
@@ -1491,6 +1024,11 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                         </div>
                                         <button
                                             onClick={() => {
+                                                // T&M: bill one month of the project at its billing amount
+                                                if (engagementType === 'time_and_material') {
+                                                    setIsMonthlyInvoiceOpen(true);
+                                                    return;
+                                                }
                                                 const quotationId = project?.created_from_quotation;
                                                 if (quotationId) {
                                                     navigate(`/generate-invoice/${quotationId}`);
@@ -1593,11 +1131,21 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                             data={filteredInvoices}
                                             columns={invoiceColumns}
                                             keyField="id"
-                                            onRowClick={(invoice) => navigate(`/invoices/${invoice.id}`)}
+                                            onRowClick={(invoice) => setOpenInvoiceId(invoice.id)}
                                             emptyMessage="No invoices found for this project"
                                         />
                                     );
                                 })()}
+
+                                {engagementType === 'time_and_material' && projectId && (
+                                    <GenerateMonthlyInvoiceDrawer
+                                        isOpen={isMonthlyInvoiceOpen}
+                                        onClose={() => setIsMonthlyInvoiceOpen(false)}
+                                        projectId={projectId}
+                                        currency={budgetCurrency}
+                                        onCreated={refreshInvoices}
+                                    />
+                                )}
                             </div>
                         )}
 
@@ -1612,531 +1160,17 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                             />
                         )}
 
-                        {/* Resources — Time & Material projects only */}
+                        {/* Resources — resource assignment and resource cost, both engagement types */}
                         {activeTab === 'Resources' && projectId && (
-                            <ResourcesPanel projectId={projectId} currency={budgetCurrency} />
+                            <ResourcesPanel projectId={projectId} currency={budgetCurrency} engagementType={engagementType} />
                         )}
 
                         {/* Financial Summary — common to both engagement types */}
                         {activeTab === 'Financials' && projectId && (
-                            <>
-                                <FreelancerAssignmentsPanel projectId={projectId} />
-                                <FinancialSummaryPanel projectId={projectId} engagementType={engagementType} currency={budgetCurrency} />
-                            </>
+                            <FinancialSummaryPanel projectId={projectId} engagementType={engagementType} currency={budgetCurrency} />
                         )}
 
-                        {activeTab === 'Finances' && (
-                            <div className="space-y-4">
-                                {/* Quotes Section */}
-                                <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
-                                    <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-between transition-colors">
-                                        <h3 className="font-semibold text-blue-600 dark:text-blue-400 text-sm">Quotes</h3>
-                                        <button
-                                            onClick={() => navigate(
-                                                `/pipeline/add-quote?forProject=${projectId}`,
-                                                { state: { clientName: project?.company_name } }
-                                            )}
-                                            className="text-black-800 dark:text-gray-300 text-sm font-medium hover:text-blue-600 dark:hover:text-blue-400"
-                                        >
-                                            New Quote
-                                        </button>
-                                    </div>
-                                    <div className="px-6 py-4 bg-white dark:bg-gray-900">
-                                        {isLoadingQuotation ? (
-                                            <p className="text-gray-500 dark:text-gray-400 text-sm">Loading quotes...</p>
-                                        ) : projectQuotes.length > 0 ? (
-                                            <div className="space-y-2">
-                                                {projectQuotes.map((quote) => (
-                                                    <div
-                                                        key={quote.quote_no}
-                                                        onClick={() => navigate(`/pipeline/quote/${quote.quote_no}`)}
-                                                        className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg cursor-pointer transition-colors border border-gray-100 dark:border-gray-800"
-                                                    >
-                                                        <div className="flex-1">
-                                                            <div className="flex items-center gap-3">
-                                                                <span className="font-medium text-gray-900 dark:text-white">
-                                                                    Quote #{quote.quote_no}
-                                                                </span>
-                                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${quote.status === 'Confirmed'
-                                                                    ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300'
-                                                                    : quote.status === 'Sent'
-                                                                        ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                                                                        : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                                                                    }`}>
-                                                                    {quote.status || 'Draft'}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                                                <span>{quote.quote_name || 'Untitled Quote'}</span>
-                                                                <span>Amount: ₹{quote.total_amount || '0'}</span>
-                                                                {quote.date_of_issue && (
-                                                                    <span>Date: {new Date(quote.date_of_issue).toLocaleDateString()}</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                                        </svg>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <p className="text-gray-500 dark:text-gray-400 text-sm">No quotes to display</p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Purchase Orders Section */}
-                                <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
-                                    <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-between transition-colors">
-                                        <h3 className="font-semibold text-blue-600 dark:text-blue-400 text-sm">Purchase orders</h3>
-                                        <button
-                                            onClick={() => {
-                                                const quotationId = project?.created_from_quotation;
-                                                if (quotationId) {
-                                                    navigate(`/create-purchase-order/${quotationId}`);
-                                                } else {
-                                                    toast.error('No quotation associated with this project.');
-                                                }
-                                            }}
-                                            className="text-black-800 dark:text-gray-300 text-sm font-medium hover:text-blue-700 dark:hover:text-blue-300"
-                                        >
-                                            New Purchase Order
-                                        </button>
-                                    </div>
-                                    <div className="px-6 py-4 bg-white dark:bg-gray-900">
-                                        {isLoadingPOs ? (
-                                            <p className="text-gray-500 dark:text-gray-400 text-sm">Loading purchase orders...</p>
-                                        ) : purchaseOrders.length === 0 ? (
-                                            <p className="text-gray-500 dark:text-gray-400 text-sm">No purchase orders to display</p>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {purchaseOrders.map((po: any) => (
-                                                    <div
-                                                        key={po.po_id}
-                                                        onClick={() => navigate(`/purchase-orders/${po.po_id}`)}
-                                                        className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg cursor-pointer transition-colors border border-gray-100 dark:border-gray-800"
-                                                    >
-                                                        <div className="flex-1">
-                                                            <div className="flex items-center gap-3">
-                                                                <span className="font-medium text-gray-900 dark:text-white">
-                                                                    {po.po_no}
-                                                                </span>
-                                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${po.status === 'confirmed' || po.status === 'completed'
-                                                                    ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300'
-                                                                    : po.status === 'sent'
-                                                                        ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                                                                        : 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                                                                    }`}>
-                                                                    {po.status.charAt(0).toUpperCase() + po.status.slice(1)}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                                                <span>Vendor: {po.vendor_name}</span>
-                                                                <span>Amount: ₹{parseFloat(po.total_amount).toLocaleString('en-IN')}</span>
-                                                                <span>Items: {po.items_count}</span>
-                                                                {po.issue_date && (
-                                                                    <span>Date: {new Date(po.issue_date).toLocaleDateString()}</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                                        </svg>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Bills Section */}
-                                <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
-                                    <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-between transition-colors">
-                                        <div>
-                                            <h3 className="font-semibold text-blue-600 dark:text-blue-400 text-sm">Bills</h3>
-                                            {billsSummary && (
-                                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                                    Total Paid: ₹{parseFloat(billsSummary.total_paid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="px-6 py-4 bg-white dark:bg-gray-900">
-                                        {isLoadingBills ? (
-                                            <p className="text-gray-500 dark:text-gray-400 text-sm">Loading bills...</p>
-                                        ) : bills.length === 0 ? (
-                                            <p className="text-gray-500 dark:text-gray-400 text-sm">No bills to display</p>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {bills.map((bill: any) => {
-                                                    // Get status badge color
-                                                    const getStatusBadge = (status: string) => {
-                                                        switch (status?.toLowerCase()) {
-                                                            case 'paid':
-                                                                return 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300';
-                                                            case 'partially_paid':
-                                                                return 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-800 dark:text-yellow-300';
-                                                            case 'unpaid':
-                                                                return 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300';
-                                                            default:
-                                                                return 'bg-gray-100 dark:bg-gray-800 text-gray-800';
-                                                        }
-                                                    };
-
-                                                    // Format status text
-                                                    const formatStatus = (status: string) => {
-                                                        return status?.replace('_', ' ').split(' ').map(word =>
-                                                            word.charAt(0).toUpperCase() + word.slice(1)
-                                                        ).join(' ') || 'Unknown';
-                                                    };
-
-                                                    return (
-                                                        <div
-                                                            key={bill.id}
-                                                            onClick={() => {
-                                                                // Navigate to bill details page using the bill id
-                                                                navigate(`/bills/${bill.id}`);
-                                                            }}
-                                                            className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg cursor-pointer transition-colors border border-gray-100 dark:border-gray-800"
-                                                        >
-                                                            <div className="flex-1">
-                                                                <div className="flex items-center gap-3">
-                                                                    <span className="font-medium text-gray-900 dark:text-white">
-                                                                        {bill.bill_no}
-                                                                    </span>
-                                                                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                                                                        PO: {bill.po_no}
-                                                                    </span>
-                                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(bill.status)}`}>
-                                                                        {formatStatus(bill.status)}
-                                                                    </span>
-                                                                    {bill.payment_count > 0 && (
-                                                                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300 rounded-full text-xs font-medium">
-                                                                            {bill.payment_count} {bill.payment_count === 1 ? 'Payment' : 'Payments'}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                                                    <span>Vendor: {bill.vendor}</span>
-                                                                    <span>Total: ₹{parseFloat(bill.total_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                                                    <span>Paid: ₹{parseFloat(bill.paid_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                                                    <span>Balance: ₹{parseFloat(bill.balance_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                                                </div>
-                                                            </div>
-                                                            <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                                            </svg>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                            </div>
-                        )}
-
-                        {activeTab === 'Details' && (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                {/* Left Column */}
-                                <div className="space-y-6">
-                                    {/* Project Info Section */}
-                                    <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
-
-                                        <div className="px-6 py-6 bg-white dark:bg-gray-900">
-                                            {project ? (
-                                                <div className="space-y-4">
-                                                    {/* Project Name */}
-                                                    {project.project_name && (
-                                                        <div>
-                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Project Name</label>
-                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">{project.project_name}</p>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Budget */}
-                                                    <div>
-                                                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Budget</label>
-                                                        <p className="text-sm text-gray-900 dark:text-white mt-1">
-                                                            ₹{(() => {
-                                                                // Handle nested budget object structure as per user's API response
-                                                                const val = project.budget?.total_budget ||
-                                                                    project.budget ||
-                                                                    project.total_budget ||
-                                                                    project.project_budget ||
-                                                                    project.cost ||
-                                                                    project.value ||
-                                                                    '0';
-                                                                const num = parseFloat(String(val).replace(/[^0-9.-]+/g, ""));
-                                                                return (isNaN(num) ? 0 : num).toLocaleString('en-IN', {
-                                                                    minimumFractionDigits: 2,
-                                                                    maximumFractionDigits: 2
-                                                                });
-                                                            })()}
-                                                        </p>
-                                                    </div>
-
-                                                    {/* Start Date */}
-                                                    {project.start_date && (
-                                                        <div>
-                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Start Date</label>
-                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">
-                                                                {new Date(project.start_date).toLocaleDateString('en-GB', {
-                                                                    day: '2-digit',
-                                                                    month: 'short',
-                                                                    year: 'numeric'
-                                                                })}
-                                                            </p>
-                                                        </div>
-                                                    )}
-
-                                                    {/* End Date */}
-                                                    {project.end_date && (
-                                                        <div>
-                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">End Date</label>
-                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">
-                                                                {new Date(project.end_date).toLocaleDateString('en-GB', {
-                                                                    day: '2-digit',
-                                                                    month: 'short',
-                                                                    year: 'numeric'
-                                                                })}
-                                                            </p>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Project Type */}
-                                                    {project.project_type && (
-                                                        <div>
-                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Project Type</label>
-                                                            <p className="text-sm text-gray-900 dark:text-white mt-1 capitalize">{project.project_type}</p>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Call Center */}
-                                                    {project.call_center_name && (
-                                                        <div>
-                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Call Center</label>
-                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">{project.call_center_name}</p>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Profit Center */}
-                                                    {project.profit_center_name && (
-                                                        <div>
-                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Profit Center</label>
-                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">{project.profit_center_name}</p>
-                                                        </div>
-                                                    )}
-
-                                                    {/* GL Account */}
-                                                    {project.gl_account_name && (
-                                                        <div>
-                                                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">GL Account</label>
-                                                            <p className="text-sm text-gray-900 dark:text-white mt-1">
-                                                                {project.gl_account_code ? `${project.gl_account_code} - ` : ''}{project.gl_account_name}
-                                                            </p>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <p className="text-gray-500 dark:text-gray-400 text-sm">No project info to display</p>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Project Contract Section (Fixed Budget only) */}
-                                    {project && project.engagement_type === 'fixed' && project.contract_value != null && (
-                                        <div className="border border-gray-200 rounded-lg overflow-hidden dark:border-gray-800">
-                                            <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800">
-                                                <h3 className="font-semibold text-gray-900 text-sm dark:text-white">Project Contract</h3>
-                                            </div>
-                                            <div className="px-6 py-6 bg-white dark:bg-gray-900">
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="text-xs font-medium text-gray-500 uppercase dark:text-gray-400">Contract Value</label>
-                                                        <p className="text-sm font-semibold text-gray-900 mt-1 dark:text-white">
-                                                            {fmtCurrency(project.contract_value, project.budget?.currency || project.currency)}
-                                                        </p>
-                                                        {project.created_from_quotation && (
-                                                            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">Excluding GST</p>
-                                                        )}
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs font-medium text-gray-500 uppercase dark:text-gray-400">Project %</label>
-                                                        <p className="text-sm font-semibold text-gray-900 mt-1 dark:text-white">
-                                                            {project.project_percentage != null ? `${project.project_percentage}%` : '—'}
-                                                        </p>
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs font-medium text-gray-500 uppercase dark:text-gray-400">Profit Margin</label>
-                                                        <p className="text-sm font-semibold text-gray-900 mt-1 dark:text-white">
-                                                            {project.project_amount != null
-                                                                ? fmtCurrency(project.project_amount, project.budget?.currency || project.currency)
-                                                                : '—'}
-                                                        </p>
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs font-medium text-gray-500 uppercase dark:text-gray-400">Remaining Amount</label>
-                                                        <p className="text-sm font-semibold text-gray-900 mt-1 dark:text-white">
-                                                            {project.remaining_amount != null
-                                                                ? fmtCurrency(project.remaining_amount, project.budget?.currency || project.currency)
-                                                                : '—'}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Files Section */}
-                                    <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
-                                        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
-                                            <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Files</h3>
-                                            <input
-                                                type="file"
-                                                ref={fileInputRef}
-                                                onChange={handleFileSelect}
-                                                className="hidden"
-                                            />
-                                            <button
-                                                onClick={() => fileInputRef.current?.click()}
-                                                disabled={isUploading}
-                                                className="text-blue-600 dark:text-blue-400 text-sm font-medium hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                <span>{isUploading ? '⌛' : '📎'}</span> {isUploading ? 'Uploading...' : 'Add Files'}
-                                            </button>
-                                        </div>
-                                        <div className="px-6 py-6 bg-white dark:bg-gray-900">
-                                            {isLoadingAttachments ? (
-                                                <p className="text-gray-500 dark:text-gray-400 text-sm">Loading files...</p>
-                                            ) : attachments.length > 0 ? (
-                                                <div className="space-y-3">
-                                                    {attachments.map((attachment: any) => (
-                                                        <div
-                                                            key={attachment.id}
-                                                            className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                                                        >
-                                                            <div className="flex items-center gap-3 flex-1">
-                                                                <span className="text-2xl">{getFileIcon(attachment.file_type)}</span>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                                                                            {attachment.file_name}
-                                                                        </p>
-                                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${attachment.category === 'contract' ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300' :
-                                                                            attachment.category === 'invoice' ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300' :
-                                                                                attachment.category === 'report' ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300' :
-                                                                                    attachment.category === 'proposal' ? 'bg-yellow-50 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-300' :
-                                                                                        'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                                                                            }`}>
-                                                                            {attachment.category}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                                                        <span>{formatFileSize(attachment.file_size)}</span>
-                                                                        <span>•</span>
-                                                                        <span>{attachment.uploaded_by_name}</span>
-                                                                        <span>•</span>
-                                                                        <span>{new Date(attachment.uploaded_at).toLocaleDateString('en-GB', {
-                                                                            day: '2-digit',
-                                                                            month: 'short',
-                                                                            year: 'numeric'
-                                                                        })}</span>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                            <button
-                                                                onClick={() => handleFileDownload(attachment)}
-                                                                className="ml-3 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-500/15 rounded-md transition-colors"
-                                                            >
-                                                                Download
-                                                            </button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <p className="text-gray-500 dark:text-gray-400 text-sm">No Files to display</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Right Column */}
-                                <div className="space-y-6">
-                                    {/* Related Contacts Section */}
-                                    <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
-                                        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
-                                            <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Related Contacts</h3>
-
-                                        </div>
-                                        <div className="px-6 py-6 bg-white dark:bg-gray-900">
-                                            {project?.contacts && project.contacts.length > 0 ? (
-                                                <div className="space-y-3">
-                                                    {project.contacts.map((contact: any) => (
-                                                        <div
-                                                            key={contact.id}
-                                                            className="p-4 border border-gray-200 dark:border-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                                                        >
-                                                            <div className="flex items-start justify-between">
-                                                                <div className="flex-1">
-                                                                    <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
-                                                                        {contact.poc_name}
-                                                                    </h4>
-                                                                    {contact.designation && (
-                                                                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                                                            {contact.designation}
-                                                                        </p>
-                                                                    )}
-                                                                    {contact.company_name && (
-                                                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                                                            {contact.company_name}
-                                                                        </p>
-                                                                    )}
-                                                                    <div className="mt-2 space-y-1">
-                                                                        {contact.poc_email && (
-                                                                            <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                                                                </svg>
-                                                                                <a
-                                                                                    href={`mailto:${contact.poc_email}`}
-                                                                                    className="hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
-                                                                                >
-                                                                                    {contact.poc_email}
-                                                                                </a>
-                                                                            </div>
-                                                                        )}
-                                                                        {contact.poc_mobile && (
-                                                                            <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                                                                                </svg>
-                                                                                <a
-                                                                                    href={`tel:${contact.poc_mobile}`}
-                                                                                    className="hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
-                                                                                >
-                                                                                    {contact.poc_mobile}
-                                                                                </a>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <p className="text-gray-500 dark:text-gray-400 text-sm">No Contacts to display</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'Payments' && (
+                        {activeTab === 'Payment' && (
                             <div className="space-y-6">
                                 {/* Payment Summary Cards */}
                                 {!isLoadingPayments && paymentSummary && (
@@ -2275,7 +1309,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                         if (payment.type === 'Incoming') {
                                                             return (
                                                                 <span
-                                                                    onClick={() => navigate(`/invoices/${payment.invoice_id}`)}
+                                                                    onClick={() => setOpenInvoiceId(payment.invoice_id)}
                                                                     className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline cursor-pointer"
                                                                 >
                                                                     {payment.invoice_no}
@@ -2287,7 +1321,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                 return (
                                                                     <div className="flex flex-col gap-1">
                                                                         <span
-                                                                            onClick={() => navigate(`/bills/${payment.id}`)}
+                                                                            onClick={() => setOpenBillId(payment.id)}
                                                                             className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline cursor-pointer"
                                                                         >
                                                                             {payment.bill_no}
@@ -2303,7 +1337,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                 return (
                                                                     <div className="flex flex-col gap-1">
                                                                         <span
-                                                                            onClick={() => navigate(`/expenses/${payment.id}`)}
+                                                                            onClick={() => setOpenExpenseId(payment.id)}
                                                                             className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline cursor-pointer"
                                                                         >
                                                                             {payment.expense_no}
@@ -2396,6 +1430,11 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                 </div>
             </div>
 
+            {/* Invoice / bill / expense details - drawers instead of separate pages */}
+            <InvoiceDrawer invoiceId={openInvoiceId} onClose={() => setOpenInvoiceId(null)} onChanged={refreshFinancials} />
+            <BillDrawer billId={openBillId} onClose={() => setOpenBillId(null)} onChanged={refreshFinancials} />
+            <ExpenseDrawer expenseId={openExpenseId} onClose={() => setOpenExpenseId(null)} onChanged={refreshFinancials} />
+
             {/* Add Task Modal */}
             {
                 isAddTaskModalOpen && project && (
@@ -2445,17 +1484,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                 )
             }
 
-            {/* Add Expense Modal */}
-            {
-                isAddExpenseModalOpen && projectId && (
-                    <AddExpenseModal
-                        isOpen={isAddExpenseModalOpen}
-                        onClose={() => setIsAddExpenseModalOpen(false)}
-                        projectId={projectId}
-                        onExpenseAdded={handleExpenseAdded}
-                    />
-                )
-            }
         </Layout >
     );
 };

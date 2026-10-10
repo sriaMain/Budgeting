@@ -2,7 +2,7 @@ import React from 'react';
 import { Archive, ArchiveRestore, Star } from 'lucide-react';
 import { StatusBadge } from '../../../components/StatusBadge';
 import type { VendorOnboardingDetail } from '../../../types/vendorOnboarding.types';
-import { formatAmount, fyLabel, vendorStatusLabel } from './vendorDisplay';
+import { formatAmount, fyLabel, vendorOnboarding, vendorStatusLabel } from './vendorDisplay';
 
 const initials = (name: string) =>
   (name || '?')
@@ -90,7 +90,7 @@ export const VendorCard: React.FC<VendorCardProps> = ({ vendor, selected, onSele
         </div>
         <p className="text-xs text-gray-500 mt-1.5 dark:text-gray-400">
           {consumption === null || consumption === undefined ? 'No committed PO yet' : `PO consumption · ${consumption}%`}
-          <span className="float-right">Onboarding · {vendor.onboarding?.completed_steps ?? 0}/{vendor.onboarding?.total_steps ?? 5}</span>
+          <span className="float-right">Onboarding · {vendorOnboarding(vendor).completed_steps}/{vendorOnboarding(vendor).total_steps}</span>
         </p>
       </div>
 

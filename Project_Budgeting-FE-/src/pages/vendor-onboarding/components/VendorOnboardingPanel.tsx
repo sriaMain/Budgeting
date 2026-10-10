@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { OnboardingStepCards, markCurrentStep, type StepCardItem } from '../../../components/OnboardingStepCards';
 import { StatusBadge } from '../../../components/StatusBadge';
 import { StarRating } from './StarRating';
-import { vendorStatusLabel } from './vendorDisplay';
+import { vendorOnboarding, vendorStatusLabel } from './vendorDisplay';
 import type { VendorOnboardingDetail, VendorOnboardingStepKey } from '../../../types/vendorOnboarding.types';
 
 /** The 5 vendor onboarding steps, in the same order as the backend's VENDOR_ONBOARDING_STEPS. */
@@ -24,9 +24,9 @@ export const resolveVendorSteps = (vendor: VendorOnboardingDetail): StepCardItem
       key: s.key,
       title: s.title,
       description: s.description,
-      status: vendor.onboarding?.step_statuses?.[s.key] ?? 'pending',
+      status: vendorOnboarding(vendor).step_statuses[s.key] ?? 'pending',
     })),
-    vendor.onboarding?.current_step
+    vendorOnboarding(vendor).current_step
   );
 
 interface VendorOnboardingPanelProps {
@@ -54,7 +54,7 @@ export const VendorOnboardingPanel: React.FC<VendorOnboardingPanelProps> = ({ ve
             {vendor ? (
               <>
                 <span className="font-medium text-gray-700 dark:text-gray-200">{vendor.name || 'Untitled vendor'}</span>
-                {' '}&middot; {current ? `Pending at ${current.title}` : 'All steps complete'} &middot; {vendor.onboarding?.percent ?? 0}% complete
+                {' '}&middot; {current ? `Pending at ${current.title}` : 'All steps complete'} &middot; {vendorOnboarding(vendor).percent}% complete
               </>
             ) : (
               <>Intake &rarr; tax and KYC &rarr; banking &rarr; contract &rarr; approved</>

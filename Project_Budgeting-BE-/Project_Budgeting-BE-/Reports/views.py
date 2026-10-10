@@ -343,8 +343,10 @@ class AdminDashboardOverviewAPIView(APIView):
         invoiced_qs = Invoice.objects.exclude(status="Cancelled")
         total_revenue = _money_sum(invoiced_qs, "total_amount")
 
+        # Bill-linked expenses are already in the bill payments - cost_bearing()
+        # keeps them from being counted twice.
         total_cost = _money_sum(OutgoingPayment.objects.all(), "amount") + _money_sum(
-            Expense.objects.all(), "amount"
+            Expense.objects.cost_bearing(), "amount"
         )
 
         gross_profit = total_revenue - total_cost

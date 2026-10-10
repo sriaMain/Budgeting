@@ -9,6 +9,7 @@ import type {
   Choice, VendorAuditLogEntry, VendorOnboardingDetail, VendorRequirementIssue, RequestChangesPayload,
 } from '../../../types/vendorOnboarding.types';
 import { VENDOR_ONBOARDING_STEPS } from './VendorOnboardingPanel';
+import { vendorOnboarding } from './vendorDisplay';
 
 interface Props {
   vendor: VendorOnboardingDetail;
@@ -50,7 +51,7 @@ export const VendorApprovalStep: React.FC<Props> = ({ vendor, sectionOptions, on
   const perms = vendor.permissions;
   const submissionIssues = vendor.onboarding?.submission_issues ?? [];
   const approvalIssues = vendor.onboarding?.approval_issues ?? [];
-  const statuses = vendor.onboarding?.step_statuses;
+  const statuses = vendorOnboarding(vendor).step_statuses;
   const underReview = UNDER_REVIEW.includes(vendor.status);
   const canSubmit = perms?.submit && ['draft', 'action_required', 'invited'].includes(vendor.status);
   const approvalReady = submissionIssues.length === 0 && approvalIssues.length === 0;

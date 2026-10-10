@@ -54,6 +54,13 @@ class VendorOnboardingProfileSerializer(serializers.ModelSerializer):
         exclude = ("id", "vendor", "created_at", "updated_at")
 
 
+class VendorPublicOnboardingProfileSerializer(VendorOnboardingProfileSerializer):
+    """Portal variant - the internal rating, headcount and spend are never shown to or writable by the vendor."""
+
+    class Meta(VendorOnboardingProfileSerializer.Meta):
+        exclude = VendorOnboardingProfileSerializer.Meta.exclude + ("rating", "headcount", "manual_amount_spent")
+
+
 class VendorKYCSerializer(serializers.ModelSerializer):
     class Meta:
         model = VendorKYC
@@ -257,7 +264,7 @@ class VendorOnboardingDetailSerializer(_VendorApprovalStageMixin, serializers.Mo
 class VendorPublicDetailSerializer(_VendorApprovalStageMixin, serializers.ModelSerializer):
     """Public, token-scoped view - excludes anything admin-internal (created_by,
     approval history, is_current_approver, etc.)."""
-    onboarding_profile = VendorOnboardingProfileSerializer(read_only=True)
+    onboarding_profile = VendorPublicOnboardingProfileSerializer(read_only=True)
     kyc = VendorKYCSerializer(read_only=True)
     bank_detail = VendorBankDetailSerializer(read_only=True)
     procurement_detail = VendorProcurementDetailSerializer(read_only=True)

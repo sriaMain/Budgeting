@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from cloudinary.models import CloudinaryField
 
@@ -90,6 +91,19 @@ class VendorOnboardingProfile(models.Model):
     finance_manager_name = models.CharField(max_length=150, blank=True)
     finance_manager_email = models.EmailField(blank=True)
     finance_manager_mobile = models.CharField(max_length=15, blank=True)
+
+    # Internal vendor-master attributes ("Vendor Summary" in the admin drawer) - kept editable
+    # after submission/approval (see views.VENDOR_MASTER_FIELDS) and never exposed to or
+    # writable by the vendor portal (VendorPublicOnboardingProfileSerializer).
+    headcount = models.PositiveIntegerField(null=True, blank=True)
+    # 1-5 star performance rating.
+    rating = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(5)],
+    )
+    # This financial year's spend that isn't recorded as vendor bills (e.g. paid before go-live).
+    manual_amount_spent = models.DecimalField(
+        max_digits=15, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)],
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

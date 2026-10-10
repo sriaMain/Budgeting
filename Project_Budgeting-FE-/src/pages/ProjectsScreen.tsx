@@ -389,7 +389,6 @@ export default function ProjectsScreen(_props: any) {
 					setIsCreateModalOpen(false);
 					fetchProjects(); // Refresh list after creation
 				}}
-				hideBudgetTab={true}
 			/>
 
 			{isFilterModalOpen && (

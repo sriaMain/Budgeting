@@ -65,7 +65,7 @@ export const RequestExtraHoursModal: React.FC<RequestExtraHoursModalProps> = ({
     e.preventDefault();
 
     // Validate HH:MM:SS or HH:MM format
-    const timePattern = /^([0-9]{1,2}):([0-5][0-9])(:([0-5][0-9]))?$/;
+    const timePattern = /^([0-9]{1,5}):([0-5][0-9])(:([0-5][0-9]))?$/;
     if (!timePattern.test(requestedHours)) {
       toast.error('Please enter time in HH:MM:SS or HH:MM format (e.g., 05:30:00 or 05:30)');
       return;
@@ -194,7 +194,7 @@ export const RequestExtraHoursModal: React.FC<RequestExtraHoursModalProps> = ({
               placeholder="HH:MM:SS (e.g., 05:30:00)"
               required
               disabled={isSubmitting}
-              pattern="[0-9]{1,2}:[0-5][0-9](:[0-5][0-9])?"
+              pattern="[0-9]{1,5}:[0-5][0-9](:[0-5][0-9])?"
             />
             <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               Auto-calculated as (Consumed - Allocated) in HH:MM:SS format. You can adjust this value as needed.

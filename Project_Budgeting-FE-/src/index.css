@@ -61,3 +61,15 @@ html.dark {
 .animate-slideInFromRight {
   animation: slideInFromRight 0.3s ease-out;
 }
+/* Hide the native up/down spinner arrows on every number input app-wide -
+   values are typed, not stepped. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

@@ -1,6 +1,10 @@
 /**
  * Create Project Modal Component
- * Modal with tabbed interface for creating projects from quotes
+ * Single-page form for creating a project (from a quote, or internal).
+ * Budget figures aren't asked for here: a quote-based project uses the
+ * quote's amounts, an internal one starts from its contract value / monthly
+ * billing amount, and the spending budget can be adjusted later from the
+ * project's Financials tab.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -19,10 +23,7 @@ interface CreateProjectModalProps {
     quoteName?: string;
     clientName?: string;
     authorName?: string;
-    hideBudgetTab?: boolean; // Hide budget tab when creating from admin projects page
 }
-
-type TabType = 'project' | 'budget';
 
 type EngagementType = 'fixed' | 'time_and_material';
 
@@ -37,27 +38,6 @@ const BILLING_FREQUENCIES: { value: string; label: string }[] = [
     { value: 'monthly', label: 'Monthly' },
 ];
 
-interface ProjectManagerOption {
-    id: number;
-    name: string;
-    designation?: string;
-}
-
-type PocCategory = 'employee' | 'vendor' | 'freelancer';
-
-interface PocOption {
-    id: number;
-    type: PocCategory;
-    name: string;
-    subtitle: string;
-}
-
-const POC_CATEGORIES: { value: PocCategory; label: string }[] = [
-    { value: 'employee', label: 'Employee' },
-    { value: 'vendor', label: 'Vendor' },
-    { value: 'freelancer', label: 'Freelancer' },
-];
-
 export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     isOpen,
     onClose,
@@ -65,11 +45,8 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     quoteName = '',
     clientName = '',
     authorName = '',
-    hideBudgetTab = false
 }) => {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<TabType>('project');
-    const [budgetMethod, setBudgetMethod] = useState<'quoted' | 'manual'>('quoted');
     const [isSaving, setIsSaving] = useState(false);
 
     // Form state
@@ -95,60 +72,8 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     const [billingFrequency, setBillingFrequency] = useState('monthly');
     const [monthlyBillingAmount, setMonthlyBillingAmount] = useState('');
 
-    // Project Contract: Project % and Project Amount are kept in sync with
-    // each other (and with contract value) by the handlers below - only one
-    // of the two needs to be entered, the other is derived. Remaining Amount
-    // is never stored as its own input state; it's always computed from
-    // contractValue/projectAmount at render time.
-    const [projectPercentage, setProjectPercentage] = useState('');
-    const [projectAmount, setProjectAmount] = useState('');
-
-    // Project Manager + POC
-    const [projectManagerOptions, setProjectManagerOptions] = useState<SearchableSelectOption[]>([]);
-    const [projectManager, setProjectManager] = useState<SearchableSelectOption | null>(null);
-
-    // Raw combined list from the API, kept as-is (with type) so the POC
-    // dropdown can be filtered per category without a second round-trip.
-    const [pocOptionsRaw, setPocOptionsRaw] = useState<PocOption[]>([]);
-    const [pocCategory, setPocCategory] = useState<PocCategory>('employee');
-    const [poc, setPoc] = useState<SearchableSelectOption | null>(null);
-
-    // Only the selected category's records, never labeled with their type
-    // (the segmented control above already conveys that) - instead show a
-    // category-relevant detail: an employee's modules, or a vendor's role
-    // (e.g. Company/LLP). Freelancer's only distinguishing field is its
-    // vendor_type, which would just re-state "Freelancer", so it's omitted.
-    const pocOptions: SearchableSelectOption[] = pocOptionsRaw
-        .filter((p) => p.type === pocCategory)
-        .map((p) => ({
-            id: p.id,
-            label: p.name,
-            sublabel: pocCategory !== 'freelancer' && p.subtitle ? p.subtitle : undefined,
-        }));
-
-    const handlePocCategoryChange = (category: PocCategory) => {
-        setPocCategory(category);
-        setPoc(null);
-    };
-
     useEffect(() => {
         if (!isOpen) return;
-        axiosInstance.get<ProjectManagerOption[]>('/projects/project-managers/')
-            .then((res) => {
-                setProjectManagerOptions(
-                    (res.data || []).map((pm) => ({
-                        id: pm.id,
-                        label: pm.name,
-                        sublabel: pm.designation || undefined,
-                    }))
-                );
-            })
-            .catch((err) => console.error('Failed to fetch project managers:', err));
-
-        axiosInstance.get<PocOption[]>('/projects/poc-options/')
-            .then((res) => setPocOptionsRaw(res.data || []))
-            .catch((err) => console.error('Failed to fetch POC options:', err));
-
         axiosInstance.get<{ id: number; company_name: string }[]>('/client/dropdown/?ready_only=1')
             .then((res) => {
                 const options = (res.data || []).map((c) => ({ id: c.id, label: c.company_name }));
@@ -169,15 +94,10 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             })
             .catch((err) => console.error('Failed to fetch clients:', err));
 
-        setProjectManager(null);
-        setPocCategory('employee');
-        setPoc(null);
         setEngagementType('fixed');
         setContractValue('');
         setBillingFrequency('monthly');
         setMonthlyBillingAmount('');
-        setProjectPercentage('');
-        setProjectAmount('');
     }, [isOpen, clientName]);
 
     // Show the client's own saved contact person for reference - separate
@@ -248,77 +168,14 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 
     if (!isOpen) return null;
 
-    // Project Contract: Contract Value x Project % = Project Amount, and
-    // Remaining Amount = Contract Value - Project Amount. Only one of
-    // Project %/Project Amount needs to be entered - the other three
-    // handlers below keep everything else in sync so the fields never
-    // disagree with each other.
-    const handleContractValueChange = (value: string) => {
-        setContractValue(value);
-        const cv = parseFloat(value) || 0;
-        if (projectAmount !== '') {
-            const amt = parseFloat(projectAmount) || 0;
-            setProjectPercentage(cv > 0 ? ((amt / cv) * 100).toFixed(2) : '');
-        } else if (projectPercentage !== '') {
-            const pct = parseFloat(projectPercentage) || 0;
-            setProjectAmount(cv > 0 ? ((cv * pct) / 100).toFixed(2) : '');
-        }
-    };
-
-    const handleProjectPercentageChange = (value: string) => {
-        setProjectPercentage(value);
-        const cv = parseFloat(contractValue) || 0;
-        const pct = parseFloat(value);
-        setProjectAmount(!isNaN(pct) && cv > 0 ? ((cv * pct) / 100).toFixed(2) : '');
-    };
-
-    const handleProjectAmountChange = (value: string) => {
-        setProjectAmount(value);
-        const cv = parseFloat(contractValue) || 0;
-        const amt = parseFloat(value);
-        setProjectPercentage(!isNaN(amt) && cv > 0 ? ((amt / cv) * 100).toFixed(2) : '');
-    };
-
-    const remainingAmountDisplay = (() => {
-        if (!contractValue) return '—';
-        const cv = parseFloat(contractValue) || 0;
-        const amt = parseFloat(projectAmount) || 0;
-        return `${(cv - amt).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${priceList}`;
-    })();
-
     const handleCreateProject = async () => {
         if (!projectName) {
             toast.error('Project name is required');
             return;
         }
-        if (engagementType === 'fixed' && !contractValue) {
-            toast.error('Contract value is required for Fixed Budget / Milestone-Based projects');
-            return;
-        }
         if (engagementType === 'time_and_material' && !monthlyBillingAmount) {
             toast.error('Monthly billing amount is required for Time & Material projects');
             return;
-        }
-        if (engagementType === 'fixed' && (projectPercentage !== '' || projectAmount !== '')) {
-            const cv = parseFloat(contractValue) || 0;
-            if (projectPercentage !== '') {
-                const pct = parseFloat(projectPercentage);
-                if (isNaN(pct) || pct < 0 || pct > 100) {
-                    toast.error('Project % must be between 0 and 100');
-                    return;
-                }
-            }
-            if (projectAmount !== '') {
-                const amt = parseFloat(projectAmount);
-                if (isNaN(amt) || amt < 0) {
-                    toast.error('Profit Margin cannot be negative');
-                    return;
-                }
-                if (amt > cv) {
-                    toast.error('Profit Margin cannot be greater than Contract Value');
-                    return;
-                }
-            }
         }
 
         setIsSaving(true);
@@ -351,27 +208,19 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             };
 
             if (engagementType === 'fixed') {
-                payload.contract_value = parseFloat(contractValue);
-                if (projectAmount !== '') {
-                    payload.project_amount = parseFloat(projectAmount);
-                }
-                if (projectPercentage !== '') {
-                    payload.project_percentage = parseFloat(projectPercentage);
-                }
+                // Not asked for in this form any more - the backend still
+                // requires it, so send the quote's pre-tax sub_total (or 0)
+                // and let it be edited later from the project page.
+                payload.contract_value = parseFloat(contractValue) || 0;
             } else {
                 payload.monthly_billing_amount = parseFloat(monthlyBillingAmount);
                 payload.billing_frequency = billingFrequency;
+                // No separate budget here - the backend starts each month's spending
+                // budget at the billing amount; it can be changed on the Financials tab.
             }
 
             if (client) {
                 payload.client = client.id;
-            }
-            if (projectManager) {
-                payload.project_manager = projectManager.id;
-            }
-            if (poc) {
-                payload.poc_type = pocCategory;
-                payload.poc_id = poc.id;
             }
 
             // Configure budget based on project type
@@ -381,26 +230,16 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                 payload.budget.total_hours = parseFloat(totalHours) || 0;
                 payload.budget.total_budget = parseFloat(totalBudget) || 0;
             } else {
-                // External projects
-                payload.budget.use_quoted_amounts = budgetMethod === 'quoted';
+                // External projects take their budget from the quote
+                payload.budget.use_quoted_amounts = true;
 
                 // Include quotation ID for external projects
                 if (quoteId) {
                     payload.created_from_quotation = quoteId;
                 }
 
-                // Add budget fields based on method
-                if (budgetMethod === 'manual') {
-                    payload.budget.total_hours = parseFloat(totalHours) || 0;
-                    if (totalBudget) {
-                        payload.budget.total_budget = parseFloat(totalBudget);
-                    }
+                if (billsExpenses) {
                     payload.budget.bills_and_expenses = parseFloat(billsExpenses) || 0;
-                } else {
-                    // For quoted amounts, include bills_and_expenses if provided
-                    if (billsExpenses) {
-                        payload.budget.bills_and_expenses = parseFloat(billsExpenses) || 0;
-                    }
                 }
             }
 
@@ -484,42 +323,8 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                         </p>
                     </div>
 
-                    {/* Tabs */}
-                    <div className="border-b border-gray-200 dark:border-gray-800 px-6">
-                        <div className="flex gap-1">
-                            <button
-                                onClick={() => setActiveTab('project')}
-                                className={`px-6 py-3 font-semibold text-sm transition-colors relative ${activeTab === 'project'
-                                    ? 'text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800'
-                                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800'
-                                    }`}
-                            >
-                                Project Settings
-                                {activeTab === 'project' && (
-                                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
-                                )}
-                            </button>
-                            {!hideBudgetTab && (
-                                <button
-                                    onClick={() => setActiveTab('budget')}
-                                    className={`px-6 py-3 font-semibold text-sm transition-colors relative ${activeTab === 'budget'
-                                        ? 'text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800'
-                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800'
-                                        }`}
-                                >
-                                    Budget Settings
-                                    {activeTab === 'budget' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
-                                    )}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Tab Content */}
+                    {/* Form */}
                     <div className="p-6">
-                        {activeTab === 'project' ? (
-                            /* Project Settings Tab */
                             <div className="space-y-6">
                                 {/* Project Name */}
                                 <div className="grid grid-cols-2 gap-6">
@@ -559,17 +364,8 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                         ))}
                                     </div>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                                        {engagementType === 'fixed' ? (
-                                            <InputField
-                                                label={`Contract value (${priceList})${quoteId ? ' - excl. GST' : ''}`}
-                                                type="number"
-                                                value={contractValue}
-                                                onChange={(e) => handleContractValueChange(e.target.value)}
-                                                placeholder="0"
-                                            />
-                                        ) : (
-                                            <>
+                                    {engagementType === 'time_and_material' && (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                                                 <InputField
                                                     label={`Monthly billing amount (${priceList})`}
                                                     type="number"
@@ -589,55 +385,6 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                         ))}
                                                     </select>
                                                 </div>
-                                            </>
-                                        )}
-                                    </div>
-
-                                    {/* Project Contract: Project % / Project Amount / Remaining Amount,
-                                        calculated against the Contract Value above. */}
-                                    {engagementType === 'fixed' && (
-                                        <div className="mt-4 border border-gray-200 dark:border-gray-800 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
-                                            <p className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Project Contract</p>
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Contract Value</label>
-                                                    <p className="text-sm font-semibold text-gray-900 dark:text-white mt-2">
-                                                        {contractValue
-                                                            ? `${parseFloat(contractValue).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${priceList}`
-                                                            : '—'}
-                                                    </p>
-                                                    {quoteId && <p className="text-[11px] text-gray-400 dark:text-gray-500">Excluding GST</p>}
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Project %</label>
-                                                    <input
-                                                        type="number"
-                                                        min={0}
-                                                        max={100}
-                                                        step="0.01"
-                                                        value={projectPercentage}
-                                                        onChange={(e) => handleProjectPercentageChange(e.target.value)}
-                                                        placeholder="0"
-                                                        className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Profit Margin ({priceList})</label>
-                                                    <input
-                                                        type="number"
-                                                        min={0}
-                                                        step="0.01"
-                                                        value={projectAmount}
-                                                        onChange={(e) => handleProjectAmountChange(e.target.value)}
-                                                        placeholder="0"
-                                                        className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Remaining Amount</label>
-                                                    <p className="text-sm font-semibold text-gray-900 dark:text-white mt-2">{remainingAmountDisplay}</p>
-                                                </div>
-                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -667,55 +414,6 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                             )}
                                         </div>
 
-                                        {/* Project Manager */}
-                                        <div>
-                                            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Project Manager</label>
-                                            <SearchableSelect
-                                                options={projectManagerOptions}
-                                                value={projectManager}
-                                                onChange={setProjectManager}
-                                                placeholder="Select Project Manager"
-                                                emptyMessage="No employees with the Project Manager role"
-                                            />
-                                        </div>
-
-                                        {/* POC */}
-                                        <div>
-                                            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">POC</label>
-                                            <div className="space-y-3">
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">POC Category</label>
-                                                    <div className="flex gap-2">
-                                                        {POC_CATEGORIES.map((category) => (
-                                                            <button
-                                                                key={category.value}
-                                                                type="button"
-                                                                onClick={() => handlePocCategoryChange(category.value)}
-                                                                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${pocCategory === category.value
-                                                                    ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
-                                                                    : 'bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-                                                                    }`}
-                                                            >
-                                                                {category.label}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                                                        Select {POC_CATEGORIES.find((c) => c.value === pocCategory)?.label}
-                                                    </label>
-                                                    <SearchableSelect
-                                                        options={pocOptions}
-                                                        value={poc}
-                                                        onChange={setPoc}
-                                                        placeholder={`Search ${pocCategory}...`}
-                                                        emptyMessage={`No ${pocCategory}s found`}
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-
                                         {/* Dates */}
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
@@ -738,122 +436,14 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                     </div>
                                 </div>
                             </div>
-                        ) : (
-                            /* Budget Settings Tab */
-                            <div className="space-y-6">
-                                {/* Budget Method Toggle */}
-                                <div className="flex gap-3">
-                                    <button
-                                        onClick={() => setBudgetMethod('quoted')}
-                                        className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${budgetMethod === 'quoted'
-                                            ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
-                                            : 'bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-                                            }`}
-                                    >
-                                        Use quoted amounts
-                                    </button>
-                                    <button
-                                        onClick={() => setBudgetMethod('manual')}
-                                        className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${budgetMethod === 'manual'
-                                            ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
-                                            : 'bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-                                            }`}
-                                    >
-                                        Set manually
-                                    </button>
-                                </div>
-
-                                <p className="text-sm text-gray-500 dark:text-gray-400">
-                                    You can add members to the project later from the project view
-                                </p>
-
-                                {quoteId && (
-                                    <p className="text-sm text-blue-600 dark:text-blue-400">
-                                        {isLoadingQuoteBudget
-                                            ? 'Fetching hours, budget, bills & expenses and price list from the quote...'
-                                            : 'Values below were fetched from the quote. You can edit them if needed.'}
-                                    </p>
-                                )}
-
-                                {/* Budget Fields - Show different fields based on budget method */}
-                                {/* Budget Fields */}
-                                <div className={`grid gap-4 ${budgetMethod === "manual" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 md:grid-cols-3"}`}>
-
-                                    <InputField
-                                        label="Total hours"
-                                        value={totalHours}
-                                        onChange={(e) => setTotalHours(e.target.value)}
-                                        placeholder="0"
-                                        disabled={isLoadingQuoteBudget}
-                                    />
-
-                                    <InputField
-                                        label={`Total budget ${priceList}`}
-                                        value={totalBudget}
-                                        onChange={(e) => setTotalBudget(e.target.value)}
-                                        placeholder="0"
-                                        disabled={isLoadingQuoteBudget}
-                                    />
-
-                                    {/* Hide Bills & Expenses only in manual mode */}
-                                    {budgetMethod === "quoted" && (
-                                        <InputField
-                                            label="Bills & Expenses"
-                                            value={billsExpenses}
-                                            onChange={(e) => setBillsExpenses(e.target.value)}
-                                            placeholder="0"
-                                            disabled={isLoadingQuoteBudget}
-                                        />
-                                    )}
-                                </div>
-
-
-
-                                {/* Price List */}
-                                <div>
-                                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Price list</label>
-                                    <div className="relative">
-                                        <select
-                                            value={priceList}
-                                            onChange={(e) => setPriceList(e.target.value)}
-                                            disabled={isLoadingQuoteBudget}
-                                            className="w-full px-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 appearance-none disabled:opacity-50"
-                                        >
-                                            <option value="INR">INR - Indian Rupee (₹)</option>
-                                            <option value="USD">USD - US Dollar ($)</option>
-                                            <option value="EUR">EUR - Euro (€)</option>
-                                            <option value="GBP">GBP - British Pound (£)</option>
-                                            <option value="AUD">AUD - Australian Dollar (A$)</option>
-                                            <option value="CAD">CAD - Canadian Dollar (C$)</option>
-                                            <option value="SGD">SGD - Singapore Dollar (S$)</option>
-                                            <option value="JPY">JPY - Japanese Yen (¥)</option>
-                                        </select>
-                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                                            <svg
-                                                className="w-5 h-5 text-gray-400 dark:text-gray-500"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
-                                            >
-                                                <path
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                    strokeWidth={2}
-                                                    d="M19 9l-7 7-7-7"
-                                                />
-                                            </svg>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
 
                     {/* Footer */}
                     <div className="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 px-6 py-4 flex justify-center">
                         <button
                             onClick={handleCreateProject}
-                            disabled={isSaving}
+                            // Wait for the quote's amounts - they become the project budget
+                            disabled={isSaving || isLoadingQuoteBudget}
                             className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2.5 rounded-lg font-semibold transition-colors shadow-md hover:shadow-lg disabled:opacity-50"
                         >
                             {isSaving ? 'Creating...' : 'Create Project'}

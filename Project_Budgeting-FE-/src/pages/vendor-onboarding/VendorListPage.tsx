@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, UserPlus, Filter, X, Users, AlertCircle, CheckCircle2, Archive } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Layout } from '../../components/Layout';
@@ -56,7 +57,7 @@ function summaryCardValues(summary: VendorRequestSummary | null) {
  * Vendors tab (which supplies its own Layout), the same way ClientListPage is embedded.
  */
 export function VendorListContent() {
-
+  const navigate = useNavigate();
   const [vendors, setVendors] = useState<VendorOnboardingDetail[]>([]);
   const [summary, setSummary] = useState<VendorRequestSummary | null>(null);
   const [choices, setChoices] = useState<VendorOnboardingChoices | null>(null);
@@ -130,6 +131,11 @@ export function VendorListContent() {
 
   const openStep = (vendor: VendorOnboardingDetail, step: VendorOnboardingStepKey) => {
     setActiveVendorId(vendor.id);
+    // The Approved step has no form section - an approved vendor's record lives on its details page.
+    if (step === 'approved' && vendor.status === 'approved') {
+      navigate(`/vendors/${vendor.id}`);
+      return;
+    }
     setDrawer({ open: true, vendorId: vendor.id, section: step });
   };
 
@@ -168,6 +174,12 @@ export function VendorListContent() {
    * read-only with the reviewer's verification and approval actions. */
   const openVendor = (vendor: VendorOnboardingDetail) => {
     setActiveVendorId(vendor.id);
+    // Approved vendors have finished onboarding - open their details page instead of the
+    // onboarding form, which would start at step 1 (Intake).
+    if (vendor.status === 'approved') {
+      navigate(`/vendors/${vendor.id}`);
+      return;
+    }
     setDrawer({ open: true, vendorId: vendor.id });
   };
 

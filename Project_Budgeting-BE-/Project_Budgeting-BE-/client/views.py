@@ -497,7 +497,7 @@ class CompanyPOCListView(APIView):
             # ------------------
             bill_list = []
             bills = VendorBill.objects.filter(
-                purchase_order__project__client=company
+                project__client=company
             )
             for bill in bills:
                 bill_list.append({

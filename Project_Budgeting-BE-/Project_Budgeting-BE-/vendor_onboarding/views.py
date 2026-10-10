@@ -24,6 +24,7 @@ from .models import (
 )
 from .serializers import (
     VendorRaiseRequestSerializer, VendorOnboardingDraftSerializer, VendorOnboardingProfileSerializer,
+    VendorPublicOnboardingProfileSerializer,
     VendorKYCSerializer, VendorBankDetailSerializer, VendorBankDetailUnmaskedSerializer,
     VendorProcurementDetailSerializer, VendorDocumentSerializer, VendorOnboardingDetailSerializer,
     VendorPublicDetailSerializer, VendorSubmitForApprovalSerializer, RequestChangesSerializer,
@@ -54,6 +55,17 @@ def _client_ip(request):
 
 def _can_edit_vendor(vendor):
     return vendor.status in ("invited", "draft", "action_required")
+
+
+# Internal vendor-master ("Vendor Summary") fields - unlike the rest of the profile, still editable
+# by an internal user after the vendor is submitted or approved.
+VENDOR_MASTER_FIELDS = ("rating", "headcount", "manual_amount_spent")
+
+
+def _can_edit_master_fields(vendor, user):
+    if user.is_superuser or user.has_role_permission("vendor.edit_any"):
+        return True
+    return vendor.created_by_id == user.id and user.has_role_permission("vendor.edit_own")
 
 
 def _can_edit(vendor, user):
@@ -293,6 +305,21 @@ class _VendorStepDetailView(APIView):
 class VendorProfileStepView(_VendorStepDetailView):
     serializer_class = VendorOnboardingProfileSerializer
     related_name = "onboarding_profile"
+
+    def patch(self, request, pk):
+        vendor = get_object_or_404(Vendor, pk=pk)
+        if _can_edit(vendor, request.user):
+            return super().patch(request, pk)
+        # Locked for review/approval - only the Vendor Summary fields may still change, and
+        # without touching the workflow status (no ensure_draft_status here).
+        if not (request.data and set(request.data) <= set(VENDOR_MASTER_FIELDS) and _can_edit_master_fields(vendor, request.user)):
+            return Response({"detail": "This vendor is not editable in its current state."}, status=403)
+        instance = getattr(vendor, self.related_name, None)
+        serializer = self.serializer_class(instance, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save(vendor=vendor)
+        return Response(serializer.data)
 
 
 class VendorKYCStepView(_VendorStepDetailView):
@@ -723,7 +750,8 @@ class _VendorPublicStepDetailView(_VendorPublicView):
 
 
 class VendorPublicProfileStepView(_VendorPublicStepDetailView):
-    serializer_class = VendorOnboardingProfileSerializer
+    # Portal-safe: rating / headcount / spend are internal and silently ignored here.
+    serializer_class = VendorPublicOnboardingProfileSerializer
     related_name = "onboarding_profile"
 
 

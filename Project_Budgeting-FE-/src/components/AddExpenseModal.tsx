@@ -1,17 +1,28 @@
 /**
- * Add Expense Modal
- * Modal for creating new project expenses
+ * Add Expense drawer
+ * Creates a project expense (POST expenses/). Same fields and payload as
+ * before - only the presentation moved to the shared form drawer.
+ *
+ * Employee / Freelancer / Vendor pickers come from /projects/poc-options/
+ * (one call, available to any signed-in user). The vendor/freelancer
+ * onboarding admin lists need extra permissions, which left those
+ * dropdowns empty for most users.
+ *
+ * Time & Material projects (`months` given) charge the expense to a project
+ * month instead of a GL Account / Milestone; its date picks the month.
  */
 
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
-import { Button } from './Button';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
+import { Drawer } from './Drawer';
 import { SearchableSelect } from './SearchableSelect';
 import type { SearchableSelectOption } from './SearchableSelect';
-import { listFreelancers } from '../services/freelancerOnboarding';
-import { listVendors } from '../services/vendorOnboarding';
+import type { CostEntry } from '../types/financials.types';
+import { monthForDate, type ProjectMonth } from '../utils/projectMonths';
+import {
+    drawerInputClass, drawerLabelClass, drawerErrorBorder, FieldError, FieldHint, DrawerSection, DrawerFormFooter,
+} from './drawerForm';
 
 interface PocOption {
     id: number;
@@ -24,6 +35,8 @@ interface AddExpenseModalProps {
     isOpen: boolean;
     onClose: () => void;
     projectId: string;
+    /** T&M project months (start date to end date): charge the expense to a month. */
+    months?: ProjectMonth[];
     onExpenseAdded?: () => void;
 }
 
@@ -37,402 +50,324 @@ export interface ExpenseData {
     employee?: number;
     vendor?: number;
     notes?: string;
+    expense_date: string;
+    milestone?: number;
+    vendor_bill?: number;
 }
+
+const todayIso = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const FALLBACK_CATEGORIES = [
+    { key: 'rent', label: 'Rent' },
+    { key: 'travel', label: 'Travel' },
+    { key: 'food', label: 'Food' },
+    { key: 'internet', label: 'Internet' },
+    { key: 'electricity', label: 'Electricity' },
+    { key: 'software', label: 'Software' },
+    { key: 'maintenance', label: 'Maintenance' },
+    { key: 'equipment', label: 'Equipment' },
+    { key: 'vendor', label: 'Vendor' },
+    { key: 'employee_cost', label: 'Employee Cost' },
+    { key: 'freelancer', label: 'Freelancer Cost' },
+    { key: 'other', label: 'Other' },
+];
+
+// Category -> which payee picker it shows (and which expense field it fills).
+const PAYEE_FOR_CATEGORY: Record<string, PocOption['type'] | undefined> = {
+    employee_cost: 'employee',
+    freelancer: 'freelancer',
+    vendor: 'vendor',
+};
+const PAYEE_LABEL: Record<PocOption['type'], string> = { employee: 'Employee', freelancer: 'Freelancer', vendor: 'Vendor' };
 
 export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     isOpen,
     onClose,
     projectId,
+    months,
     onExpenseAdded
 }) => {
+    const isMonthly = !!months?.length;
+    // Today, or the project's last day once it has ended
+    const defaultDate = () => {
+        const today = todayIso();
+        const last = months?.[months.length - 1];
+        return last && today > last.end ? last.end : today;
+    };
     const [category, setCategory] = useState('');
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
     const [notes, setNotes] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [categories, setCategories] = useState<Array<{ key: string; label: string }>>([]);
-    const [isLoadingCategories, setIsLoadingCategories] = useState(false);
     const [glAccountOptions, setGlAccountOptions] = useState<SearchableSelectOption[]>([]);
     const [glAccount, setGlAccount] = useState<SearchableSelectOption | null>(null);
-    const [freelancerOptions, setFreelancerOptions] = useState<SearchableSelectOption[]>([]);
-    const [freelancer, setFreelancer] = useState<SearchableSelectOption | null>(null);
-    const [employeeOptions, setEmployeeOptions] = useState<SearchableSelectOption[]>([]);
-    const [employee, setEmployee] = useState<SearchableSelectOption | null>(null);
-    const [vendorOptions, setVendorOptions] = useState<SearchableSelectOption[]>([]);
-    const [vendor, setVendor] = useState<SearchableSelectOption | null>(null);
+    const [pocOptions, setPocOptions] = useState<PocOption[]>([]);
+    const [payee, setPayee] = useState<SearchableSelectOption | null>(null);
+    const [expenseDate, setExpenseDate] = useState(todayIso());
+    const [milestoneOptions, setMilestoneOptions] = useState<{ id: number; name: string }[]>([]);
+    const [milestone, setMilestone] = useState('');
+    // Bills on this project not yet linked to an expense. Linking marks the
+    // expense as the same spend as the bill, so it's counted only once.
+    const [billOptions, setBillOptions] = useState<SearchableSelectOption[]>([]);
+    const [linkedBill, setLinkedBill] = useState<SearchableSelectOption | null>(null);
+    const [errors, setErrors] = useState<Record<string, string>>({});
 
-    // Fetch categories + GL accounts when modal opens
+    const resetForm = () => {
+        setCategory('');
+        setAmount('');
+        setDescription('');
+        setNotes('');
+        setGlAccount(null);
+        setPayee(null);
+        setMilestone('');
+        setLinkedBill(null);
+        setExpenseDate(defaultDate());
+        setErrors({});
+    };
+
     useEffect(() => {
-        if (isOpen) {
-            fetchCategories();
-            fetchGlAccounts();
-            fetchFreelancers();
-            fetchEmployees();
-            fetchVendors();
+        if (!isOpen) return;
+        resetForm();
+        axiosInstance.get('expenses/categories/')
+            .then((res) => setCategories(Array.isArray(res.data) && res.data.length ? res.data : FALLBACK_CATEGORIES))
+            .catch((error) => {
+                console.error('Error fetching categories:', error);
+                setCategories(FALLBACK_CATEGORIES);
+            });
+        axiosInstance.get<{ id: number; code: string; name: string; account_type?: string }[]>('/gl-accounts/?active_only=true')
+            .then((res) => setGlAccountOptions((res.data || []).map((acc) => ({ id: acc.id, label: `${acc.code} - ${acc.name}`, sublabel: acc.account_type }))))
+            .catch((error) => console.error('Error fetching GL accounts:', error));
+        axiosInstance.get<PocOption[]>('/projects/poc-options/')
+            .then((res) => setPocOptions(Array.isArray(res.data) ? res.data : []))
+            .catch((error) => console.error('Error fetching employees / freelancers / vendors:', error));
+        axiosInstance.get<{ id: number; name: string }[]>(`/projects/${projectId}/milestones/`)
+            .then((res) => setMilestoneOptions(res.data || []))
+            .catch((error) => console.error('Error fetching milestones:', error));
+        axiosInstance.get<{ entries: CostEntry[] }>(`/projects/${projectId}/cost-entries/`)
+            .then((res) => setBillOptions((res.data.entries || [])
+                .filter((e) => e.type === 'bill' && !e.linked_expense_no)
+                .map((b) => ({ id: b.id, label: b.ref_no, sublabel: [b.payee, b.amount.toLocaleString('en-IN')].filter(Boolean).join(' · ') }))))
+            .catch((error) => console.error('Error fetching bills:', error));
+    }, [isOpen, projectId]);
+
+    const payeeType = PAYEE_FOR_CATEGORY[category];
+    const payeeOptions: SearchableSelectOption[] = payeeType
+        ? pocOptions.filter((p) => p.type === payeeType).map((p) => ({ id: p.id, label: p.name, sublabel: p.subtitle || undefined }))
+        : [];
+
+    const validate = () => {
+        const e: Record<string, string> = {};
+        if (!expenseDate) e.expenseDate = 'Expense date is required.';
+        else if (expenseDate > todayIso()) e.expenseDate = 'Expense date cannot be in the future.';
+        else if (isMonthly && (expenseDate < months![0].start || expenseDate > months![months!.length - 1].end)) {
+            e.expenseDate = 'Pick a date within the project (start date to end date).';
         }
-    }, [isOpen]);
-
-    const fetchVendors = async () => {
-        try {
-            const vendors = await listVendors({});
-            setVendorOptions(vendors.map((v) => ({
-                id: v.id,
-                label: v.name,
-                sublabel: v.vendor_reference_no || undefined,
-            })));
-        } catch (error) {
-            console.error('Error fetching vendors:', error);
-        }
-    };
-
-    const fetchFreelancers = async () => {
-        try {
-            const freelancers = await listFreelancers({});
-            setFreelancerOptions(freelancers.map((f) => ({
-                id: f.id,
-                label: f.full_name,
-                sublabel: f.freelancer_code || undefined,
-            })));
-        } catch (error) {
-            console.error('Error fetching freelancers:', error);
-        }
-    };
-
-    // Reuses the same combined POC (Point of Contact) options endpoint
-    // ResourcesPanel already uses to populate its employee/freelancer picker,
-    // filtered down to just employees (accounts.Account ids, matching
-    // Expense.employee's FK target).
-    const fetchEmployees = async () => {
-        try {
-            const response = await axiosInstance.get<PocOption[]>('/projects/poc-options/');
-            const employees = (response.data || []).filter((p) => p.type === 'employee');
-            setEmployeeOptions(employees.map((e) => ({
-                id: e.id,
-                label: e.name,
-                sublabel: e.subtitle || undefined,
-            })));
-        } catch (error) {
-            console.error('Error fetching employees:', error);
-        }
-    };
-
-    const fetchGlAccounts = async () => {
-        try {
-            const response = await axiosInstance.get<{ id: number; code: string; name: string; account_type?: string }[]>(
-                '/gl-accounts/?active_only=true'
-            );
-            const options = (response.data || []).map((acc) => ({
-                id: acc.id,
-                label: `${acc.code} - ${acc.name}`,
-                sublabel: acc.account_type,
-            }));
-            setGlAccountOptions(options);
-        } catch (error) {
-            console.error('Error fetching GL accounts:', error);
-        }
-    };
-
-    const fetchCategories = async () => {
-        try {
-            setIsLoadingCategories(true);
-            const response = await axiosInstance.get('expenses/categories/');
-            console.log('Fetched categories:', response.data);
-
-            // API returns array of objects with 'key' and 'label' properties
-            if (Array.isArray(response.data)) {
-                setCategories(response.data);
-            }
-        } catch (error) {
-            console.error('Error fetching categories:', error);
-            toast.error('Failed to load categories');
-            // Fallback to default categories if API fails
-            setCategories([
-                { key: 'rent', label: 'Rent' },
-                { key: 'travel', label: 'Travel' },
-                { key: 'food', label: 'Food' },
-                { key: 'internet', label: 'Internet' },
-                { key: 'electricity', label: 'Electricity' },
-                { key: 'software', label: 'Software' },
-                { key: 'maintenance', label: 'Maintenance' },
-                { key: 'equipment', label: 'Equipment' },
-                { key: 'vendor', label: 'Vendor' },
-                { key: 'employee_cost', label: 'Employee Cost' },
-                { key: 'freelancer', label: 'Freelancer Cost' },
-                { key: 'other', label: 'Other' }
-            ]);
-        } finally {
-            setIsLoadingCategories(false);
-        }
-    };
-
-    if (!isOpen) return null;
-
-    const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (e.target === e.currentTarget) {
-            onClose();
-        }
+        if (!category) e.category = 'Select a category.';
+        const amt = parseFloat(amount);
+        if (Number.isNaN(amt) || amt <= 0) e.amount = 'Amount must be greater than zero.';
+        if (!description.trim()) e.description = 'Description is required.';
+        return e;
     };
 
     const handleConfirm = async () => {
-        setIsSubmitting(true);
+        const e = validate();
+        setErrors(e);
+        if (Object.keys(e).length > 0) return;
 
         const expenseData: ExpenseData = {
-            category: category,
+            category,
             amount: parseFloat(amount),
-            description: description,
-            project: parseInt(projectId)
+            description: description.trim(),
+            project: parseInt(projectId),
+            expense_date: expenseDate,
         };
+        if (glAccount && !isMonthly) expenseData.gl_account = Number(glAccount.id);
+        if (payee && payeeType === 'freelancer') expenseData.freelancer = Number(payee.id);
+        if (payee && payeeType === 'employee') expenseData.employee = Number(payee.id);
+        if (payee && payeeType === 'vendor') expenseData.vendor = Number(payee.id);
+        if (notes.trim()) expenseData.notes = notes.trim();
+        if (milestone && !isMonthly) expenseData.milestone = Number(milestone);
+        if (linkedBill) expenseData.vendor_bill = Number(linkedBill.id);
 
-        if (glAccount) {
-            expenseData.gl_account = Number(glAccount.id);
-        }
-        if (category === 'freelancer' && freelancer) {
-            expenseData.freelancer = Number(freelancer.id);
-        }
-        if (category === 'employee_cost' && employee) {
-            expenseData.employee = Number(employee.id);
-        }
-        if (category === 'vendor' && vendor) {
-            expenseData.vendor = Number(vendor.id);
-        }
-        if (notes) {
-            expenseData.notes = notes;
-        }
-
-        console.log('=== Creating Expense ===');
-        console.log('Project ID:', projectId);
-        console.log('Expense Data:', expenseData);
-
+        setIsSubmitting(true);
         try {
-            // Make API call to create expense
-            console.log('Making API call to: api/expenses/');
-            const response = await axiosInstance.post(
-                'expenses/',
-                expenseData
-            );
-
-            console.log('API Response Status:', response.status);
-            console.log('API Response Data:', response.data);
-
-            if (response.status === 200 || response.status === 201) {
-                toast.success('Expense created successfully!');
-
-                console.log('Expense created successfully, calling callback...');
-                // Call the callback if provided
-                if (onExpenseAdded) {
-                    await onExpenseAdded();
-                }
-
-                console.log('Closing modal...');
-                // Reset form
-                setCategory('');
-                setAmount('');
-                setDescription('');
-                setNotes('');
-                setGlAccount(null);
-                setFreelancer(null);
-                setEmployee(null);
-                setVendor(null);
-                onClose();
-            }
+            await axiosInstance.post('expenses/', expenseData);
+            toast.success('Expense added');
+            if (onExpenseAdded) await onExpenseAdded();
+            resetForm();
+            onClose();
         } catch (error: any) {
-            console.error('=== Expense Creation Error ===');
-            console.error('Error:', error);
-            console.error('Error Response:', error.response);
-            const errorMsg = error.response?.data?.message || error.response?.data?.error || 'Failed to create expense';
-            toast.error(errorMsg);
+            console.error('Expense creation error:', error);
+            const data = error.response?.data;
+            const fieldError = data && typeof data === 'object'
+                ? ['expense_date', 'vendor_bill', 'milestone', 'amount', 'category', '__all__', 'non_field_errors']
+                    .map((k) => (Array.isArray(data[k]) ? data[k][0] : data[k]))
+                    .find((v) => typeof v === 'string')
+                : undefined;
+            toast.error(data?.message || data?.error || fieldError || 'Failed to create expense');
         } finally {
             setIsSubmitting(false);
         }
     };
 
+    const amt = parseFloat(amount);
+    // The month the expense date counts in (T&M only)
+    const selectedMonth = isMonthly ? monthForDate(months!, expenseDate) : null;
+
     return (
-        <div
-            className="fixed inset-0 bg-black/30 backdrop-blur-md z-50 flex items-center justify-center p-4 dark:bg-black/50"
-            onClick={handleBackdropClick}
+        <Drawer
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Add Expense"
+            subtitle="Record a project expense"
+            size="md"
+            footer={(
+                <DrawerFormFooter
+                    summary={<>Expense amount: <span className="font-semibold text-gray-800 dark:text-gray-200">{(Number.isFinite(amt) ? amt : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></>}
+                    onCancel={onClose}
+                    onSubmit={handleConfirm}
+                    submitLabel="Add Expense"
+                    isBusy={isSubmitting}
+                />
+            )}
         >
-            <div
-                className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto dark:bg-gray-900"
-                onClick={(e) => e.stopPropagation()}
-            >
-                {/* Header */}
-                <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-5 flex items-center justify-between rounded-t-2xl dark:bg-gray-900 dark:border-gray-800">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                        Create New Expense
-                    </h2>
-                    <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-800"
-                        aria-label="Close modal"
-                    >
-                        <X size={20} className="text-gray-600 dark:text-gray-400" />
-                    </button>
+            <fieldset disabled={isSubmitting} className="space-y-4">
+                {isMonthly && (
+                    <div>
+                        <label className={drawerLabelClass}>Month *</label>
+                        <select
+                            value={selectedMonth?.value ?? ''}
+                            onChange={(e) => {
+                                const m = months!.find((mo) => mo.value === e.target.value);
+                                if (!m) return;
+                                const today = todayIso();
+                                setExpenseDate(today >= m.start && today <= m.end ? today : m.end);
+                            }}
+                            className={drawerInputClass}
+                        >
+                            {!selectedMonth && <option value="">Select month</option>}
+                            {months!.map((m) => (
+                                <option key={m.value} value={m.value} disabled={m.start > todayIso()}>
+                                    {m.label}{m.start > todayIso() ? ' (not started)' : ''}
+                                </option>
+                            ))}
+                        </select>
+                        <FieldHint>Counts in this month's actual cost. Months run from the project's start date to its end date.</FieldHint>
+                    </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label className={drawerLabelClass}>Expense Date *</label>
+                        <input
+                            type="date"
+                            value={expenseDate}
+                            min={selectedMonth?.start}
+                            max={selectedMonth && selectedMonth.end < todayIso() ? selectedMonth.end : todayIso()}
+                            onChange={(e) => setExpenseDate(e.target.value)}
+                            className={`${drawerInputClass} ${errors.expenseDate ? drawerErrorBorder : ''}`}
+                        />
+                        <FieldError message={errors.expenseDate} />
+                    </div>
+                    <div>
+                        <label className={drawerLabelClass}>Category *</label>
+                        <select
+                            value={category}
+                            onChange={(e) => { setCategory(e.target.value); setPayee(null); }}
+                            className={`${drawerInputClass} ${errors.category ? drawerErrorBorder : ''}`}
+                        >
+                            <option value="">{categories.length ? 'Select category' : 'Loading...'}</option>
+                            {categories.map((cat) => <option key={cat.key} value={cat.key}>{cat.label}</option>)}
+                        </select>
+                        <FieldError message={errors.category} />
+                    </div>
                 </div>
 
-                {/* Content */}
-                <div className="px-6 py-6 space-y-5">
-                    {/* Category */}
+                {payeeType && (
                     <div>
-                        <label className="block text-base font-semibold text-gray-900 mb-2 dark:text-white">
-                            Category <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                            <select
-                                value={category}
-                                onChange={(e) => setCategory(e.target.value)}
-                                disabled={isLoadingCategories}
-                                className="w-full px-4 py-3 bg-white border border-gray-300 text-gray-900 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                            >
-                                <option value="">
-                                    {isLoadingCategories ? 'Loading categories...' : 'Select category'}
-                                </option>
-                                {categories.map((cat) => (
-                                    <option key={cat.key} value={cat.key}>
-                                        {cat.label}
-                                    </option>
-                                ))}
-                            </select>
-                            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                                <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* GL Account */}
-                    <div>
-                        <label className="block text-base font-semibold text-gray-900 mb-2 dark:text-white">
-                            GL Account
-                        </label>
+                        <label className={drawerLabelClass}>{PAYEE_LABEL[payeeType]}</label>
                         <SearchableSelect
-                            options={glAccountOptions}
-                            value={glAccount}
-                            onChange={setGlAccount}
-                            placeholder="Search account..."
+                            options={payeeOptions}
+                            value={payee}
+                            onChange={setPayee}
+                            placeholder={`Search ${PAYEE_LABEL[payeeType].toLowerCase()}...`}
+                            emptyMessage={`No ${PAYEE_LABEL[payeeType].toLowerCase()}s found`}
                         />
-                        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
-                            Optional — ties this expense to a budget line's GL Account so Actual spend rolls up correctly.
-                        </p>
+                        <FieldHint>Tags this as actual {PAYEE_LABEL[payeeType].toLowerCase()} cost for the project.</FieldHint>
                     </div>
+                )}
 
-                    {/* Freelancer (only for the Freelancer Cost category) */}
-                    {category === 'freelancer' && (
-                        <div>
-                            <label className="block text-base font-semibold text-gray-900 mb-2 dark:text-white">
-                                Freelancer
-                            </label>
-                            <SearchableSelect
-                                options={freelancerOptions}
-                                value={freelancer}
-                                onChange={setFreelancer}
-                                placeholder="Search freelancer..."
-                            />
-                            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
-                                Tags this as Actual Freelancer Cost for that freelancer, rolling up into their project profitability.
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Employee (only for the Employee Cost category) */}
-                    {category === 'employee_cost' && (
-                        <div>
-                            <label className="block text-base font-semibold text-gray-900 mb-2 dark:text-white">
-                                Employee
-                            </label>
-                            <SearchableSelect
-                                options={employeeOptions}
-                                value={employee}
-                                onChange={setEmployee}
-                                placeholder="Search employee..."
-                            />
-                            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
-                                Tags this as Actual Employee Cost for that employee, rolling up into their project profitability.
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Vendor (only for the Vendor category) */}
-                    {category === 'vendor' && (
-                        <div>
-                            <label className="block text-base font-semibold text-gray-900 mb-2 dark:text-white">
-                                Vendor
-                            </label>
-                            <SearchableSelect
-                                options={vendorOptions}
-                                value={vendor}
-                                onChange={setVendor}
-                                placeholder="Search vendor..."
-                            />
-                            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
-                                Tags this as Actual Vendor Cost for that vendor, rolling up into project cost.
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Amount */}
+                <DrawerSection>
                     <div>
-                        <label className="block text-base font-semibold text-gray-900 mb-2 dark:text-white">
-                            Amount <span className="text-red-500">*</span>
-                        </label>
+                        <label className={drawerLabelClass}>Amount *</label>
                         <input
-                            type="number"
+                            type="number" min={0} step="0.01"
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
                             placeholder="0.00"
-                            step="0.01"
-                            className="w-full px-4 py-3 bg-white border border-gray-300 text-gray-900 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
+                            className={`${drawerInputClass} text-right tabular-nums ${errors.amount ? drawerErrorBorder : ''}`}
                         />
+                        <FieldError message={errors.amount} />
                     </div>
+                </DrawerSection>
 
-                    {/* Description */}
+                {!isMonthly && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                        <label className="block text-base font-semibold text-gray-900 mb-2 dark:text-white">
-                            Description <span className="text-red-500">*</span>
-                        </label>
-                        <textarea
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            placeholder="Enter expense description"
-                            rows={4}
-                            className="w-full px-4 py-3 bg-white border border-gray-300 text-gray-900 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
-                        />
+                        <label className={drawerLabelClass}>GL Account</label>
+                        <SearchableSelect options={glAccountOptions} value={glAccount} onChange={setGlAccount} placeholder="Search account..." />
+                        <FieldHint>Rolls up into the matching budget line.</FieldHint>
                     </div>
-
-                    {/* Notes */}
                     <div>
-                        <label className="block text-base font-semibold text-gray-900 mb-2 dark:text-white">
-                            Notes
-                        </label>
-                        <textarea
-                            value={notes}
-                            onChange={(e) => setNotes(e.target.value)}
-                            placeholder="Additional notes (optional)"
-                            rows={3}
-                            className="w-full px-4 py-3 bg-white border border-gray-300 text-gray-900 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-violet-500"
-                        />
+                        <label className={drawerLabelClass}>Milestone</label>
+                        <select value={milestone} onChange={(e) => setMilestone(e.target.value)} className={drawerInputClass}>
+                            <option value="">No milestone</option>
+                            {milestoneOptions.map((m) => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
+                        </select>
+                        <FieldHint>Counts in the milestone's Actual Cost.</FieldHint>
                     </div>
                 </div>
+                )}
 
-                {/* Footer */}
-                <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex flex-col-reverse sm:flex-row justify-end gap-3 rounded-b-2xl dark:bg-gray-800 dark:border-gray-800">
-                    <button
-                        onClick={onClose}
-                        disabled={isSubmitting}
-                        className="w-full sm:w-auto px-6 py-2.5 border border-gray-300 rounded-xl hover:bg-gray-100 transition-colors text-gray-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
-                    >
-                        Cancel
-                    </button>
-                    <Button
-                        onClick={handleConfirm}
-                        isLoading={isSubmitting}
-                        disabled={!category || !amount || parseFloat(amount) <= 0 || !description}
-                        className="w-full sm:w-auto px-8"
-                    >
-                        Create Expense
-                    </Button>
+                {billOptions.length > 0 && (
+                    <div>
+                        <label className={drawerLabelClass}>Linked Bill</label>
+                        <SearchableSelect
+                            options={billOptions}
+                            value={linkedBill}
+                            onChange={setLinkedBill}
+                            placeholder="Select if this expense is for an existing bill..."
+                        />
+                        <FieldHint>Link it so the cost is counted only once (via the bill).</FieldHint>
+                    </div>
+                )}
+
+                <div>
+                    <label className={drawerLabelClass}>Description *</label>
+                    <textarea
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="What was this expense for?"
+                        rows={3}
+                        className={`${drawerInputClass} resize-none ${errors.description ? drawerErrorBorder : ''}`}
+                    />
+                    <FieldError message={errors.description} />
                 </div>
-            </div>
-        </div>
+
+                <div>
+                    <label className={drawerLabelClass}>Notes</label>
+                    <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Additional notes (optional)"
+                        rows={2}
+                        className={`${drawerInputClass} resize-none`}
+                    />
+                </div>
+            </fieldset>
+        </Drawer>
     );
 };

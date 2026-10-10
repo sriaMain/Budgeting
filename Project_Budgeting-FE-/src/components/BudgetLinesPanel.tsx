@@ -36,6 +36,8 @@ interface BudgetLine {
     gl_account_type: string;
     gl_account_is_active: boolean;
     planned_amount: string | number;
+    actual_amount?: string | number;
+    variance?: string | number;
 }
 
 interface BudgetLinesPanelProps {
@@ -119,6 +121,7 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
     const [plannedAmount, setPlannedAmount] = useState('');
     const [addErrors, setAddErrors] = useState<LineFormErrors>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isAddOpen, setIsAddOpen] = useState(false);
 
     // Inline edit state (one row at a time)
     const [editingLineId, setEditingLineId] = useState<number | null>(null);
@@ -326,44 +329,89 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
         ? lines
         : lines.filter((l) => String(l.gl_account) === String(filterGlAccount.id));
 
-    // Individual lines nested under their GL Account, for the grouped view.
+    // Individual lines nested under their GL Account (with a Planned Amount
+    // subtotal), for the grouped view.
     const groupedSections = useMemo(() => {
-        const map = new Map<number, { code: string; name: string; lines: BudgetLine[] }>();
+        const map = new Map<number, { code: string; name: string; lines: BudgetLine[]; total: number }>();
         filteredLines.forEach((l) => {
             const existing = map.get(l.gl_account) || {
                 code: l.gl_account_code,
                 name: l.gl_account_name,
                 lines: [] as BudgetLine[],
-            };
-            existing.lines.push(l);
-            map.set(l.gl_account, existing);
-        });
-        return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
-    }, [filteredLines]);
-
-    // Planned Amount subtotal per GL Account + grand total -- always shown,
-    // and always in sync since it's derived straight from `lines`.
-    const totalsByAccount = useMemo(() => {
-        const map = new Map<number, { code: string; name: string; total: number }>();
-        filteredLines.forEach((l) => {
-            const existing = map.get(l.gl_account) || {
-                code: l.gl_account_code,
-                name: l.gl_account_name,
                 total: 0,
             };
+            existing.lines.push(l);
             existing.total += num(l.planned_amount);
             map.set(l.gl_account, existing);
         });
         return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
     }, [filteredLines]);
 
-    const grandTotal = totalsByAccount.reduce((sum, row) => sum + row.total, 0);
+    // Grand total lives in the table footer -- derived straight from the
+    // filtered lines so it always matches what's on screen.
+    const grandTotal = filteredLines.reduce((sum, l) => sum + num(l.planned_amount), 0);
+
+    // Actuals come from the backend's BudgetLine.actual_amount (expenses +
+    // paid bills under the line's GL Account), so they exist per GL Account,
+    // not per line - every line on the same account reports the same figure.
+    // A line shows its own Actual/Variance only when it's the sole line on
+    // its GL Account; shared accounts show theirs on the grouped subtotal row.
+    const showActuals = true;
+    const glKey = (l: { gl_account_code: string; gl_account_name: string }) => `${l.gl_account_code} - ${l.gl_account_name}`;
+    const actualByGl = useMemo(
+        () => new Map(lines.map((l) => [glKey(l), num(l.actual_amount)])),
+        [lines]
+    );
+    const actualForGl = (key: string) => actualByGl.get(key) ?? 0;
+    const linesPerGl = useMemo(() => {
+        const counts = new Map<number, number>();
+        lines.forEach((l) => counts.set(l.gl_account, (counts.get(l.gl_account) || 0) + 1));
+        return counts;
+    }, [lines]);
+    const totalActual = Array.from(new Set(filteredLines.map(glKey)))
+        .reduce((sum, key) => sum + actualForGl(key), 0);
+
+    const formatAmount = (v: string | number) =>
+        `${num(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+
+    const varianceClass = (v: number) => (v < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400');
+
+    // Shared cell paddings: flush with the section edges, like the other
+    // Financials tables.
+    const TH = 'px-3 py-2 first:pl-0 last:pr-0 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400';
+    const TD = 'px-3 py-2.5 first:pl-0 last:pr-0';
+    const MONEY = 'text-right tabular-nums whitespace-nowrap';
+
+    const renderActualCells = (line: BudgetLine, inGroup: boolean) => {
+        if (!showActuals) return null;
+        if (inGroup) {
+            return (<><td className={TD} /><td className={TD} /></>);
+        }
+        const shared = (linesPerGl.get(line.gl_account) || 0) > 1;
+        if (shared) {
+            const hint = 'Actuals are tracked per GL Account - turn on "Group by GL Account" to compare';
+            return (
+                <>
+                    <td className={`${TD} ${MONEY} text-gray-400 dark:text-gray-500`} title={hint}>—</td>
+                    <td className={`${TD} ${MONEY} text-gray-400 dark:text-gray-500`} title={hint}>—</td>
+                </>
+            );
+        }
+        const actual = actualForGl(glKey(line));
+        const variance = num(line.planned_amount) - actual;
+        return (
+            <>
+                <td className={`${TD} ${MONEY} text-gray-700 dark:text-gray-300`}>{formatAmount(actual)}</td>
+                <td className={`${TD} ${MONEY} font-medium ${varianceClass(variance)}`}>{formatAmount(variance)}</td>
+            </>
+        );
+    };
 
     const renderLineRow = (line: BudgetLine, showGlAccountColumn: boolean) => {
         if (editingLineId === line.id) {
             return (
-                <tr key={line.id} className="border-b border-gray-100 dark:border-gray-800 bg-blue-50/40">
-                    <td className="px-4 py-2 align-top">
+                <tr key={line.id} className="border-b border-gray-100 dark:border-gray-800 bg-blue-50/40 dark:bg-blue-500/5">
+                    <td className={`${TD} align-top`}>
                         <input
                             type="text"
                             value={editDescription}
@@ -375,7 +423,7 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                         )}
                     </td>
                     {showGlAccountColumn && (
-                        <td className="px-4 py-2 align-top">
+                        <td className={`${TD} align-top`}>
                             <SearchableSelect
                                 options={glAccountOptions}
                                 value={editGlAccount}
@@ -395,138 +443,88 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                             </button>
                         </td>
                     )}
-                    <td className="px-4 py-2 align-top text-right">
+                    <td className={`${TD} align-top text-right`}>
                         <input
                             type="number"
                             value={editPlannedAmount}
                             onChange={(e) => setEditPlannedAmount(e.target.value)}
                             step="0.01"
                             min="0"
-                            className="w-full px-2 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md text-sm text-gray-900 dark:text-white text-right focus:outline-none focus:ring-2 focus:ring-blue-600"
+                            className="w-full px-2 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md text-sm text-gray-900 dark:text-white text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-600"
                         />
                         {editErrors.plannedAmount && (
                             <p className="text-[11px] text-red-600 dark:text-red-400 mt-1 text-left">{editErrors.plannedAmount}</p>
                         )}
                     </td>
-                    <td className="px-4 py-2 align-top text-right whitespace-nowrap">
-                        <button
-                            type="button"
-                            onClick={() => handleSaveEdit(line.id)}
-                            disabled={isSavingEdit}
-                            className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50 mr-3"
-                        >
-                            {isSavingEdit ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={cancelEdit}
-                            disabled={isSavingEdit}
-                            className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:underline disabled:opacity-50"
-                        >
-                            Cancel
-                        </button>
+                    {showActuals && (<><td className={TD} /><td className={TD} /></>)}
+                    <td className={`${TD} align-top`}>
+                        <div className="flex items-center justify-end gap-1 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => handleSaveEdit(line.id)}
+                                disabled={isSavingEdit}
+                                className="px-2 py-1 rounded-md text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 disabled:opacity-50"
+                            >
+                                {isSavingEdit ? 'Saving...' : 'Save'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={cancelEdit}
+                                disabled={isSavingEdit}
+                                className="px-2 py-1 rounded-md text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                        </div>
                     </td>
                 </tr>
             );
         }
 
         return (
-            <tr key={line.id} className="border-b border-gray-100 dark:border-gray-800">
-                <td className="px-4 py-2 text-gray-900 dark:text-white">{line.description}</td>
+            <tr key={line.id} className="border-b border-gray-100 dark:border-gray-800/70 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+                <td className={`${TD} text-gray-900 dark:text-white`}>
+                    <span className={showGlAccountColumn ? '' : 'pl-4 block'}>{line.description}</span>
+                </td>
                 {showGlAccountColumn && (
-                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{line.gl_account_code} - {line.gl_account_name}</td>
+                    <td className={`${TD} text-gray-600 dark:text-gray-400 truncate`} title={glKey(line)}>{glKey(line)}</td>
                 )}
-                <td className="px-4 py-2 text-right text-gray-900 dark:text-white">{num(line.planned_amount).toLocaleString()} {currency}</td>
-                <td className="px-4 py-2 text-right whitespace-nowrap">
-                    <button
-                        type="button"
-                        onClick={() => startEdit(line)}
-                        className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline mr-3"
-                    >
-                        Edit
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => handleDeleteLine(line.id)}
-                        className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline"
-                    >
-                        Delete
-                    </button>
+                <td className={`${TD} ${MONEY} font-medium text-gray-900 dark:text-white`}>{formatAmount(line.planned_amount)}</td>
+                {renderActualCells(line, !showGlAccountColumn)}
+                <td className={TD}>
+                    <div className="flex items-center justify-end gap-1">
+                        <button
+                            type="button"
+                            onClick={() => startEdit(line)}
+                            className="px-2 py-1 rounded-md text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10"
+                        >
+                            Edit
+                        </button>
+                        <span className="text-gray-300 dark:text-gray-700" aria-hidden="true">|</span>
+                        <button
+                            type="button"
+                            onClick={() => handleDeleteLine(line.id)}
+                            className="px-2 py-1 rounded-md text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10"
+                        >
+                            Delete
+                        </button>
+                    </div>
                 </td>
             </tr>
         );
     };
 
     return (
-        <div className="space-y-4">
-            {/* Add Budget Line */}
-            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
-                <p className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Add Budget Line</p>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <div className="md:col-span-2">
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Description</label>
-                        <input
-                            type="text"
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            placeholder="e.g. Employee Cost"
-                            className={`w-full px-3 py-2 bg-white dark:bg-gray-900 border rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 ${addErrors.description ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
-                        />
-                        {addErrors.description && (
-                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">{addErrors.description}</p>
-                        )}
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">GL Account</label>
-                        <SearchableSelect
-                            options={glAccountOptions}
-                            value={newGlAccount}
-                            onChange={setNewGlAccount}
-                            placeholder="Search account..."
-                            emptyMessage="No GL Accounts yet"
-                        />
-                        {addErrors.glAccount && (
-                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">{addErrors.glAccount}</p>
-                        )}
-                        <button
-                            type="button"
-                            onClick={openGlAccountModal}
-                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
-                        >
-                            + Add new GL Account
-                        </button>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Planned Amount</label>
-                        <input
-                            type="number"
-                            value={plannedAmount}
-                            onChange={(e) => setPlannedAmount(e.target.value)}
-                            placeholder="0.00"
-                            step="0.01"
-                            min="0"
-                            className={`w-full px-3 py-2 bg-white dark:bg-gray-900 border rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 ${addErrors.plannedAmount ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
-                        />
-                        {addErrors.plannedAmount && (
-                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">{addErrors.plannedAmount}</p>
-                        )}
-                    </div>
+        <section>
+            {/* Heading + controls on one row */}
+            <div className="flex flex-wrap items-end gap-3 border-b border-gray-200 dark:border-gray-800 pb-2 mb-3">
+                <div className="mr-auto">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-800 dark:text-gray-200">Project Budget Lines</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 tabular-nums">
+                        {filteredLines.length} {filteredLines.length === 1 ? 'line' : 'lines'} · Planned {formatAmount(grandTotal)}
+                    </p>
                 </div>
-                <div className="flex justify-end mt-3">
-                    <button
-                        type="button"
-                        onClick={handleAddLine}
-                        disabled={isSubmitting}
-                        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {isSubmitting ? 'Adding...' : 'Add Line'}
-                    </button>
-                </div>
-            </div>
-
-            {/* Filter / group by GL Account */}
-            <div className="flex flex-wrap items-center gap-3">
-                <div className="w-full sm:w-64">
+                <div className="w-full sm:w-56">
                     <SearchableSelect
                         options={filterOptions}
                         value={filterGlAccount}
@@ -534,7 +532,7 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                         placeholder="Filter by GL Account..."
                     />
                 </div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 sm:ml-auto">
+                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap py-2">
                     <input
                         type="checkbox"
                         checked={groupByGl}
@@ -543,64 +541,149 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                     />
                     Group by GL Account
                 </label>
+                <button
+                    type="button"
+                    onClick={() => setIsAddOpen((open) => !open)}
+                    aria-expanded={isAddOpen}
+                    className={`px-3 py-2 text-sm font-medium rounded-lg whitespace-nowrap ${isAddOpen
+                        ? 'border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                >
+                    {isAddOpen ? 'Close' : '+ Add Budget Line'}
+                </button>
             </div>
 
-            {/* Lines list */}
-            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-x-auto">
-                {isLoading ? (
-                    <p className="p-4 text-sm text-gray-500 dark:text-gray-400">Loading budget lines...</p>
-                ) : filteredLines.length === 0 ? (
-                    <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No budget lines yet. Add one above.</p>
-                ) : groupByGl ? (
-                    <div className="divide-y divide-gray-200 dark:divide-gray-800">
-                        {groupedSections.map((section) => (
-                            <div key={section.code}>
-                                <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800">
-                                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{section.code} - {section.name}</p>
-                                </div>
-                                <table className="w-full text-sm">
-                                    <tbody>
-                                        {section.lines.map((line) => renderLineRow(line, false))}
-                                    </tbody>
-                                </table>
+            {/* Add Budget Line -- compact single-row form, collapsed by default */}
+            {isAddOpen && (
+                <div className="mb-3 px-3 py-3 rounded-lg bg-gray-50 dark:bg-gray-800/40">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                        <div className="md:col-span-4">
+                            <label className="block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Description</label>
+                            <input
+                                type="text"
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                placeholder="e.g. Employee Cost"
+                                className={`w-full px-3 py-2 bg-white dark:bg-gray-900 border rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 ${addErrors.description ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
+                            />
+                            {addErrors.description && (
+                                <p className="text-xs text-red-600 dark:text-red-400 mt-1">{addErrors.description}</p>
+                            )}
+                        </div>
+                        <div className="md:col-span-4">
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">GL Account</label>
+                                <button
+                                    type="button"
+                                    onClick={openGlAccountModal}
+                                    className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline"
+                                >
+                                    + New GL Account
+                                </button>
                             </div>
-                        ))}
-                    </div>
-                ) : (
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="border-b border-gray-200 dark:border-gray-800 text-left text-xs text-gray-500 dark:text-gray-400 uppercase">
-                                <th className="px-4 py-2">Description</th>
-                                <th className="px-4 py-2">GL Account</th>
-                                <th className="px-4 py-2 text-right">Planned Amount</th>
-                                <th className="px-4 py-2" />
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredLines.map((line) => renderLineRow(line, true))}
-                        </tbody>
-                    </table>
-                )}
-            </div>
-
-            {/* Total Planned Amount, by GL Account, plus grand total */}
-            {totalsByAccount.length > 0 && (
-                <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Total Planned Amount</p>
-                    <div className="space-y-1">
-                        {totalsByAccount.map((row) => (
-                            <div key={row.code} className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
-                                <span>{row.code} - {row.name}</span>
-                                <span>{row.total.toLocaleString()} {currency}</span>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between">
-                        <span className="text-sm font-semibold text-gray-900 dark:text-white">Total</span>
-                        <span className="text-base font-bold text-gray-900 dark:text-white">{grandTotal.toLocaleString()} {currency}</span>
+                            <SearchableSelect
+                                options={glAccountOptions}
+                                value={newGlAccount}
+                                onChange={setNewGlAccount}
+                                placeholder="Search account..."
+                                emptyMessage="No GL Accounts yet"
+                            />
+                            {addErrors.glAccount && (
+                                <p className="text-xs text-red-600 dark:text-red-400 mt-1">{addErrors.glAccount}</p>
+                            )}
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Planned Amount</label>
+                            <input
+                                type="number"
+                                value={plannedAmount}
+                                onChange={(e) => setPlannedAmount(e.target.value)}
+                                placeholder="0.00"
+                                step="0.01"
+                                min="0"
+                                className={`w-full px-3 py-2 bg-white dark:bg-gray-900 border rounded-lg text-sm text-right tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 ${addErrors.plannedAmount ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
+                            />
+                            {addErrors.plannedAmount && (
+                                <p className="text-xs text-red-600 dark:text-red-400 mt-1">{addErrors.plannedAmount}</p>
+                            )}
+                        </div>
+                        <div className="md:col-span-2 md:pt-[22px]">
+                            <button
+                                type="button"
+                                onClick={handleAddLine}
+                                disabled={isSubmitting}
+                                className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isSubmitting ? 'Adding...' : 'Add Line'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
+
+            {/* Lines table -- totals live in the footer, no separate summary block */}
+            <div className="overflow-x-auto">
+                {isLoading ? (
+                    <p className="py-2 text-sm text-gray-500 dark:text-gray-400">Loading budget lines...</p>
+                ) : filteredLines.length === 0 ? (
+                    <p className="py-2 text-sm text-gray-500 dark:text-gray-400">
+                        No budget lines yet. Use “+ Add Budget Line” to create one.
+                    </p>
+                ) : (
+                    <table className={`w-full text-sm table-fixed ${showActuals ? 'min-w-[760px]' : 'min-w-[560px]'}`}>
+                        <colgroup>
+                            <col />
+                            {!groupByGl && <col className="w-[26%]" />}
+                            <col className="w-40" />
+                            {showActuals && <col className="w-36" />}
+                            {showActuals && <col className="w-36" />}
+                            <col className="w-36" />
+                        </colgroup>
+                        <thead>
+                            <tr className="border-b border-gray-200 dark:border-gray-800">
+                                <th className={`${TH} text-left`}>Description</th>
+                                {!groupByGl && <th className={`${TH} text-left`}>GL Account</th>}
+                                <th className={`${TH} text-right`}>Planned Amount</th>
+                                {showActuals && <th className={`${TH} text-right`}>Actual</th>}
+                                {showActuals && <th className={`${TH} text-right`}>Variance</th>}
+                                <th className={`${TH} text-right`}>Actions</th>
+                            </tr>
+                        </thead>
+                        {groupByGl ? (
+                            groupedSections.map((section) => {
+                                const key = `${section.code} - ${section.name}`;
+                                const actual = actualForGl(key);
+                                const variance = section.total - actual;
+                                return (
+                                    <tbody key={section.code}>
+                                        <tr className="border-b border-gray-100 dark:border-gray-800/70">
+                                            <td className={`${TD} pt-4 text-xs font-semibold text-gray-800 dark:text-gray-200`}>{key}</td>
+                                            <td className={`${TD} pt-4 ${MONEY} text-xs font-semibold text-gray-800 dark:text-gray-200`}>{formatAmount(section.total)}</td>
+                                            {showActuals && <td className={`${TD} pt-4 ${MONEY} text-xs font-semibold text-gray-700 dark:text-gray-300`}>{formatAmount(actual)}</td>}
+                                            {showActuals && <td className={`${TD} pt-4 ${MONEY} text-xs font-semibold ${varianceClass(variance)}`}>{formatAmount(variance)}</td>}
+                                            <td className={TD} />
+                                        </tr>
+                                        {section.lines.map((line) => renderLineRow(line, false))}
+                                    </tbody>
+                                );
+                            })
+                        ) : (
+                            <tbody>
+                                {filteredLines.map((line) => renderLineRow(line, true))}
+                            </tbody>
+                        )}
+                        <tfoot>
+                            <tr className="border-t-2 border-gray-300 dark:border-gray-700">
+                                <td colSpan={groupByGl ? 1 : 2} className={`${TD} font-semibold text-gray-900 dark:text-white`}>Total Planned</td>
+                                <td className={`${TD} ${MONEY} font-bold text-gray-900 dark:text-white`}>{formatAmount(grandTotal)}</td>
+                                {showActuals && <td className={`${TD} ${MONEY} font-semibold text-gray-900 dark:text-white`}>{formatAmount(totalActual)}</td>}
+                                {showActuals && <td className={`${TD} ${MONEY} font-bold ${varianceClass(grandTotal - totalActual)}`}>{formatAmount(grandTotal - totalActual)}</td>}
+                                <td className={TD} />
+                            </tr>
+                        </tfoot>
+                    </table>
+                )}
+            </div>
 
             {/* Add new GL Account -- writes into the same core.GLAccount
                 Chart-of-Accounts table used everywhere else in the app. */}
@@ -681,7 +764,7 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
                     </div>
                 </div>
             )}
-        </div>
+        </section>
     );
 };
 

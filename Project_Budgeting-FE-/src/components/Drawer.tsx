@@ -13,6 +13,10 @@ interface DrawerProps {
   size?: 'md' | 'lg' | 'xl';
 }
 
+// Open drawers, innermost last: Escape closes only the top one when drawers stack
+// (e.g. Record Payment opened from an invoice's drawer).
+const openDrawers: object[] = [];
+
 const sizeClasses: Record<NonNullable<DrawerProps['size']>, string> = {
   md: 'sm:max-w-md',
   lg: 'sm:max-w-2xl',
@@ -29,23 +33,31 @@ const sizeClasses: Record<NonNullable<DrawerProps['size']>, string> = {
 export const Drawer: React.FC<DrawerProps> = ({ isOpen, onClose, title, subtitle, children, footer, size = 'lg' }) => {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  const token = useRef({});
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!isOpen) return;
 
     previouslyFocused.current = document.activeElement as HTMLElement;
     closeButtonRef.current?.focus();
+    const self = token.current;
+    openDrawers.push(self);
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && openDrawers[openDrawers.length - 1] === self) onCloseRef.current();
     };
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
+      const i = openDrawers.lastIndexOf(self);
+      if (i >= 0) openDrawers.splice(i, 1);
       previouslyFocused.current?.focus?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   if (!isOpen) return null;

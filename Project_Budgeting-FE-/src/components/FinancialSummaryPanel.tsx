@@ -6,16 +6,17 @@
  * same /projects/<id>/financial-summary/ endpoint, which itself derives
  * every figure from the shared Invoice/InvoicePayment/Expense/GLAccount
  * records (Section 13) rather than a duplicate ledger.
+ *
+ * Presentation only: every figure below comes straight from that endpoint.
+ * Laid out as open ERP-style sections (heading + rows/tables) rather than a
+ * card per value.
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
-import { BudgetLinesPanel } from './BudgetLinesPanel';
-import { ReusableTable, type Column } from './ReusableTable';
 import type {
     FixedFinancialSummary, TMFinancialSummary, ProjectFinancialSummary,
-    InvoiceBreakdownRow,
 } from '../types/financials.types';
 
 type FixedSummary = FixedFinancialSummary;
@@ -28,75 +29,84 @@ interface FinancialSummaryPanelProps {
     currency?: string;
 }
 
-const fmt = (v: number | undefined | null, currency: string) => `${(Number(v) || 0).toLocaleString()} ${currency}`;
+const n = (v: number | string | undefined | null) => Number(v) || 0;
+const fmt = (v: number | string | undefined | null, currency: string) =>
+    `${n(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 const pct = (v: number | null | undefined) => (v == null ? '—' : `${v.toFixed(1)}%`);
 
-const KpiCard: React.FC<{ label: string; value: string; tone?: 'default' | 'good' | 'bad' }> = ({ label, value, tone = 'default' }) => (
-    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</p>
-        <p className={`text-xl font-bold ${tone === 'good' ? 'text-green-600 dark:text-green-400' : tone === 'bad' ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
-            {value}
-        </p>
+type Tone = 'default' | 'good' | 'bad' | 'warn';
+
+const TONE_CLASS: Record<Tone, string> = {
+    default: 'text-gray-900 dark:text-white',
+    good: 'text-green-600 dark:text-green-400',
+    bad: 'text-red-600 dark:text-red-400',
+    warn: 'text-amber-600 dark:text-amber-400',
+};
+
+const signTone = (v: number | string | null | undefined): Tone => (n(v) < 0 ? 'bad' : 'good');
+
+/* ---------- Layout primitives (open sections, no cards) ---------- */
+
+const SectionHeading: React.FC<{ title: string; aside?: React.ReactNode }> = ({ title, aside }) => (
+    <div className="flex items-center justify-between gap-3 border-b border-gray-200 dark:border-gray-800 pb-2 mb-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-gray-800 dark:text-gray-200">{title}</h3>
+        {aside}
     </div>
 );
 
-/** Section 15's Financial Breakdown: Revenue Breakdown (one row per project
- * invoice) and Cost Breakdown (resource/employee/freelancer/misc + by GL
- * Account), shared between the Fixed and T&M branches below. */
-const FinancialBreakdown: React.FC<{ summary: FixedSummary | TMSummary; currency: string }> = ({ summary, currency }) => {
-    const invoiceColumns: Column<InvoiceBreakdownRow>[] = [
-        { header: 'Invoice', accessor: 'invoice_no' },
-        { header: 'Amount', accessor: (row) => fmt(row.amount, currency) },
-        { header: 'Paid', accessor: (row) => fmt(row.paid, currency) },
-        { header: 'Outstanding', accessor: (row) => fmt(row.outstanding, currency) },
-    ];
+/** Label-over-value figure used in the overview grid. */
+const Stat: React.FC<{ label: string; value: string; tone?: Tone }> = ({ label, value, tone = 'default' }) => (
+    <div className="min-w-0">
+        <dt className="text-xs text-gray-500 dark:text-gray-400 truncate">{label}</dt>
+        <dd className={`mt-0.5 text-lg font-semibold tabular-nums truncate ${TONE_CLASS[tone]}`} title={value}>{value}</dd>
+    </div>
+);
 
-    const costRows = [
-        { label: 'Resource Cost', amount: summary.cost_breakdown.resource_cost },
-        { label: 'Employee', amount: summary.cost_breakdown.employee_cost },
-        { label: 'Freelancer', amount: summary.cost_breakdown.freelancer_cost },
-        { label: 'Miscellaneous', amount: summary.cost_breakdown.miscellaneous },
-        ...summary.cost_breakdown.by_gl_account.map((row) => ({ label: row.gl_account, amount: row.amount })),
-    ];
+/** Label ... value financial row, statement style. */
+const Row: React.FC<{ label: string; value: string; tone?: Tone; strong?: boolean }> = ({ label, value, tone = 'default', strong }) => (
+    <div className="flex items-baseline justify-between gap-4 py-1.5">
+        <dt className={`text-sm ${strong ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>{label}</dt>
+        <dd className={`text-sm tabular-nums whitespace-nowrap ${strong ? 'font-bold' : 'font-medium'} ${TONE_CLASS[tone]}`}>{value}</dd>
+    </div>
+);
 
-    return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
-                <p className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Revenue Breakdown</p>
-                <ReusableTable
-                    data={summary.invoice_breakdown}
-                    columns={invoiceColumns}
-                    keyField="invoice_no"
-                    emptyMessage="No invoices yet."
-                />
-            </div>
-            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
-                <p className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Cost Breakdown</p>
-                <table className="w-full text-sm">
-                    <tbody>
-                        {costRows.map((row) => (
-                            <tr key={row.label} className="border-b border-gray-100 dark:border-gray-800 last:border-0">
-                                <td className="py-1.5 text-gray-600 dark:text-gray-300">{row.label}</td>
-                                <td className="py-1.5 text-right font-medium text-gray-900 dark:text-white">{fmt(row.amount, currency)}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
+const RowRule = () => <div className="border-t border-gray-200 dark:border-gray-800 my-1" />;
+
+/** How much of the cost comes from task allocated hours, plus a warning for hours with no rate. */
+const LabourNote: React.FC<{ labourCost: number; allocatedHours: number; unratedHours: number; currency: string }> = ({ labourCost, allocatedHours, unratedHours, currency }) => (
+    <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+        <p>Includes {fmt(labourCost, currency)} labour from {n(allocatedHours).toFixed(2)} h allocated to tasks (allocated hours x assignee rate).</p>
+        {n(unratedHours) > 0 && (
+            <p className="text-amber-600 dark:text-amber-400">
+                {n(unratedHours).toFixed(2)} allocated h are not costed (task unassigned, or assignee has no cost rate) - assign the task and set a rate on the resource assignment, user profile or freelancer's hourly rate.
+            </p>
+        )}
+    </div>
+);
+
+const Badge: React.FC<{ tone: Tone; children: React.ReactNode }> = ({ tone, children }) => {
+    const cls: Record<Tone, string> = {
+        default: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+        good: 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300',
+        bad: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300',
+        warn: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+    };
+    return <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${cls[tone]}`}>{children}</span>;
 };
 
-export const FinancialSummaryPanel: React.FC<FinancialSummaryPanelProps> = ({ projectId, engagementType, currency = 'INR' }) => {
+/** Overview figures: one row of budget figures, one row of billing figures. */
+const OVERVIEW_ROW = 'grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4';
+
+/** Overview (wide) beside Profitability (narrow) on large screens. */
+const PAGE_GRID = 'grid grid-cols-1 lg:grid-cols-3 gap-x-10 gap-y-8';
+
+export const FinancialSummaryPanel: React.FC<FinancialSummaryPanelProps> = ({ projectId, currency = 'INR' }) => {
     const [summary, setSummary] = useState<Summary | null>(null);
     const [isLoading, setIsLoading] = useState(false);
-
-    const [showTMInvoiceModal, setShowTMInvoiceModal] = useState(false);
-    const [tmAmount, setTmAmount] = useState('');
-    const [tmPeriodStart, setTmPeriodStart] = useState('');
-    const [tmPeriodEnd, setTmPeriodEnd] = useState('');
-    const [tmDueDays, setTmDueDays] = useState('30');
-    const [isCreatingTMInvoice, setIsCreatingTMInvoice] = useState(false);
+    // T&M monthly spending budget (Project.monthly_budget) - separate from the billing amount
+    const [isEditingBudget, setIsEditingBudget] = useState(false);
+    const [budgetInput, setBudgetInput] = useState('');
+    const [isSavingBudget, setIsSavingBudget] = useState(false);
 
     const fetchSummary = useCallback(async () => {
         if (!projectId) return;
@@ -115,225 +125,156 @@ export const FinancialSummaryPanel: React.FC<FinancialSummaryPanelProps> = ({ pr
         fetchSummary();
     }, [fetchSummary]);
 
-    const openTMInvoiceModal = () => {
-        if (summary && summary.engagement_type === 'time_and_material') {
-            setTmAmount(String(summary.monthly_revenue || ''));
-        }
-        setTmPeriodStart('');
-        setTmPeriodEnd('');
-        setTmDueDays('30');
-        setShowTMInvoiceModal(true);
-    };
-
-    const handleCreateTMInvoice = async () => {
-        const amount = parseFloat(tmAmount);
-        if (!tmAmount || Number.isNaN(amount) || amount <= 0) {
-            toast.error('Invoice amount must be greater than 0');
+    const saveMonthlyBudget = async (value: string | null) => {
+        const amount = value === null ? null : parseFloat(value);
+        if (amount !== null && (Number.isNaN(amount) || amount < 0)) {
+            toast.error('Enter a valid monthly budget');
             return;
         }
-        setIsCreatingTMInvoice(true);
+        setIsSavingBudget(true);
         try {
-            await axiosInstance.post(`/projects/${projectId}/generate-tm-invoice/`, {
-                amount,
-                period_start: tmPeriodStart || undefined,
-                period_end: tmPeriodEnd || undefined,
-                due_days: parseInt(tmDueDays, 10) || 30,
-            });
-            toast.success('Invoice created (Draft)');
-            setShowTMInvoiceModal(false);
-            fetchSummary();
+            await axiosInstance.put(`/projects/${projectId}/`, { monthly_budget: amount });
+            toast.success(amount === null ? 'Monthly budget now follows the billing amount' : 'Monthly budget updated');
+            setIsEditingBudget(false);
+            await fetchSummary();
         } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Failed to create invoice');
+            const data = error?.response?.data;
+            toast.error(data?.monthly_budget?.[0] || data?.error || 'Failed to update monthly budget');
         } finally {
-            setIsCreatingTMInvoice(false);
+            setIsSavingBudget(false);
         }
     };
 
-    if (isLoading || !summary) {
-        return <p className="text-sm text-gray-500 dark:text-gray-400 p-4">Loading financial summary...</p>;
+    // Only the first load blanks the panel - refreshes keep the monthly table (and its drawers) mounted.
+    if (!summary) {
+        return <p className="text-sm text-gray-500 dark:text-gray-400 p-4">{isLoading ? 'Loading financial summary...' : 'Financial summary is unavailable.'}</p>;
     }
 
     if (summary.engagement_type === 'fixed') {
         const s = summary as FixedSummary;
         return (
-            <div className="space-y-6">
-                {/* Contract Value / Actual Cost / Gross Profit / Margin / Invoiced / Received / Outstanding */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-                    <KpiCard label="Contract Value" value={fmt(s.contract_value, currency)} />
-                    <KpiCard label="Actual Cost" value={fmt(s.actual_cost, currency)} />
-                    <KpiCard label="Gross Profit" value={fmt(s.gross_margin, currency)} tone={s.gross_margin < 0 ? 'bad' : 'good'} />
-                    <KpiCard label="Margin %" value={pct(s.margin_percent)} tone={(s.margin_percent ?? 0) < 0 ? 'bad' : 'good'} />
-                    <KpiCard label="Invoiced" value={fmt(s.billed_amount, currency)} />
-                    <KpiCard label="Received" value={fmt(s.received_amount, currency)} />
-                    <KpiCard label="Outstanding" value={fmt(s.outstanding_amount, currency)} tone={s.outstanding_amount > 0 ? 'bad' : 'default'} />
+            <div className="space-y-8">
+                <div className={PAGE_GRID}>
+                    <section className="lg:col-span-2">
+                        <SectionHeading
+                            title="Financial Overview"
+                            aside={s.is_over_budget ? <Badge tone="bad">Over Budget</Badge> : undefined}
+                        />
+                        <dl className={OVERVIEW_ROW}>
+                            <Stat label="User Budget" value={fmt(s.budget, currency)} />
+                            <Stat label="Actual Cost" value={fmt(s.actual_cost, currency)} tone={s.is_over_budget ? 'bad' : 'default'} />
+                            <Stat label="Remaining Budget" value={fmt(s.remaining_budget, currency)} tone={n(s.remaining_budget) < 0 ? 'bad' : 'default'} />
+                        </dl>
+                        <LabourNote labourCost={s.labour_cost} allocatedHours={s.allocated_hours} unratedHours={s.unrated_hours} currency={currency} />
+                        <div className="border-t border-gray-100 dark:border-gray-800/70 my-4" />
+                        <dl className={OVERVIEW_ROW}>
+                            <Stat label="Invoiced" value={fmt(s.billed_amount, currency)} />
+                            <Stat label="Received" value={fmt(s.received_amount, currency)} tone={n(s.received_amount) > 0 ? 'good' : 'default'} />
+                            <Stat label="Outstanding" value={fmt(s.outstanding_amount, currency)} tone={n(s.outstanding_amount) > 0 ? 'warn' : 'default'} />
+                        </dl>
+                    </section>
+
+                    <section>
+                        <SectionHeading title="Profitability" />
+                        <dl>
+                            <Row label="Revenue (Invoiced)" value={fmt(s.billed_amount, currency)} />
+                            <Row label="Actual Cost" value={`- ${fmt(s.actual_cost, currency)}`} />
+                            <RowRule />
+                            <Row label="Gross Profit" value={fmt(s.gross_margin, currency)} tone={signTone(s.gross_margin)} strong />
+                            <Row label="Margin" value={pct(s.margin_percent)} tone={s.margin_percent == null ? 'default' : signTone(s.margin_percent)} strong />
+                        </dl>
+                    </section>
                 </div>
-
-                {/* Budget vs Actual */}
-                <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
-                    <div className="flex items-center justify-between mb-3">
-                        <p className="text-sm font-semibold text-gray-900 dark:text-white">Budget vs Actual</p>
-                        {s.is_over_budget && (
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300">Over Budget</span>
-                        )}
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-                        <div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Total Budget</p>
-                            <p className="font-semibold text-gray-900 dark:text-white">{fmt(s.budget, currency)}</p>
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Actual Cost</p>
-                            <p className={`font-semibold ${s.is_over_budget ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>{fmt(s.actual_cost, currency)}</p>
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Remaining Budget</p>
-                            <p className="font-semibold text-gray-900 dark:text-white">{fmt(s.remaining_budget, currency)}</p>
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Variance</p>
-                            <p className={`font-semibold ${s.variance < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{fmt(s.variance, currency)}</p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Cash position: Outgoing Payments / Net Cash Position (Section 13) - a
-                    distinct, cash-based pair, never mixed with the obligation-based
-                    Cost/Profit figures above. */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <KpiCard label="Outgoing Payments" value={fmt(s.outgoing_payments, currency)} />
-                    <KpiCard label="Net Cash Position" value={fmt(s.net_cash_position, currency)} tone={s.net_cash_position < 0 ? 'bad' : 'good'} />
-                </div>
-
-                <FinancialBreakdown summary={s} currency={currency} />
-
-                {/* GL Account budget lines (Budget vs Actual by GL Account) */}
-                <BudgetLinesPanel projectId={projectId} currency={currency} />
             </div>
         );
     }
 
     const t = summary as TMSummary;
+    const overBudget = n(t.remaining_budget) < 0;
     return (
-        <div className="space-y-6">
-            <div className="flex justify-end">
-                <button
-                    type="button"
-                    onClick={openTMInvoiceModal}
-                    className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
-                >
-                    + Generate Period Invoice
-                </button>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-                <KpiCard label="Revenue" value={fmt(t.monthly_revenue, currency)} />
-                <KpiCard label="Cost" value={fmt(t.total_cost, currency)} />
-                <KpiCard label="Profit" value={fmt(t.net_profit, currency)} tone={t.net_profit < 0 ? 'bad' : 'good'} />
-                <KpiCard label="Margin %" value={pct(t.margin_percent)} tone={(t.margin_percent ?? 0) < 0 ? 'bad' : 'good'} />
-                <KpiCard label="Billed" value={fmt(t.billed_amount, currency)} />
-                <KpiCard label="Received" value={fmt(t.received_amount, currency)} />
-                <KpiCard label="Outstanding" value={fmt(t.outstanding_amount, currency)} tone={t.outstanding_amount > 0 ? 'bad' : 'default'} />
-            </div>
-
-            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
-                <p className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Cost Breakdown</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-                    <div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Resource Cost</p>
-                        <p className="font-semibold text-gray-900 dark:text-white">{fmt(t.resource_cost, currency)}</p>
-                    </div>
-                    <div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Miscellaneous Expenses</p>
-                        <p className="font-semibold text-gray-900 dark:text-white">{fmt(t.misc_expenses, currency)}</p>
-                    </div>
-                    <div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Gross Margin</p>
-                        <p className={`font-semibold ${t.gross_margin < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{fmt(t.gross_margin, currency)}</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Cash position: Outgoing Payments / Net Cash Position (Section 13) - a
-                distinct, cash-based pair, never mixed with the obligation-based
-                Cost/Profit figures above. */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <KpiCard label="Outgoing Payments" value={fmt(t.outgoing_payments, currency)} />
-                <KpiCard label="Net Cash Position" value={fmt(t.net_cash_position, currency)} tone={t.net_cash_position < 0 ? 'bad' : 'good'} />
-            </div>
-
-            <FinancialBreakdown summary={t} currency={currency} />
-
-            {showTMInvoiceModal && (
-                <div
-                    className="fixed inset-0 bg-black/30 dark:bg-black/50 z-50 flex items-center justify-center p-4"
-                    onClick={() => setShowTMInvoiceModal(false)}
-                >
-                    <div
-                        className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-sm p-5"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <p className="text-base font-semibold text-gray-900 dark:text-white mb-4">Generate Period Invoice</p>
-                        <div className="space-y-3">
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Invoice Amount</label>
+        <div className="space-y-8">
+            <div className={PAGE_GRID}>
+                <section className="lg:col-span-2">
+                    <SectionHeading
+                        title="Financial Overview"
+                        aside={overBudget ? <Badge tone="bad">Over Budget</Badge> : undefined}
+                    />
+                    <dl className={OVERVIEW_ROW}>
+                        <Stat label={`Total Budget (${t.months} months)`} value={fmt(t.total_budget, currency)} />
+                        <Stat label="Actual Cost" value={fmt(t.total_cost, currency)} tone={overBudget ? 'bad' : 'default'} />
+                        <Stat label="Remaining Budget" value={fmt(t.remaining_budget, currency)} tone={overBudget ? 'bad' : 'default'} />
+                    </dl>
+                    <LabourNote labourCost={t.labour_cost} allocatedHours={t.allocated_hours} unratedHours={t.unrated_hours} currency={currency} />
+                    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-gray-600 dark:text-gray-400">
+                        <span>
+                            Billing: <span className="font-medium text-gray-900 dark:text-white">{fmt(t.monthly_revenue, currency)}</span> / month
+                            {' · '}Spending budget:{' '}
+                            <span className="font-medium text-gray-900 dark:text-white">{fmt(t.monthly_budget ?? t.monthly_revenue, currency)}</span> / month
+                            {t.monthly_budget == null && <span className="text-gray-400"> (same as billing)</span>}
+                        </span>
+                        {isEditingBudget ? (
+                            <span className="inline-flex items-center gap-2">
                                 <input
-                                    type="number"
-                                    value={tmAmount}
-                                    onChange={(e) => setTmAmount(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
+                                    type="number" min={0} step="0.01"
+                                    value={budgetInput}
+                                    onChange={(e) => setBudgetInput(e.target.value)}
+                                    aria-label="Monthly spending budget"
+                                    className="w-36 px-2 py-1 text-xs text-right tabular-nums border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
                                 />
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Period Start</label>
-                                    <input
-                                        type="date"
-                                        value={tmPeriodStart}
-                                        onChange={(e) => setTmPeriodStart(e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Period End</label>
-                                    <input
-                                        type="date"
-                                        value={tmPeriodEnd}
-                                        onChange={(e) => setTmPeriodEnd(e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Due in (days)</label>
-                                <input
-                                    type="number"
-                                    value={tmDueDays}
-                                    onChange={(e) => setTmDueDays(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-                                />
-                            </div>
-                        </div>
-                        <div className="flex justify-end gap-2 mt-5">
+                                <button type="button" onClick={() => saveMonthlyBudget(budgetInput)} disabled={isSavingBudget} className="px-2.5 py-1 font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50">
+                                    {isSavingBudget ? 'Saving...' : 'Save'}
+                                </button>
+                                {t.monthly_budget != null && (
+                                    <button type="button" onClick={() => saveMonthlyBudget(null)} disabled={isSavingBudget} className="px-2.5 py-1 font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50">
+                                        Use billing amount
+                                    </button>
+                                )}
+                                <button type="button" onClick={() => setIsEditingBudget(false)} disabled={isSavingBudget} className="px-2 py-1 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">
+                                    Cancel
+                                </button>
+                            </span>
+                        ) : (
                             <button
                                 type="button"
-                                onClick={() => setShowTMInvoiceModal(false)}
-                                disabled={isCreatingTMInvoice}
-                                className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+                                onClick={() => { setBudgetInput(String(n(t.monthly_budget ?? t.monthly_revenue))); setIsEditingBudget(true); }}
+                                className="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
                             >
-                                Cancel
+                                Adjust budget
                             </button>
-                            <button
-                                type="button"
-                                onClick={handleCreateTMInvoice}
-                                disabled={isCreatingTMInvoice}
-                                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                            >
-                                {isCreatingTMInvoice ? 'Creating...' : 'Create Invoice'}
-                            </button>
-                        </div>
+                        )}
                     </div>
-                </div>
-            )}
+                    {isEditingBudget && (
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Applies to the current and upcoming months (months edited individually keep their own budget). Past months and the billing amount don't change.
+                        </p>
+                    )}
+                    <div className="border-t border-gray-100 dark:border-gray-800/70 my-4" />
+                    <dl className={OVERVIEW_ROW}>
+                        <Stat label="Invoiced" value={fmt(t.billed_amount, currency)} />
+                        <Stat label="Received" value={fmt(t.received_amount, currency)} tone={n(t.received_amount) > 0 ? 'good' : 'default'} />
+                        <Stat label="Outstanding" value={fmt(t.outstanding_amount, currency)} tone={n(t.outstanding_amount) > 0 ? 'warn' : 'default'} />
+                    </dl>
+                    {n(t.other_billed_amount) > 0 && (
+                        <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                            Not included above: {fmt(t.other_billed_amount, currency)} invoiced ({fmt(t.other_received_amount, currency)} received) on invoices that aren't linked to a month.
+                        </p>
+                    )}
+                </section>
+
+                <section>
+                    <SectionHeading title="Profitability" />
+                    <dl>
+                        <Row label="Revenue (invoiced, excl. tax)" value={fmt(t.revenue, currency)} />
+                        <Row label="Resource Cost" value={`- ${fmt(t.resource_cost, currency)}`} />
+                        <RowRule />
+                        <Row label="Gross Profit" value={fmt(t.gross_margin, currency)} tone={signTone(t.gross_margin)} strong />
+                        <Row label="Expenses & Vendor Bills" value={`- ${fmt(n(t.misc_expenses) + n(t.vendor_bills_amount), currency)}`} />
+                        <RowRule />
+                        <Row label="Net Profit" value={fmt(t.net_profit, currency)} tone={signTone(t.net_profit)} strong />
+                        <Row label="Net Margin" value={pct(t.net_margin_percent)} tone={t.net_margin_percent == null ? 'default' : signTone(t.net_margin_percent)} strong />
+                    </dl>
+                </section>
+            </div>
         </div>
     );
 };

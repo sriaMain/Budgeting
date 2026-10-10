@@ -2,16 +2,18 @@
  * MilestonesPanel
  * Phases of a Fixed Budget / Milestone-Based project (Project Types and
  * Project Financial Management module). Each milestone carries its own
- * budget and billing amount; actual cost, margin, billing status and
- * payment status are all derived server-side from the same
- * Invoice/InvoicePayment/Expense records used elsewhere in the app - never
- * entered manually - so they can't drift from what was actually billed,
- * paid or spent.
+ * budget and billing amount; actual cost, billing status and payment status
+ * are all derived server-side - never entered manually. Actual Cost =
+ * assigned resource cost (Resources tab) + expenses + paid vendor bills;
+ * those parts are managed in their own tabs, so this table only shows the
+ * milestone's budget, cost summary, billing and payment.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
+import { Drawer } from './Drawer';
+import { drawerInputClass, drawerLabelClass, FieldHint, DrawerSection, DrawerFormFooter } from './drawerForm';
 
 interface Milestone {
     id: number;
@@ -25,11 +27,13 @@ interface Milestone {
     billing_amount: string | number;
     status: string;
     status_display: string;
+    /** Resource cost + expenses + paid bills (server-computed). Resource cost includes labour_cost. */
     actual_cost: string | number;
-    /** Expenses linked to the milestone (employee_cost excluded - see labour_cost). */
-    expense_cost?: string | number;
-    /** Task timer hours x assignee hourly cost rate. */
+    /** Cost of this milestone's tasks (allocated hours x assignee cost rate). */
     labour_cost?: string | number;
+    allocated_hours?: string | number;
+    /** Allocated hours with no cost rate to price them (unassigned or no rate). */
+    unrated_hours?: string | number;
     margin: string | number;
     /** This milestone's share of the quotation (= billing_amount). */
     quotation_amount?: string | number;
@@ -156,16 +160,11 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
         fetchMilestones();
     }, [fetchMilestones]);
 
-    // Actual cost includes live task timers, so keep the figures fresh while
-    // the panel is open and whenever the user comes back to the tab.
+    // Resources, expenses and bills change in other tabs - refresh when the user comes back to the window.
     useEffect(() => {
-        const interval = window.setInterval(fetchMilestones, 30000);
         const onFocus = () => fetchMilestones();
         window.addEventListener('focus', onFocus);
-        return () => {
-            window.clearInterval(interval);
-            window.removeEventListener('focus', onFocus);
-        };
+        return () => window.removeEventListener('focus', onFocus);
     }, [fetchMilestones]);
 
     const totals = useMemo(() => milestones.reduce(
@@ -533,7 +532,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                 <th className="px-4 py-2 text-right">Remaining Billable</th>
                                 <th className="px-4 py-2">Billing</th>
                                 <th className="px-4 py-2">Payment</th>
-                                <th className="px-4 py-2" />
+                                <th className="px-4 py-2 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -616,9 +615,14 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                         <td className={`px-4 py-2 text-right ${overBudget ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-900 dark:text-white'}`}>
                                             {num(m.actual_cost).toLocaleString()} {currency}
                                             {overBudget && <span className="ml-1 text-[10px] uppercase">Over</span>}
-                                            {(m.labour_cost !== undefined || m.expense_cost !== undefined) && (
-                                                <p className="text-[11px] font-normal text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                                    Time {num(m.labour_cost).toLocaleString()} + Exp {num(m.expense_cost).toLocaleString()}
+                                            {num(m.allocated_hours) > 0 && (
+                                                <p className="text-[11px] font-normal text-gray-500 dark:text-gray-400" title="Labour cost = allocated hours of this milestone's tasks x assignee rate">
+                                                    {num(m.allocated_hours).toFixed(2)} h allocated · {num(m.labour_cost).toLocaleString()} {currency}
+                                                </p>
+                                            )}
+                                            {num(m.unrated_hours) > 0 && (
+                                                <p className="text-[11px] font-normal text-amber-600 dark:text-amber-400" title="Set a cost rate on the resource assignment, the user's charges per hour, or the freelancer's hourly rate">
+                                                    {num(m.unrated_hours).toFixed(2)} h without a rate
                                                 </p>
                                             )}
                                         </td>
@@ -714,71 +718,69 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                 )}
             </div>
 
-            {invoiceModalMilestone && (
-                <div
-                    className="fixed inset-0 bg-black/30 dark:bg-black/50 z-50 flex items-center justify-center p-4"
-                    onClick={() => setInvoiceModalMilestone(null)}
-                >
-                    <div
-                        className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-sm p-5"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <p className="text-base font-semibold text-gray-900 dark:text-white mb-1">Create Invoice</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">{invoiceModalMilestone.name}</p>
-
-                        <div className="space-y-3">
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Invoice Amount (before tax)</label>
-                                <input
-                                    type="number"
-                                    value={invoiceAmount}
-                                    onChange={(e) => setInvoiceAmount(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-                                />
-                                {(() => {
-                                    const taxPct = num(invoiceModalMilestone.tax_percentage);
-                                    const base = num(invoiceAmount);
-                                    const tax = (base * taxPct) / 100;
-                                    return (
-                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                            + Tax {taxPct}% (from quotation): {tax.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                                            {' '}&middot; Invoice total: <span className="font-semibold text-gray-700 dark:text-gray-200">{(base + tax).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                                        </p>
-                                    );
-                                })()}
+            <Drawer
+                isOpen={!!invoiceModalMilestone}
+                onClose={() => setInvoiceModalMilestone(null)}
+                title="Create Invoice"
+                subtitle={invoiceModalMilestone?.name}
+                size="md"
+                footer={(() => {
+                    const taxPct = num(invoiceModalMilestone?.tax_percentage);
+                    const base = num(invoiceAmount);
+                    const total = base + (base * taxPct) / 100;
+                    return (
+                        <DrawerFormFooter
+                            summary={<>Invoice total: <span className="font-semibold text-gray-800 dark:text-gray-200">{total.toLocaleString('en-IN', { maximumFractionDigits: 2 })} {currency}</span></>}
+                            onCancel={() => setInvoiceModalMilestone(null)}
+                            onSubmit={handleCreateInvoice}
+                            submitLabel="Create Invoice"
+                            busyLabel="Creating..."
+                            isBusy={isCreatingInvoice}
+                        />
+                    );
+                })()}
+            >
+                {invoiceModalMilestone && (
+                    <fieldset disabled={isCreatingInvoice} className="space-y-4">
+                        <DrawerSection>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className={drawerLabelClass}>Invoice Amount (before tax) *</label>
+                                    <input
+                                        type="number" min={0} step="0.01"
+                                        value={invoiceAmount}
+                                        onChange={(e) => setInvoiceAmount(e.target.value)}
+                                        className={`${drawerInputClass} text-right tabular-nums`}
+                                    />
+                                </div>
+                                <div>
+                                    <label className={drawerLabelClass}>Due in (days)</label>
+                                    <input
+                                        type="number" min={0}
+                                        value={invoiceDueDays}
+                                        onChange={(e) => setInvoiceDueDays(e.target.value)}
+                                        className={`${drawerInputClass} text-right tabular-nums`}
+                                    />
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Due in (days)</label>
-                                <input
-                                    type="number"
-                                    value={invoiceDueDays}
-                                    onChange={(e) => setInvoiceDueDays(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end gap-2 mt-5">
-                            <button
-                                type="button"
-                                onClick={() => setInvoiceModalMilestone(null)}
-                                disabled={isCreatingInvoice}
-                                className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleCreateInvoice}
-                                disabled={isCreatingInvoice}
-                                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                            >
-                                {isCreatingInvoice ? 'Creating...' : 'Create Invoice'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                            {(() => {
+                                const taxPct = num(invoiceModalMilestone.tax_percentage);
+                                const base = num(invoiceAmount);
+                                const tax = (base * taxPct) / 100;
+                                return (
+                                    <FieldHint>
+                                        + Tax {taxPct}% (from quotation): {tax.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                        {' '}&middot; Invoice total: <span className="font-semibold text-gray-700 dark:text-gray-200">{(base + tax).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                    </FieldHint>
+                                );
+                            })()}
+                        </DrawerSection>
+                        <FieldHint>
+                            Bill amount {num(invoiceModalMilestone.billing_amount).toLocaleString('en-IN')} {currency} &middot; already invoiced {num(invoiceModalMilestone.billed_base_amount ?? invoiceModalMilestone.billed_amount).toLocaleString('en-IN')} {currency}. The invoice is created as a Draft.
+                        </FieldHint>
+                    </fieldset>
+                )}
+            </Drawer>
         </div>
     );
 };

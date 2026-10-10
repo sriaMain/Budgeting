@@ -84,6 +84,9 @@ interface UnitChoice {
   label: string;
 }
 
+// First pipeline stage - backend Quote.status default (spelling matches the backend value).
+const NEW_QUOTE_STATUS = 'Oppurtunity';
+
 export default function AddQuotePage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -123,7 +126,9 @@ export default function AddQuotePage() {
     dueDate: getTodayDate(),
     client: '',
     poc: '',
-    status: '',
+    // A new quote always starts at the first pipeline stage (backend Quote default);
+    // edit mode replaces this with the saved status.
+    status: isEditMode ? '' : NEW_QUOTE_STATUS,
     quoteName: '',
   });
 
@@ -314,12 +319,13 @@ export default function AddQuotePage() {
     try {
       const response = await axiosInstance.get('/quote-status-choices/');
       if (response.status === 200) {
-        setStatusChoices(response.data);
-        if (response.data.length > 0 && !quoteDetails.status) {
-          setQuoteDetails(prev => ({
-            ...prev,
-            status: response.data[0].value
-          }));
+        const choices: StatusChoice[] = response.data;
+        setStatusChoices(choices);
+        // Fill in a default only when nothing is set yet - never overwrite the
+        // status of a quote being edited (this response can arrive after it loads).
+        if (!isEditMode && choices.length > 0) {
+          const initial = choices.find(c => c.value === NEW_QUOTE_STATUS)?.value ?? choices[0].value;
+          setQuoteDetails(prev => (prev.status ? prev : { ...prev, status: initial }));
         }
       }
     } catch (err) {

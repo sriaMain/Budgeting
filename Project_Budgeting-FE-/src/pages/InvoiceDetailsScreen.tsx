@@ -280,6 +280,9 @@ export default function InvoiceDetailsScreen({
         );
     }
 
+    // A paid invoice is final - it can't be edited
+    const isPaid = invoiceData.status === 'Paid' || (Number(invoiceData.total_amount) > 0 && Number(invoiceData.balance_amount) <= 0);
+
     return (
         <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
             <div className="p-6 max-w-[1400px] mx-auto">
@@ -296,6 +299,7 @@ export default function InvoiceDetailsScreen({
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Invoice Details</h1>
                     </div>
                     <div className="flex items-center gap-3">
+                        {!isPaid && (
                         <button
                             onClick={() => setIsEditMode(!isEditMode)}
                             className={`p-2 hover:bg-gray-100 rounded-lg transition-colors dark:hover:bg-gray-800 ${isEditMode ? 'bg-blue-50 dark:bg-blue-500/15' : ''}`}
@@ -303,7 +307,8 @@ export default function InvoiceDetailsScreen({
                         >
                             <Edit className={`w-5 h-5 ${isEditMode ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`} />
                         </button>
-                        {isEditMode && (
+                        )}
+                        {isEditMode && !isPaid && (
                             <>
                                 <button
                                     onClick={handleSaveChanges}
@@ -337,7 +342,7 @@ export default function InvoiceDetailsScreen({
                             </div>
                             <div className="mb-4">
                                 <label className="text-sm text-gray-500 block mb-1 dark:text-gray-400">Date of Issue:</label>
-                                {isEditMode ? (
+                                {isEditMode && !isPaid ? (
                                     <input
                                         type="date"
                                         value={invoiceData.issue_date}
@@ -366,7 +371,7 @@ export default function InvoiceDetailsScreen({
                             </div>
                             <div className="mb-4">
                                 <label className="text-sm text-gray-500 block mb-1 dark:text-gray-400">Due Date:</label>
-                                {isEditMode ? (
+                                {isEditMode && !isPaid ? (
                                     <input
                                         type="date"
                                         value={invoiceData.due_date}
@@ -410,7 +415,7 @@ export default function InvoiceDetailsScreen({
                                         <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">{row.product_group}</td>
                                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">{row.product_name}</td>
                                         <td className="px-4 py-3 text-sm text-gray-900 text-center dark:text-gray-100">
-                                            {isEditMode ? (
+                                            {isEditMode && !isPaid ? (
                                                 <input
                                                     type="number"
                                                     value={row.quantity}
@@ -433,7 +438,7 @@ export default function InvoiceDetailsScreen({
                                         </td>
                                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">{row.unit}</td>
                                         <td className="px-4 py-3 text-sm text-gray-900 text-right dark:text-gray-100">
-                                            {isEditMode ? (
+                                            {isEditMode && !isPaid ? (
                                                 <input
                                                     type="number"
                                                     value={row.unit_price}

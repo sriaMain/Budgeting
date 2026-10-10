@@ -2,14 +2,14 @@ import React from 'react';
 import { StatusBadge } from '../../../components/StatusBadge';
 import type { VendorOnboardingDetail } from '../../../types/vendorOnboarding.types';
 import { StarRating } from './StarRating';
-import { vendorStatusLabel } from './vendorDisplay';
+import { vendorOnboarding, vendorStatusLabel } from './vendorDisplay';
 import { VENDOR_ONBOARDING_STEPS } from './VendorOnboardingPanel';
 
 /** While onboarding is still being filled in, the stage is the first unfinished of the 5 steps;
  * once submitted, it's the backend's approval stage (e.g. "Approval Level 1: Finance"). */
 const stageLabel = (vendor: VendorOnboardingDetail) => {
   if (!['invited', 'draft', 'action_required'].includes(vendor.status)) return vendor.current_stage;
-  const index = VENDOR_ONBOARDING_STEPS.findIndex((s) => s.key === vendor.onboarding?.current_step);
+  const index = VENDOR_ONBOARDING_STEPS.findIndex((s) => s.key === vendorOnboarding(vendor).current_step);
   return index < 0 ? vendor.current_stage : `Step ${index + 1} of ${VENDOR_ONBOARDING_STEPS.length} · ${VENDOR_ONBOARDING_STEPS[index].title}`;
 };
 

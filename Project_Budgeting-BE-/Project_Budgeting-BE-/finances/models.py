@@ -78,6 +78,15 @@ class Invoice(models.Model):
     # milestone invoices.
     billing_period_start = models.DateField(null=True, blank=True)
     billing_period_end = models.DateField(null=True, blank=True)
+    # The T&M month this invoice bills (Project.ProjectPeriod). At most one
+    # non-cancelled invoice per period - see Meta.constraints.
+    billing_period = models.ForeignKey(
+        'Project.ProjectPeriod',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='invoices'
+    )
 
     status = models.CharField(
         max_length=20,
@@ -144,6 +153,12 @@ class Invoice(models.Model):
             models.CheckConstraint(
                 condition=models.Q(balance_amount__gte=0),
                 name='invoice_balance_non_negative'
+            ),
+            # One open invoice per T&M month; a cancelled one can be re-issued.
+            models.UniqueConstraint(
+                fields=['billing_period'],
+                condition=~models.Q(status='Cancelled'),
+                name='one_open_invoice_per_billing_period'
             ),
         ]
 
@@ -409,7 +424,25 @@ class VendorBill(models.Model):
 
     bill_no = models.CharField(max_length=50, unique=True)
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT)
-    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT)
+    # Optional: a bill is either raised from a PO (amount = PO total) or
+    # created standalone from the project's Finances tab with its own amount.
+    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, null=True, blank=True)
+    # Always set (copied from the PO for PO bills) so a project's bills can
+    # be found without going through the PO.
+    project = models.ForeignKey(
+        Project, on_delete=models.PROTECT, null=True, blank=True, related_name='vendor_bills'
+    )
+    description = models.TextField(blank=True, default='')
+
+    # Same optional tagging as Expense.gl_account / Expense.milestone, so a
+    # bill's paid amount rolls up into the matching Project Budget Line and
+    # Milestone actual cost (Project.BudgetLine / Project.Milestone).
+    gl_account = models.ForeignKey(
+        'core.GLAccount', on_delete=models.SET_NULL, null=True, blank=True, related_name='vendor_bills'
+    )
+    milestone = models.ForeignKey(
+        'Project.Milestone', on_delete=models.SET_NULL, null=True, blank=True, related_name='vendor_bills'
+    )
 
     bill_date = models.DateField()
     due_date = models.DateField()
@@ -422,7 +455,10 @@ class VendorBill(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.pk:
-            self.total_amount = self.purchase_order.total_amount
+            if self.purchase_order_id:
+                self.total_amount = self.purchase_order.total_amount
+                if not self.project_id:
+                    self.project_id = self.purchase_order.project_id
             self.balance_amount = self.total_amount
         super().save(*args, **kwargs)
 
@@ -434,6 +470,22 @@ class VendorBill(models.Model):
             self.status = 'partially_paid'
         else:
             self.status = 'unpaid'
+
+
+def project_vendor_bills(project):
+    """All vendor bills belonging to a project - standalone bills carry
+    `project` directly, older PO bills may only reach it via the PO."""
+    return VendorBill.objects.filter(
+        models.Q(project=project) | models.Q(purchase_order__project=project)
+    )
+
+
+def vendor_bills_paid_for_project(project):
+    """Amount actually paid against this project's vendor bills - counted
+    as used budget (unpaid bill balances are not)."""
+    return project_vendor_bills(project).aggregate(total=Sum('paid_amount'))['total'] or Decimal('0.00')
+
+
 class OutgoingPayment(models.Model):
     PAYMENT_METHOD_CHOICES = [
         ('bank', 'Bank Transfer'),
@@ -485,7 +537,7 @@ class OutgoingPayment(models.Model):
         # Update bill status
         self.vendor_bill.refresh_from_db()
         self.vendor_bill.update_status()
-        self.vendor_bill.save(update_fields=["status"])
+        self.vendor_bill.save(update_fields=["status", "balance_amount"])
 # models.py
 from django.db import models
 from cloudinary.models import CloudinaryField
@@ -549,7 +601,20 @@ from django.db.models import Sum
 from django.core.validators import MinValueValidator
 import uuid
 
+
+class ExpenseQuerySet(models.QuerySet):
+    def cost_bearing(self):
+        """Expenses that count toward a project's actual cost. An expense
+        linked to a vendor bill (Expense.vendor_bill) records the same spend
+        as that bill, and the bill is what's counted (its paid amount, see
+        vendor_bills_paid_for_project) - so the expense is left out here to
+        keep each real cost counted exactly once."""
+        return self.filter(vendor_bill__isnull=True)
+
+
 class Expense(models.Model):
+
+    objects = ExpenseQuerySet.as_manager()
 
     CATEGORY_CHOICES = [
         ('rent', 'Rent'),
@@ -643,6 +708,17 @@ class Expense(models.Model):
         related_name='expenses'
     )
 
+    # Set when this expense records the same spend as a vendor bill. One
+    # expense per bill (OneToOne), and linked expenses are excluded from cost
+    # totals (ExpenseQuerySet.cost_bearing) so the spend is never counted twice.
+    vendor_bill = models.OneToOneField(
+        'finances.VendorBill',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='linked_expense'
+    )
+
     expense_date = models.DateField(default=timezone.localdate)
 
     description = models.TextField()
@@ -683,6 +759,12 @@ class Expense(models.Model):
 
         if self.pk and self.total_paid() > self.amount:
             raise ValidationError("Expense amount cannot be less than already paid amount")
+
+        if self.vendor_bill_id and self.project_id:
+            bill = self.vendor_bill
+            bill_project_id = bill.project_id or (bill.purchase_order.project_id if bill.purchase_order_id else None)
+            if bill_project_id != self.project_id:
+                raise ValidationError({"vendor_bill": "Linked bill must belong to the same project."})
 
     def save(self, *args, **kwargs):
         self.full_clean()

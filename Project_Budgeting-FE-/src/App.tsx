@@ -213,7 +213,8 @@ const App: React.FC = () => {
             path="/pipeline/add-quote"
             element={
               <ProtectedRoute>
-                <AddQuotePage />
+                {/* Keyed per route so switching between add / edit never reuses the previous form state */}
+                <AddQuotePage key="add-quote" />
               </ProtectedRoute>
             }
           />
@@ -223,7 +224,7 @@ const App: React.FC = () => {
             path="/pipeline/edit-quote/:quoteId"
             element={
               <ProtectedRoute>
-                <AddQuotePage />
+                <AddQuotePage key="edit-quote" />
               </ProtectedRoute>
             }
           />
@@ -233,7 +234,7 @@ const App: React.FC = () => {
             path="/projects/edit/:projectId"
             element={
               <ProtectedRoute>
-                <AddQuotePage />
+                <AddQuotePage key="edit-project" />
               </ProtectedRoute>
             }
           />

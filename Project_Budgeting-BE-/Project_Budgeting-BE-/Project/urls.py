@@ -5,6 +5,8 @@ from django.urls import path, include
 from .views import (ProjectAPIView, ProjectBudgetAPIView, BudgetLineListCreateAPIView, BudgetLineDetailAPIView,
   BudgetLineSummaryAPIView, MilestoneListCreateAPIView, MilestoneDetailAPIView, MilestoneCreateInvoiceAPIView,
   ResourceAssignmentListCreateAPIView, ResourceAssignmentDetailAPIView, ProjectGenerateTMInvoiceAPIView,
+  ProjectPeriodListAPIView, ProjectPeriodDetailAPIView,
+  ResourceMasterRateAPIView,
   ProjectFinancialSummaryAPIView, StopTaskTimerAPIView, TaskAPIView, TaskTimerStateAPIView,
  TimesheetAPIView, TimesheetEntryAPIView, SubmitTimesheetAPIView, StartTaskTimerAPIView,
   PauseTaskTimerAPIView, PendingExtraHoursAPIView, ReviewExtraHoursAPIView, RequestExtraHoursAPIView, ExtraHoursHistoryAPIView,
@@ -29,9 +31,12 @@ urlpatterns = [
     path('projects/<int:project_no>/milestones/', MilestoneListCreateAPIView.as_view(), name='project-milestone-list-create'),
     path('projects/<int:project_no>/milestones/<int:milestone_id>/', MilestoneDetailAPIView.as_view(), name='project-milestone-detail'),
     path('projects/<int:project_no>/milestones/<int:milestone_id>/create-invoice/', MilestoneCreateInvoiceAPIView.as_view(), name='project-milestone-create-invoice'),
+    path('projects/resource-rate/', ResourceMasterRateAPIView.as_view(), name='project-resource-master-rate'),
     path('projects/<int:project_no>/resources/', ResourceAssignmentListCreateAPIView.as_view(), name='project-resource-list-create'),
     path('projects/<int:project_no>/resources/<int:assignment_id>/', ResourceAssignmentDetailAPIView.as_view(), name='project-resource-detail'),
     path('projects/<int:project_no>/generate-tm-invoice/', ProjectGenerateTMInvoiceAPIView.as_view(), name='project-generate-tm-invoice'),
+    path('projects/<int:project_no>/periods/', ProjectPeriodListAPIView.as_view(), name='project-periods'),  # T&M monthly financials
+    path('projects/<int:project_no>/periods/<int:period_id>/', ProjectPeriodDetailAPIView.as_view(), name='project-period-detail'),
     path('projects/<int:project_no>/financial-summary/', ProjectFinancialSummaryAPIView.as_view(), name='project-financial-summary'),
 
     path('tasks/<int:project_id>/tasks/', TaskAPIView.as_view(), name='project-tasks-list'),  #project related tasks

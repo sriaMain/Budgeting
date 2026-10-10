@@ -11,8 +11,8 @@ from django.db.models import Q, Sum, Count,F
 from django.utils import timezone
 from django.http import FileResponse, HttpResponse
 from io import BytesIO
-from datetime import timedelta, datetime
-from decimal import Decimal
+from datetime import timedelta, datetime, date
+from decimal import Decimal, InvalidOperation
 
 from .models import Invoice, InvoiceItem, InvoicePayment, PurchaseOrder, Vendor, VendorBill, OutgoingPayment,Expense,ExpensePayment, FinancialAuditLog
 from roles.permission import HasPermissionCode
@@ -876,7 +876,7 @@ class ProjectPaymentsListAPIView(APIView):
         # =================================================
         po_payments = (
             OutgoingPayment.objects
-            .filter(vendor_bill__purchase_order__project=project)
+            .filter(Q(vendor_bill__project=project) | Q(vendor_bill__purchase_order__project=project))
             .select_related(
                 "vendor",
                 "vendor_bill",
@@ -894,7 +894,7 @@ class ProjectPaymentsListAPIView(APIView):
                 "type": "purchase_order",
                 "id": p.id,
                 "bill_no": p.vendor_bill.bill_no,
-                "po_no": p.vendor_bill.purchase_order.po_no,
+                "po_no": p.vendor_bill.purchase_order.po_no if p.vendor_bill.purchase_order else None,
                 "vendor": p.vendor.name,
                 "amount": float(p.amount),
                 "payment_method": p.payment_method,
@@ -1156,6 +1156,36 @@ class PurchaseOrderStatusUpdateAPIView(APIView):
 
 
 
+def _resolve_bill_tags(data, project):
+    """Optional GL Account / Milestone for a bill, from `gl_account_id` /
+    `milestone_id` in the request. Returns ({field: obj}, error_message).
+    Only keys present in `data` are returned, so it works for partial updates
+    too; an empty value clears the tag."""
+    from core.models import GLAccount
+    from Project.models import Milestone
+
+    tags = {}
+    if "gl_account_id" in data:
+        gl_id = data.get("gl_account_id")
+        if gl_id in (None, ""):
+            tags["gl_account"] = None
+        else:
+            gl = GLAccount.objects.filter(pk=gl_id).first()
+            if not gl:
+                return None, "Selected GL Account does not exist"
+            tags["gl_account"] = gl
+    if "milestone_id" in data:
+        ms_id = data.get("milestone_id")
+        if ms_id in (None, ""):
+            tags["milestone"] = None
+        else:
+            ms = Milestone.objects.filter(pk=ms_id, project=project).first()
+            if not ms:
+                return None, "Milestone must belong to this project"
+            tags["milestone"] = ms
+    return tags, None
+
+
 class VendorBillCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -1165,10 +1195,8 @@ class VendorBillCreateAPIView(APIView):
         purchase_order_id = request.data.get("purchase_order_id")
 
         if not purchase_order_id:
-            return Response(
-                {"error": "purchase_order_id is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            # Standalone bill (no PO) - created from a project's Finances tab.
+            return self._create_standalone(request)
 
         po = get_object_or_404(PurchaseOrder, id=purchase_order_id)
 
@@ -1196,7 +1224,73 @@ class VendorBillCreateAPIView(APIView):
             },
             status=status.HTTP_201_CREATED
         )
-    
+
+    def _create_standalone(self, request):
+        data = request.data
+        project_no = data.get("project_id")
+        vendor_id = data.get("vendor_id")
+        if not project_no or not vendor_id:
+            return Response(
+                {"error": "Either purchase_order_id, or project_id and vendor_id, are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        project = get_object_or_404(Project, project_no=project_no)
+        vendor = get_object_or_404(Vendor, id=vendor_id)
+
+        try:
+            total_amount = Decimal(str(data.get("total_amount")))
+        except (InvalidOperation, TypeError, ValueError):
+            return Response({"error": "A valid total_amount is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if total_amount <= 0:
+            return Response({"error": "Amount must be greater than zero"}, status=status.HTTP_400_BAD_REQUEST)
+
+        today = timezone.now().date()
+        try:
+            bill_date = date.fromisoformat(data["bill_date"]) if data.get("bill_date") else today
+            due_date = date.fromisoformat(data["due_date"]) if data.get("due_date") else bill_date + timedelta(days=30)
+        except ValueError:
+            return Response({"error": "Dates must be in YYYY-MM-DD format"}, status=status.HTTP_400_BAD_REQUEST)
+        if due_date < bill_date:
+            return Response({"error": "Due date cannot be before bill date"}, status=status.HTTP_400_BAD_REQUEST)
+
+        tags, error = _resolve_bill_tags(data, project)
+        if error:
+            return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
+
+        bill_no = (data.get("bill_no") or "").strip()
+        if bill_no:
+            if VendorBill.objects.filter(bill_no=bill_no).exists():
+                return Response({"error": "A bill with this number already exists"}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            seq = VendorBill.objects.filter(project=project, purchase_order__isnull=True).count() + 1
+            bill_no = f"BILL-{project.project_no}-{seq}"
+            while VendorBill.objects.filter(bill_no=bill_no).exists():
+                seq += 1
+                bill_no = f"BILL-{project.project_no}-{seq}"
+
+        bill = VendorBill.objects.create(
+            bill_no=bill_no,
+            vendor=vendor,
+            project=project,
+            description=data.get("description") or "",
+            bill_date=bill_date,
+            due_date=due_date,
+            total_amount=total_amount,
+            **tags,
+        )
+
+        return Response(
+            {
+                "message": "Vendor bill created successfully",
+                "bill_id": bill.id,
+                "bill_no": bill.bill_no,
+                "total_amount": bill.total_amount,
+                "status": bill.status
+            },
+            status=status.HTTP_201_CREATED
+        )
+
 
 
 from finances.models import VendorBill
@@ -1208,7 +1302,7 @@ class VendorBillListAPIView(APIView):
 
     def get(self, request):
         qs = VendorBill.objects.select_related(
-            'vendor', 'purchase_order', 'purchase_order__project'
+            'vendor', 'purchase_order', 'project'
         ).order_by('-bill_date')
 
         vendor_id = request.query_params.get("vendor_id")
@@ -1222,7 +1316,9 @@ class VendorBillListAPIView(APIView):
             qs = qs.filter(status=status_)
             
         if project_id:
-            qs = qs.filter(purchase_order__project__project_no=project_id)
+            qs = qs.filter(
+                Q(project__project_no=project_id) | Q(purchase_order__project__project_no=project_id)
+            )
 
         data = [
             {
@@ -1230,9 +1326,10 @@ class VendorBillListAPIView(APIView):
                 "bill_no": bill.bill_no,
                 "vendor": bill.vendor.name,
                 "vendor_id": bill.vendor.id,
-                "po_no": bill.purchase_order.po_no,
-                "project_no": bill.purchase_order.project.project_no,
-                "project_name": bill.purchase_order.project.project_name,
+                "po_no": bill.purchase_order.po_no if bill.purchase_order else None,
+                "project_no": bill.project.project_no if bill.project else None,
+                "project_name": bill.project.project_name if bill.project else None,
+                "description": bill.description,
                 "total_amount": float(bill.total_amount),
                 "paid_amount": float(bill.paid_amount),
                 "balance_amount": float(bill.balance_amount),
@@ -1336,7 +1433,7 @@ class OutgoingPaymentCreateAPIView(APIView):
 
         _log_financial_audit(
             "payment", payment.id, "payment_recorded", request,
-            project=bill.purchase_order.project,
+            project=bill.project or (bill.purchase_order.project if bill.purchase_order else None),
             field_name="vendor_bill", new_value=f"{payment.amount} against bill {bill.bill_no}",
         )
 
@@ -1401,7 +1498,7 @@ class ProjectOutgoingPaymentsAPIView(APIView):
         # 🔹 Vendor Bills for this project
         vendor_bills = (
             VendorBill.objects
-            .filter(purchase_order__project=project)
+            .filter(Q(project=project) | Q(purchase_order__project=project))
             .select_related(
                 "vendor",
                 "purchase_order"
@@ -1415,7 +1512,7 @@ class ProjectOutgoingPaymentsAPIView(APIView):
         # 🔹 Payments for this project
         payments = (
             OutgoingPayment.objects
-            .filter(vendor_bill__purchase_order__project=project)
+            .filter(Q(vendor_bill__project=project) | Q(vendor_bill__purchase_order__project=project))
             .select_related(
                 "vendor",
                 "vendor_bill",
@@ -1445,7 +1542,8 @@ class ProjectOutgoingPaymentsAPIView(APIView):
                 {
                     "id": bill.id,
                     "bill_no": bill.bill_no,
-                    "po_no": bill.purchase_order.po_no,
+                    "po_no": bill.purchase_order.po_no if bill.purchase_order else None,
+                    "description": bill.description,
                     "vendor": bill.vendor.name,
                     "total_amount": float(bill.total_amount),
                     "paid_amount": float(bill.paid_amount),
@@ -1461,7 +1559,7 @@ class ProjectOutgoingPaymentsAPIView(APIView):
                 {
                     "id": p.id,
                     "bill_no": p.vendor_bill.bill_no,
-                    "po_no": p.vendor_bill.purchase_order.po_no,
+                    "po_no": p.vendor_bill.purchase_order.po_no if p.vendor_bill.purchase_order else None,
                     "vendor": p.vendor.name,
                     "amount": float(p.amount),
                     "payment_method": p.payment_method,
@@ -1472,6 +1570,111 @@ class ProjectOutgoingPaymentsAPIView(APIView):
                 for p in payments
             ],
         })
+
+
+class ProjectCostEntriesAPIView(APIView):
+    """
+    Expenses tab: the project's expenses and vendor bills as one list of
+    cost entries, read straight from the existing Expense / VendorBill
+    records (nothing is copied). Actual Cost itself is still computed only by
+    the financial summary; an expense linked to a bill is flagged here
+    (`linked_bill_no`) because its cost is carried by that bill.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_id):
+        from finances.models import project_vendor_bills
+
+        project = get_object_or_404(Project, project_no=project_id)
+
+        def gl_label(gl):
+            return f"{gl.code} - {gl.name}" if gl else None
+
+        entries = []
+
+        expenses = (
+            Expense.objects.filter(project=project)
+            .select_related('gl_account', 'milestone', 'vendor', 'freelancer', 'employee', 'vendor_bill')
+            .prefetch_related('payments')
+        )
+        for e in expenses:
+            payee = (
+                (e.vendor.name if e.vendor else None)
+                or (e.freelancer.full_name if e.freelancer else None)
+                or (e.employee.get_full_name() if e.employee else None)
+            )
+            entries.append({
+                "key": f"expense-{e.id}",
+                "type": "expense",
+                "id": e.id,
+                "ref_no": e.expense_no,
+                "date": e.expense_date,
+                "description": e.description,
+                "category": e.category,
+                "payee": payee,
+                "gl_account": e.gl_account_id,
+                "gl_account_label": gl_label(e.gl_account),
+                "milestone": e.milestone_id,
+                "milestone_name": e.milestone.name if e.milestone else None,
+                "amount": float(e.amount),
+                "paid_amount": float(e.total_paid()),
+                "status": e.status,
+                "linked_bill_no": e.vendor_bill.bill_no if e.vendor_bill else None,
+            })
+
+        bills = project_vendor_bills(project).select_related('vendor', 'gl_account', 'milestone', 'purchase_order')
+        linked_expense_by_bill = dict(
+            Expense.objects.filter(vendor_bill__in=bills).values_list('vendor_bill_id', 'expense_no')
+        )
+        for b in bills:
+            entries.append({
+                "key": f"bill-{b.id}",
+                "type": "bill",
+                "id": b.id,
+                "ref_no": b.bill_no,
+                "date": b.bill_date,
+                "description": b.description or (f"PO {b.purchase_order.po_no}" if b.purchase_order else ""),
+                "category": None,
+                "payee": b.vendor.name,
+                "gl_account": b.gl_account_id,
+                "gl_account_label": gl_label(b.gl_account),
+                "milestone": b.milestone_id,
+                "milestone_name": b.milestone.name if b.milestone else None,
+                "amount": float(b.total_amount),
+                "paid_amount": float(b.paid_amount),
+                "status": b.status,
+                "linked_expense_no": linked_expense_by_bill.get(b.id),
+            })
+
+        entries.sort(key=lambda r: (r["date"], r["key"]), reverse=True)
+        return Response({"entries": entries}, status=status.HTTP_200_OK)
+
+
+class VendorBillTagsAPIView(APIView):
+    """PATCH a bill's GL Account / Milestone (`gl_account_id`, `milestone_id`)
+    so existing bills - including PO bills - can be tagged after creation."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def patch(self, request, bill_id):
+        from .serializers import VendorBillSerializer
+
+        bill = get_object_or_404(VendorBill.objects.select_related('purchase_order'), pk=bill_id)
+        project = bill.project or (bill.purchase_order.project if bill.purchase_order_id else None)
+        if project is None:
+            return Response({"error": "Bill is not linked to a project"}, status=status.HTTP_400_BAD_REQUEST)
+
+        tags, error = _resolve_bill_tags(request.data, project)
+        if error:
+            return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
+        if tags:
+            for field, value in tags.items():
+                setattr(bill, field, value)
+            bill.save(update_fields=list(tags.keys()))
+        return Response(VendorBillSerializer(bill).data, status=status.HTTP_200_OK)
+
+
 class SendPurchaseOrderEmailView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]

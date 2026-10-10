@@ -34,6 +34,9 @@ class ProjectAPIView(APIView):
         serializer = ProjectCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         project = serializer.save()
+        # T&M: one monthly period per month of the project
+        from .utils.tm_periods import sync_tm_periods
+        sync_tm_periods(project)
 
         return Response(
             {
@@ -204,6 +207,9 @@ class ProjectAPIView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         project = serializer.save()
+        # T&M: follow date / monthly amount changes (history is kept - see sync_tm_periods)
+        from .utils.tm_periods import sync_tm_periods
+        sync_tm_periods(project)
 
         return Response(
             {
@@ -722,16 +728,28 @@ class MilestoneCreateInvoiceAPIView(APIView):
 
 class ResourceAssignmentListCreateAPIView(APIView):
     """
-    Resources staffed on a Time & Material project.
-    GET  /projects/<project_no>/resources/  -> list this project's assignments
-    POST /projects/<project_no>/resources/  -> add a new assignment
+    Resources staffed on a project.
+    GET  /projects/<project_no>/resources/                 -> project-level (T&M) assignments
+    GET  /projects/<project_no>/resources/?milestone=<id>  -> one milestone's resources
+    GET  /projects/<project_no>/resources/?milestone=all   -> every milestone's resources
+    GET  /projects/<project_no>/resources/?milestone=any   -> all of the project's resources
+    POST /projects/<project_no>/resources/                 -> add an assignment (`milestone` optional)
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request, project_no):
         project = get_object_or_404(Project, project_no=project_no)
-        assignments = project.resource_assignments.filter(is_active=True)
+        assignments = project.resource_assignments.filter(is_active=True).select_related('milestone')
+        milestone = request.query_params.get('milestone')
+        if milestone == 'any':
+            pass  # project-level and milestone resources together (Resources tab)
+        elif milestone == 'all':
+            assignments = assignments.filter(milestone__isnull=False)
+        elif milestone:
+            assignments = assignments.filter(milestone_id=milestone)
+        else:
+            assignments = assignments.filter(milestone__isnull=True)
         return Response(
             ResourceAssignmentSerializer(assignments, many=True).data,
             status=status.HTTP_200_OK
@@ -739,7 +757,7 @@ class ResourceAssignmentListCreateAPIView(APIView):
 
     def post(self, request, project_no):
         project = get_object_or_404(Project, project_no=project_no)
-        serializer = ResourceAssignmentSerializer(data=request.data)
+        serializer = ResourceAssignmentSerializer(data=request.data, context={'project': project})
         serializer.is_valid(raise_exception=True)
         assignment = serializer.save(project=project, created_by=request.user, updated_by=request.user)
         return Response(ResourceAssignmentSerializer(assignment).data, status=status.HTTP_201_CREATED)
@@ -761,7 +779,9 @@ class ResourceAssignmentDetailAPIView(APIView):
 
     def put(self, request, project_no, assignment_id):
         assignment = self._get_assignment(project_no, assignment_id)
-        serializer = ResourceAssignmentSerializer(assignment, data=request.data, partial=True)
+        serializer = ResourceAssignmentSerializer(
+            assignment, data=request.data, partial=True, context={'project': assignment.project}
+        )
         serializer.is_valid(raise_exception=True)
         assignment = serializer.save(updated_by=request.user)
         return Response(ResourceAssignmentSerializer(assignment).data, status=status.HTTP_200_OK)
@@ -777,16 +797,69 @@ class ResourceAssignmentDetailAPIView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class ResourceMasterRateAPIView(APIView):
+    """
+    GET /projects/resource-rate/?resource_type=employee|freelancer|vendor&resource_id=<id>
+    The resource master's default cost / billing rate, used to pre-fill a
+    milestone resource assignment (which then keeps its own copy, so a
+    project-specific override never changes the master):
+      employee   -> accounts.Account.charges_per_hour (cost; no billing rate on file)
+      freelancer -> current active FreelancerRateCard (cost + billing, with its pricing model)
+      vendor     -> no rate on file; entered per assignment
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        resource_type = request.query_params.get('resource_type')
+        resource_id = request.query_params.get('resource_id')
+        if resource_type == 'external':
+            return Response({"cost_rate": None, "billing_rate": None, "rate_unit": None, "source": None})
+        if resource_type not in ('employee', 'freelancer', 'vendor') or not resource_id:
+            return Response({"error": "resource_type and resource_id are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        result = {"cost_rate": None, "billing_rate": None, "rate_unit": None, "source": None}
+        if resource_type == 'employee':
+            account = get_object_or_404(Account, pk=resource_id)
+            if account.charges_per_hour is not None:
+                result.update(cost_rate=account.charges_per_hour, rate_unit='hourly', source='Employee cost rate')
+        elif resource_type == 'freelancer':
+            from freelancer_onboarding.models import Freelancer
+            freelancer = get_object_or_404(Freelancer, pk=resource_id)
+            today = timezone.localdate()
+            card = (
+                freelancer.rate_cards.filter(is_active=True, effective_from__lte=today)
+                .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=today))
+                .order_by('-effective_from').first()
+            )
+            if card:
+                result.update(
+                    cost_rate=card.cost_rate, billing_rate=card.billing_rate,
+                    rate_unit=card.pricing_model, source=f"Rate card ({card.get_pricing_model_display()})",
+                )
+        return Response(result, status=status.HTTP_200_OK)
+
+
 class ProjectGenerateTMInvoiceAPIView(APIView):
     """
     Time & Material period billing (Section: T&M Financial Flow). Creates a
-    Draft invoice for one billing period, reusing the same Invoice
+    Draft invoice for one monthly ProjectPeriod, reusing the same Invoice
     infrastructure as milestone billing (see MilestoneCreateInvoiceAPIView).
+
+    Body: `period` (ProjectPeriod id) - or `period_start` (any date in the
+    month) for older callers; optional `amount` (pre-tax, defaults to the
+    period's billing amount), `tax_percentage` (defaults to the project
+    quotation's tax %, as for milestone invoices) and `due_days`. A month can have only one open
+    (non-cancelled) invoice, and future months can't be invoiced yet.
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def post(self, request, project_no):
+        from django.db import IntegrityError, transaction
+        from django.utils.dateparse import parse_date
+        from .utils.tm_periods import month_start, sync_tm_periods
+
         project = get_object_or_404(Project, project_no=project_no)
 
         if project.engagement_type != 'time_and_material':
@@ -800,9 +873,27 @@ class ProjectGenerateTMInvoiceAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        sync_tm_periods(project)
+        periods = project.periods.filter(is_active=True)
+        if request.data.get('period'):
+            period = periods.filter(pk=request.data.get('period')).first()
+        else:
+            start = parse_date(str(request.data.get('period_start') or ''))
+            period = periods.filter(month=month_start(start)).first() if start else None
+        if period is None:
+            return Response(
+                {"error": "Select a billing month within the project dates."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if period.month > month_start(timezone.localdate()):
+            return Response(
+                {"error": f"{period.month:%b %Y} hasn't started yet - it can be invoiced from {period.month:%d %b %Y}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         raw_amount = request.data.get('amount')
         try:
-            amount = Decimal(str(raw_amount)) if raw_amount not in (None, '') else (project.monthly_billing_amount or Decimal("0.00"))
+            amount = Decimal(str(raw_amount)) if raw_amount not in (None, '') else period.billing_amount
         except InvalidOperation:
             return Response({"error": "Invalid amount."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -812,8 +903,13 @@ class ProjectGenerateTMInvoiceAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        period_start = request.data.get('period_start') or None
-        period_end = request.data.get('period_end') or None
+        raw_tax = request.data.get('tax_percentage')
+        try:
+            tax_percentage = Decimal(str(raw_tax)) if raw_tax not in (None, '') else project.quotation_tax_percentage
+        except InvalidOperation:
+            return Response({"error": "Invalid tax percentage."}, status=status.HTTP_400_BAD_REQUEST)
+        if not tax_percentage.is_finite() or tax_percentage < 0 or tax_percentage > 100:
+            return Response({"error": "Tax percentage must be between 0 and 100."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             due_days = int(request.data.get('due_days', 30))
@@ -824,34 +920,139 @@ class ProjectGenerateTMInvoiceAPIView(APIView):
         from finances.services import InvoiceService
         from finances.serializers import InvoiceListSerializer
 
-        invoice = Invoice.objects.create(
-            invoice_no=InvoiceService.generate_invoice_number(),
-            quote=None,
-            client=project.client,
-            project=project,
-            billing_period_start=period_start,
-            billing_period_end=period_end,
-            status='Draft',
-            issue_date=timezone.now().date(),
-            due_date=timezone.now().date() + timedelta(days=due_days),
-            created_by=request.user,
-            updated_by=request.user,
+        duplicate = Response(
+            {"error": f"{period.month:%b %Y} already has an invoice. Cancel it first to re-invoice this month."},
+            status=status.HTTP_400_BAD_REQUEST
         )
-        label = "T&M billing"
-        if period_start and period_end:
-            label += f" ({period_start} to {period_end})"
-        InvoiceItem.objects.create(
-            invoice=invoice,
-            product_service=None,
-            description=label,
-            quantity=Decimal('1'),
-            unit='Period',
-            price_per_unit=amount,
-        )
-        invoice.calculate_totals()
-        invoice.save(update_fields=['sub_total', 'tax_amount', 'total_amount', 'paid_amount', 'balance_amount'])
+        try:
+            with transaction.atomic():
+                # Lock the month so two requests can't both invoice it
+                type(period).objects.select_for_update().get(pk=period.pk)
+                if period.invoices.exclude(status='Cancelled').exists():
+                    return duplicate
+
+                invoice = Invoice.objects.create(
+                    invoice_no=InvoiceService.generate_invoice_number(),
+                    quote=None,
+                    client=project.client,
+                    project=project,
+                    billing_period=period,
+                    billing_period_start=period.period_start,
+                    billing_period_end=period.period_end,
+                    status='Draft',
+                    # The amount is pre-tax; the quotation's tax goes on top (same as milestone invoices).
+                    tax_percentage=tax_percentage.quantize(Decimal("0.01")),
+                    issue_date=timezone.now().date(),
+                    due_date=timezone.now().date() + timedelta(days=due_days),
+                    created_by=request.user,
+                    updated_by=request.user,
+                )
+                InvoiceItem.objects.create(
+                    invoice=invoice,
+                    product_service=None,
+                    description=f"T&M billing - {period.month:%B %Y} ({period.period_start} to {period.period_end})",
+                    quantity=Decimal('1'),
+                    unit='Period',
+                    price_per_unit=amount,
+                )
+                invoice.calculate_totals()
+                invoice.save(update_fields=['sub_total', 'tax_amount', 'total_amount', 'paid_amount', 'balance_amount'])
+        except IntegrityError:
+            # one_open_invoice_per_billing_period - a concurrent request won
+            return duplicate
 
         return Response(InvoiceListSerializer(invoice).data, status=status.HTTP_201_CREATED)
+
+
+class ProjectPeriodListAPIView(APIView):
+    """
+    GET /projects/<project_no>/periods/ - Time & Material monthly financials:
+    one row per month from the project's start to its end, plus project
+    totals (the sum of the months). Periods are synced with the project first.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        from .utils.tm_periods import month_start, period_financials, sync_tm_periods
+
+        project = get_object_or_404(Project, project_no=project_no)
+        if project.engagement_type != 'time_and_material':
+            return Response(
+                {"error": "Monthly financials are for Time & Material projects."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        sync_tm_periods(project)
+        rows, totals = period_financials(project)
+        quotation = project.created_from_quotation
+        return Response({
+            "current_month": month_start(timezone.localdate()),
+            # Default tax for Generate Invoice - the project quotation's tax %
+            "tax_percentage": project.quotation_tax_percentage,
+            "quotation": {"quote_no": quotation.quote_no, "quote_name": quotation.quote_name} if quotation else None,
+            "periods": rows,
+            "totals": totals,
+        }, status=status.HTTP_200_OK)
+
+
+class ProjectPeriodDetailAPIView(APIView):
+    """
+    GET   /projects/<project_no>/periods/<id>/ - one month's figures and the
+          expenses, bill payments, tasks, resources and invoices behind them.
+    PATCH /projects/<project_no>/periods/<id>/ - set this month's
+          `budget_amount` / `billing_amount` (it then stops following the
+          project's monthly amounts), or `reset_amounts: true` to follow them again.
+          The billing amount can't change once the month has an open invoice.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no, period_id):
+        from .utils.tm_periods import period_detail
+
+        project = get_object_or_404(Project, project_no=project_no)
+        period = get_object_or_404(project.periods, pk=period_id)
+        return Response(period_detail(project, period), status=status.HTTP_200_OK)
+
+    def patch(self, request, project_no, period_id):
+        from .utils.tm_periods import default_amounts, period_detail, sync_tm_periods
+
+        project = get_object_or_404(Project, project_no=project_no)
+        period = get_object_or_404(project.periods, pk=period_id)
+        invoiced = period.invoices.exclude(status='Cancelled').exists()
+
+        if request.data.get('reset_amounts'):
+            period.amounts_overridden = False
+            budget, billing = default_amounts(project)
+            period.budget_amount = budget
+            if not invoiced:
+                period.billing_amount = billing
+            period.save(update_fields=['amounts_overridden', 'budget_amount', 'billing_amount', 'updated_at'])
+            sync_tm_periods(project)
+            period.refresh_from_db()
+            return Response(period_detail(project, period), status=status.HTTP_200_OK)
+
+        changed = []
+        for field in ('budget_amount', 'billing_amount'):
+            if field not in request.data:
+                continue
+            try:
+                value = Decimal(str(request.data.get(field)))
+            except (InvalidOperation, TypeError):
+                return Response({field: ["Enter a valid amount."]}, status=status.HTTP_400_BAD_REQUEST)
+            if not value.is_finite() or value < 0:
+                return Response({field: ["Amount can't be negative."]}, status=status.HTTP_400_BAD_REQUEST)
+            if field == 'billing_amount' and invoiced and value != period.billing_amount:
+                return Response(
+                    {field: ["This month is already invoiced - cancel the invoice to change its billing amount."]},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            setattr(period, field, value.quantize(Decimal("0.01")))
+            changed.append(field)
+        if changed:
+            period.amounts_overridden = True
+            period.save(update_fields=changed + ['amounts_overridden', 'updated_at'])
+        return Response(period_detail(project, period), status=status.HTTP_200_OK)
 
 
 class ProjectFinancialSummaryAPIView(APIView):
@@ -866,10 +1067,10 @@ class ProjectFinancialSummaryAPIView(APIView):
 
     # Expense categories that represent a resource's cost (freelancer or
     # employee) rather than a miscellaneous project cost. Their amount is
-    # already counted once via the resource-cost figure below (from active
-    # FreelancerProjectAssignment/ResourceAssignment rows), so they're
-    # excluded from the "expenses" side of the total to avoid double-counting
-    # the same person's cost twice (Section 11).
+    # already counted once via the resource-cost figure below (from the
+    # assigned ResourceAssignment rows), so they're excluded from the
+    # "expenses" side of the total to avoid double-counting the same
+    # person's cost twice (Section 11).
     RESOURCE_COST_CATEGORIES = {'freelancer', 'employee_cost'}
 
     def get(self, request, project_no):
@@ -884,17 +1085,43 @@ class ProjectFinancialSummaryAPIView(APIView):
         pb = getattr(project, 'budget', None)
         return pb.cost_budget if pb else Decimal("0.00")
 
-    def _freelancer_assignment_cost(self, project):
-        """Freelancer resource cost (Section 3): Cost Rate x Planned Units,
-        summed across the project's active freelancer_onboarding assignments
-        - not from Expense rows, so it's counted once even if the same
-        freelancer's actual payment is *also* logged as an Expense
-        (category='freelancer') for GL/budget tracking."""
-        assignments = project.freelancer_assignments.filter(status='active')
-        return sum(
-            (a.planned_freelancer_cost or Decimal("0.00") for a in assignments),
-            Decimal("0.00"),
+    def _resource_costs(self, project, assignments):
+        """Resource cost = labour cost of the project's tasks (allocated hours x assignee rate -
+        see Project/utils/labour_cost.py) + the assigned cost of the given assignments that
+        aren't costed from task hours (flat-fee / vendor / external).
+        Returns (total, by_type, labour)."""
+        from .utils.labour_cost import allocated_labour_cost, is_task_costed
+        labour = allocated_labour_cost(project)
+        by_type = {
+            'employee': labour.cost - labour.freelancer_cost,
+            'freelancer': labour.freelancer_cost,
+            'vendor': Decimal("0.00"),
+            'external': Decimal("0.00"),
+        }
+        for a in assignments:
+            if is_task_costed(a):
+                continue
+            by_type[a.resource_type] = by_type.get(a.resource_type, Decimal("0.00")) + a.assigned_cost
+        return sum(by_type.values(), Decimal("0.00")), by_type, labour
+
+    def _milestone_resource_costs(self, project):
+        """Resource cost of a Fixed Budget project, over every resource on it (Resources tab)
+        with or without a milestone - those on archived milestones excluded."""
+        assignments = (
+            project.resource_assignments
+            .filter(is_active=True)
+            .exclude(status='removed')
+            .exclude(milestone__is_active=False)
         )
+        return self._resource_costs(project, assignments)
+
+    @staticmethod
+    def _labour_fields(labour):
+        return {
+            "labour_cost": labour.cost,
+            "allocated_hours": labour.hours,
+            "unrated_hours": labour.unrated_hours,
+        }
 
     def _outgoing_payments(self, project):
         """Actual money paid out for this project so far - vendor bill
@@ -903,7 +1130,7 @@ class ProjectFinancialSummaryAPIView(APIView):
         from finances.models import ExpensePayment, OutgoingPayment
         expense_paid = ExpensePayment.objects.filter(expense__project=project) \
             .aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
-        vendor_paid = OutgoingPayment.objects.filter(vendor_bill__purchase_order__project=project) \
+        vendor_paid = OutgoingPayment.objects.filter(vendor_bill__project=project) \
             .aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
         return expense_paid + vendor_paid
 
@@ -930,17 +1157,6 @@ class ProjectFinancialSummaryAPIView(APIView):
             ],
         }, miscellaneous
 
-    def _task_timer_cost(self, project):
-        from .utils.timer import live_consumed_hours
-
-        total = Decimal("0.00")
-        for task in project.tasks.select_related("assigned_to"):
-            if not task.assigned_to:
-                continue
-            rate = task.assigned_to.charges_per_hour or Decimal("0")
-            total += live_consumed_hours(task) * Decimal(rate)
-        return total.quantize(Decimal("0.01"))
-
     def _invoice_breakdown(self, project):
         invoices = project.invoice_set.exclude(status='Cancelled')
         return [
@@ -954,31 +1170,28 @@ class ProjectFinancialSummaryAPIView(APIView):
         ]
 
     def _fixed_summary(self, project):
+        from finances.models import vendor_bills_paid_for_project
         milestones = project.milestones.filter(is_active=True)
 
         # Tax and profit excluded, same as the "budget"/remaining/variance
         # figures below - see _cost_budget_for_project().
         contract_value = self._cost_budget_for_project(project)
 
-        # Fixed Budget projects had no resource-cost figure at all before -
-        # this is additive (freelancer cost via active assignments; there is
-        # no employee-resource-cost channel available for Fixed Budget
-        # projects yet, same as before this change).
-        freelancer_cost = self._freelancer_assignment_cost(project)
-        # Employee cost = task timer hours x assignee's hourly cost rate.
-        employee_cost = self._task_timer_cost(project)
-        resource_cost = freelancer_cost + employee_cost
+        # Resource cost = task allocated hours x assignee rate + assigned cost of flat-fee / non-employee resources.
+        resource_cost, by_type, labour = self._milestone_resource_costs(project)
+        employee_cost = by_type['employee']
+        freelancer_cost = by_type['freelancer']
 
         if milestones.exists():
             budget = milestones.aggregate(total=Sum('budget_amount'))['total'] or Decimal("0.00")
-            expense_qs = project.expenses.filter(milestone__in=milestones)
+            expense_qs = project.expenses.cost_bearing().filter(milestone__in=milestones)
             billed_amount = sum((m.billed_amount for m in milestones), Decimal("0.00"))
             received_amount = sum((m.received_amount for m in milestones), Decimal("0.00"))
         else:
             # No milestones yet - fall back to the project's overall budget
             # and invoices/expenses linked straight to the project.
             budget = self._cost_budget_for_project(project)
-            expense_qs = project.expenses.all()
+            expense_qs = project.expenses.cost_bearing()
             direct_invoices = project.invoice_set.exclude(status='Cancelled')
             billed_amount = direct_invoices.aggregate(total=Sum('total_amount'))['total'] or Decimal("0.00")
             received_amount = direct_invoices.aggregate(total=Sum('paid_amount'))['total'] or Decimal("0.00")
@@ -986,7 +1199,10 @@ class ProjectFinancialSummaryAPIView(APIView):
         cost_breakdown, expense_cost = self._cost_breakdown(
             expense_qs, resource_cost, employee_cost, freelancer_cost
         )
-        actual_cost = resource_cost + expense_cost
+        cost_breakdown["vendor_resource_cost"] = by_type['vendor'] + by_type['external']
+        # Actual Cost = resource cost + expenses + paid vendor bill amounts (unpaid balances aren't cost).
+        bills_paid = vendor_bills_paid_for_project(project)
+        actual_cost = resource_cost + expense_cost + bills_paid
 
         outstanding_amount = billed_amount - received_amount
         remaining_budget = budget - actual_cost
@@ -1000,6 +1216,9 @@ class ProjectFinancialSummaryAPIView(APIView):
             "contract_value": contract_value,
             "budget": budget,
             "resource_cost": resource_cost,
+            **self._labour_fields(labour),
+            "expenses_amount": expense_cost,
+            "bills_amount": bills_paid,
             "actual_cost": actual_cost,
             "billed_amount": billed_amount,
             "received_amount": received_amount,
@@ -1016,44 +1235,65 @@ class ProjectFinancialSummaryAPIView(APIView):
         }
 
     def _tm_summary(self, project):
-        assignments = project.resource_assignments.filter(is_active=True, status='active')
+        """Project totals = the sum of the project's monthly periods (Project/utils/tm_periods.py),
+        so the monthly table and this summary can never disagree."""
+        from .utils.labour_cost import allocated_labour_cost
+        from .utils.tm_periods import period_financials, sync_tm_periods
 
-        monthly_revenue = project.monthly_billing_amount or Decimal("0.00")
-        resource_cost = sum((ra.monthly_cost for ra in assignments), Decimal("0.00"))
-        employee_cost = sum(
-            (ra.monthly_cost for ra in assignments if ra.resource_type == 'employee'),
-            Decimal("0.00"),
-        )
-        freelancer_cost = resource_cost - employee_cost
+        sync_tm_periods(project)
+        _, totals = period_financials(project)
+        # Same tasks as the periods' labour - only used for the employee / freelancer split.
+        labour = allocated_labour_cost(project)
 
+        resource_cost = totals['resource_cost']
         cost_breakdown, misc_expenses = self._cost_breakdown(
-            project.expenses.all(), resource_cost, employee_cost, freelancer_cost
+            project.expenses.cost_bearing(),
+            resource_cost,
+            labour.cost - labour.freelancer_cost,
+            labour.freelancer_cost,
         )
-        total_cost = resource_cost + misc_expenses
-        gross_margin = monthly_revenue - resource_cost
-        net_profit = monthly_revenue - total_cost
-        margin_percent = float(gross_margin / monthly_revenue * 100) if monthly_revenue else None
+        cost_breakdown["vendor_resource_cost"] = totals['assigned_resource_cost']
 
-        invoices = project.invoice_set.exclude(status='Cancelled')
-        billed_amount = invoices.aggregate(total=Sum('total_amount'))['total'] or Decimal("0.00")
-        received_amount = invoices.aggregate(total=Sum('paid_amount'))['total'] or Decimal("0.00")
-        outstanding_amount = billed_amount - received_amount
+        revenue = totals['revenue']
+        gross_margin = revenue - resource_cost
         outgoing_payments = self._outgoing_payments(project)
+
+        # Invoices on this project that aren't tied to a month (e.g. raised before
+        # monthly periods existed) - shown separately, never folded into the months.
+        other = project.invoice_set.exclude(status='Cancelled').filter(billing_period__isnull=True)
+        other_billed = other.aggregate(total=Sum('total_amount'))['total'] or Decimal("0.00")
+        other_received = other.aggregate(total=Sum('paid_amount'))['total'] or Decimal("0.00")
 
         return {
             "engagement_type": "time_and_material",
-            "monthly_revenue": monthly_revenue,
+            "monthly_revenue": project.monthly_billing_amount or Decimal("0.00"),
+            "monthly_budget": project.monthly_budget,
+            "months": totals['months'],
+            "months_invoiced": totals['months_invoiced'],
+            "months_paid": totals['months_paid'],
+            "total_budget": totals['budget_amount'],
+            "planned_billing": totals['billing_amount'],
+            "remaining_budget": totals['remaining_budget'],
+            "budget_used_percent": totals['budget_used_percent'],
             "resource_cost": resource_cost,
+            "labour_cost": totals['labour_cost'],
+            "allocated_hours": totals['labour_hours'],
+            "unrated_hours": totals['unrated_hours'],
             "misc_expenses": misc_expenses,
-            "total_cost": total_cost,
+            "vendor_bills_amount": totals['vendor_bills'],
+            "total_cost": totals['actual_cost'],
+            "billed_amount": totals['invoiced_amount'],
+            "revenue": revenue,
+            "received_amount": totals['received_amount'],
+            "outstanding_amount": totals['outstanding_amount'],
             "gross_margin": gross_margin,
-            "net_profit": net_profit,
-            "margin_percent": margin_percent,
-            "billed_amount": billed_amount,
-            "received_amount": received_amount,
-            "outstanding_amount": outstanding_amount,
+            "net_profit": totals['profit'],
+            "margin_percent": float(gross_margin / revenue * 100) if revenue else None,
+            "net_margin_percent": totals['profit_margin'],
+            "other_billed_amount": other_billed,
+            "other_received_amount": other_received,
             "outgoing_payments": outgoing_payments,
-            "net_cash_position": received_amount - outgoing_payments,
+            "net_cash_position": totals['received_amount'] + other_received - outgoing_payments,
             "cost_breakdown": cost_breakdown,
             "invoice_breakdown": self._invoice_breakdown(project),
         }
@@ -1065,7 +1305,7 @@ class TaskAPIView(APIView):
 
     # CREATE TASK
     def post(self, request):
-        serializer = TaskSerializer(data=request.data)
+        serializer = TaskSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         task = serializer.save(created_by=request.user)
 
@@ -1314,7 +1554,7 @@ class TaskAPIView(APIView):
             # Hours ARE exceeded; allow the change
 
         old_assigned_to = task.assigned_to_id
-        serializer = TaskSerializer(task, data=request.data, partial=True)
+        serializer = TaskSerializer(task, data=request.data, partial=True, context={"request": request})
         if not serializer.is_valid():
             print("PATCH serializer.errors:", serializer.errors)
             return Response({"errors": serializer.errors}, status=400)
