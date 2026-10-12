@@ -62,6 +62,16 @@ class ProjectAPIView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
+            # Open invoices past their due date become Overdue (same refresh as
+            # the invoice list) so the Invoices tab never shows a stale status.
+            from finances.models import Invoice
+            for invoice in Invoice.objects.filter(
+                project=project,
+                status__in=['Draft', 'Issued', 'Partially Paid'],
+                due_date__lt=timezone.now().date(),
+            ):
+                invoice.update_status()
+
             return Response(
                 ProjectListSerializer(project).data,
                 status=status.HTTP_200_OK
@@ -639,12 +649,12 @@ class MilestoneDetailAPIView(APIView):
 
 class MilestoneCreateInvoiceAPIView(APIView):
     """
-    Milestone billing (Section: Milestone Billing). Creates a Draft invoice
-    for the milestone's billing amount (or an explicit partial amount),
-    reusing the existing Invoice/InvoiceItem infrastructure rather than a
-    separate billing system - the invoice's own Draft -> Sent -> Partially
-    Paid -> Paid -> Overdue lifecycle IS the milestone's billing/payment
-    status (see Milestone.billing_status/payment_status).
+    Milestone billing (Section: Milestone Billing). Creates an active
+    (Issued) invoice for the milestone's billing amount (or an explicit
+    partial amount), reusing the existing Invoice/InvoiceItem infrastructure
+    rather than a separate billing system - the invoice's own Issued ->
+    Partially Paid -> Paid / Overdue lifecycle IS the milestone's
+    billing/payment status (see Milestone.billing_status/payment_status).
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -705,7 +715,6 @@ class MilestoneCreateInvoiceAPIView(APIView):
             client=project.client,
             project=project,
             milestone=milestone,
-            status='Draft',
             tax_percentage=tax_percentage,
             issue_date=timezone.now().date(),
             due_date=timezone.now().date() + timedelta(days=due_days),
@@ -720,8 +729,8 @@ class MilestoneCreateInvoiceAPIView(APIView):
             unit='Milestone',
             price_per_unit=amount,
         )
-        invoice.calculate_totals()
-        invoice.save(update_fields=['sub_total', 'tax_amount', 'total_amount', 'paid_amount', 'balance_amount'])
+        # Totals + the active status (Issued) in one go
+        invoice.update_status()
 
         return Response(InvoiceListSerializer(invoice).data, status=status.HTTP_201_CREATED)
 
@@ -843,7 +852,7 @@ class ResourceMasterRateAPIView(APIView):
 class ProjectGenerateTMInvoiceAPIView(APIView):
     """
     Time & Material period billing (Section: T&M Financial Flow). Creates a
-    Draft invoice for one monthly ProjectPeriod, reusing the same Invoice
+    active (Issued) invoice for one monthly ProjectPeriod, reusing the same Invoice
     infrastructure as milestone billing (see MilestoneCreateInvoiceAPIView).
 
     Body: `period` (ProjectPeriod id) - or `period_start` (any date in the
@@ -939,7 +948,6 @@ class ProjectGenerateTMInvoiceAPIView(APIView):
                     billing_period=period,
                     billing_period_start=period.period_start,
                     billing_period_end=period.period_end,
-                    status='Draft',
                     # The amount is pre-tax; the quotation's tax goes on top (same as milestone invoices).
                     tax_percentage=tax_percentage.quantize(Decimal("0.01")),
                     issue_date=timezone.now().date(),
@@ -955,8 +963,8 @@ class ProjectGenerateTMInvoiceAPIView(APIView):
                     unit='Period',
                     price_per_unit=amount,
                 )
-                invoice.calculate_totals()
-                invoice.save(update_fields=['sub_total', 'tax_amount', 'total_amount', 'paid_amount', 'balance_amount'])
+                # Totals + the active status (Issued) in one go
+                invoice.update_status()
         except IntegrityError:
             # one_open_invoice_per_billing_period - a concurrent request won
             return duplicate

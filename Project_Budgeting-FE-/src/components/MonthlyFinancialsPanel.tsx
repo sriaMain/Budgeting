@@ -203,7 +203,7 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                 tax_percentage: tax,
                 due_days: parseInt(dueDays, 10) || 30,
             });
-            toast.success(`Invoice created for ${invoicePeriod.label} (Draft)`);
+            toast.success(`Invoice created for ${invoicePeriod.label} (Issued)`);
             setInvoicePeriod(null);
             fetchPeriods();
             onChanged?.();
@@ -473,8 +473,10 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                                             </div>
                                             <p className="text-xs text-gray-500 dark:text-gray-400">Issued {inv.issue_date} · due {inv.due_date} · paid {money(inv.paid_amount)} · balance {money(inv.balance_amount)}</p>
                                             {inv.payments.map(pay => (
-                                                <p key={pay.id} className="text-xs text-green-700 dark:text-green-400 tabular-nums">
+                                                // Only Completed payments are in "paid"; others are shown greyed with their status
+                                                <p key={pay.id} className={`text-xs tabular-nums ${!pay.status || pay.status === 'Completed' ? 'text-green-700 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
                                                     {pay.payment_date} · {pay.payment_method}{pay.reference_no ? ` · ${pay.reference_no}` : ''} · {money(pay.amount)}
+                                                    {pay.status && pay.status !== 'Completed' ? ` · ${pay.status_display || pay.status}` : ''}
                                                 </p>
                                             ))}
                                         </li>
@@ -576,7 +578,7 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                         <div className="flex justify-between py-0.5"><dt className="text-gray-600 dark:text-gray-400">Tax ({n(taxPercent)}%)</dt><dd className="tabular-nums">{money(invoiceTax)}</dd></div>
                         <div className="flex justify-between py-0.5 border-t border-gray-200 dark:border-gray-800 mt-1 pt-1 font-semibold text-gray-900 dark:text-white"><dt>Total</dt><dd className="tabular-nums">{money(invoiceTotal)} {currency}</dd></div>
                     </dl>
-                    <FieldHint>The invoice is created as a Draft and linked to {invoicePeriod?.label}. A month can have only one open invoice.</FieldHint>
+                    <FieldHint>The invoice is issued straight away (awaiting payment) and linked to {invoicePeriod?.label}. A month can have only one open invoice.</FieldHint>
                 </fieldset>
             </Drawer>
         </section>

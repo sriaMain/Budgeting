@@ -343,7 +343,7 @@ class TMPeriodInvoiceTests(TestCase):
     def test_partial_payment(self):
         invoice = Invoice.objects.get(pk=self.generate(self.period(0)).data['id'])
         InvoicePayment.objects.create(
-            invoice=invoice, payment_date=self.today, amount=Decimal("40000.00"), payment_method='UPI',
+            invoice=invoice, payment_date=self.today, amount=Decimal("40000.00"), payment_method='UPI', status='Completed',
         )
         rows, totals = period_financials(self.project, today=self.today)
         row = next(r for r in rows if r['month'] == self.current)
@@ -353,7 +353,7 @@ class TMPeriodInvoiceTests(TestCase):
         self.assertFalse(row['can_generate_invoice'])
 
         InvoicePayment.objects.create(
-            invoice=invoice, payment_date=self.today, amount=Decimal("60000.00"), payment_method='UPI',
+            invoice=invoice, payment_date=self.today, amount=Decimal("60000.00"), payment_method='UPI', status='Completed',
         )
         rows, _ = period_financials(self.project, today=self.today)
         row = next(r for r in rows if r['month'] == self.current)

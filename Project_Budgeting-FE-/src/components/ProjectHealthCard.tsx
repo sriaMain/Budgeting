@@ -9,12 +9,24 @@ const HEALTH_META: Record<ProjectHealth, { label: string; variant: 'success' | '
   at_risk: { label: 'At risk', variant: 'danger', bar: 'bg-risk-600' },
 };
 
+// Engagement model chosen when the project was created (Create Project modal)
+const ENGAGEMENT_META: Record<string, { label: string; className: string }> = {
+  fixed: {
+    label: 'Fixed Budget / Milestone',
+    className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30',
+  },
+  time_and_material: {
+    label: 'Time & Material (T&M)',
+    className: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30',
+  },
+};
+
 interface ProjectHealthCardProps {
   name: string;
   health: ProjectHealth;
   healthReason?: string;
   budgetUsedPct: number;
-  /** Omitted when the API doesn't provide it yet (see Phase 3 backend gaps). */
+  /** 'fixed' | 'time_and_material' (shown as a labelled pill); any other text is shown as-is. */
   engagementType?: string;
   /** Omitted when the API doesn't provide it yet (see Phase 3 backend gaps). */
   owner?: string;
@@ -83,9 +95,19 @@ export const ProjectHealthCard: React.FC<ProjectHealthCardProps> = ({
       </div>
 
       {(engagementType || owner) && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-          {[engagementType, owner ? `Owner: ${owner}` : null].filter(Boolean).join(' · ')}
-        </p>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {engagementType && (
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-semibold ${
+                ENGAGEMENT_META[engagementType]?.className ??
+                'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+              }`}
+            >
+              {ENGAGEMENT_META[engagementType]?.label ?? engagementType}
+            </span>
+          )}
+          {owner && <span className="text-xs text-gray-500 dark:text-gray-400">Owner: {owner}</span>}
+        </div>
       )}
 
       <div className="h-1.5 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">

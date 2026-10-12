@@ -15,6 +15,8 @@ interface Project {
 	project_no: number;
 	project_name: string;
 	project_type?: 'internal' | 'external';
+	// Engagement model: Fixed Budget / Milestone-Based or Time & Material
+	engagement_type?: 'fixed' | 'time_and_material';
 	client?: number | null;
 	client_name?: string;
 	start_date: string;
@@ -197,6 +199,7 @@ export default function ProjectsScreen(_props: any) {
 							project_no: p.project_no,
 							project_name: p.project_name,
 							project_type: 'external', // Default
+							engagement_type: p.engagement_type,
 							client: null,
 							client_name: company.company_name,
 							start_date: p.start_date,
@@ -363,6 +366,7 @@ export default function ProjectsScreen(_props: any) {
 											<ProjectHealthCard
 												key={project.id}
 												name={project.project_name}
+												engagementType={project.engagement_type}
 												health={health}
 												budgetUsedPct={pct}
 												totalBudget={`${(parseFloat(project.budget?.cost_budget) || 0).toLocaleString()} ${project.budget?.currency || 'INR'}`}

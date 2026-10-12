@@ -2,14 +2,14 @@
  * Create Bill drawer
  * Creates a standalone vendor bill (no purchase order) for a project.
  * Only amounts later paid against the bill count towards the project's
- * Actual Cost (and its GL budget line / milestone when tagged).
+ * Actual Cost (and its milestone when tagged).
  *
  * Vendors come from /projects/poc-options/ - approved vendors only, and
  * available to any signed-in user (the vendor-onboarding admin list needs
  * the vendor.view permission, which left this dropdown empty for most users).
  *
  * Time & Material projects (`months` given) record the bill against a
- * project month instead of a GL Account / Milestone.
+ * project month instead of a Milestone.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -59,8 +59,6 @@ export const CreateBillModal: React.FC<CreateBillModalProps> = ({
     const [billDate, setBillDate] = useState(today());
     const [dueDate, setDueDate] = useState(plusDays(today(), 30));
     const [description, setDescription] = useState('');
-    const [glOptions, setGlOptions] = useState<SearchableSelectOption[]>([]);
-    const [glAccount, setGlAccount] = useState<SearchableSelectOption | null>(null);
     const [milestones, setMilestones] = useState<{ id: number; name: string }[]>([]);
     const [milestone, setMilestone] = useState('');
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -74,7 +72,6 @@ export const CreateBillModal: React.FC<CreateBillModalProps> = ({
         setBillDate(today());
         setDueDate(plusDays(today(), 30));
         setDescription('');
-        setGlAccount(null);
         setMilestone('');
         setErrors({});
 
@@ -88,9 +85,6 @@ export const CreateBillModal: React.FC<CreateBillModalProps> = ({
                 toast.error('Failed to load vendors');
             })
             .finally(() => setIsLoadingVendors(false));
-        axiosInstance.get<{ id: number; code: string; name: string; account_type?: string }[]>('/gl-accounts/?active_only=true')
-            .then((res) => setGlOptions((res.data || []).map((a) => ({ id: a.id, label: `${a.code} - ${a.name}`, sublabel: a.account_type }))))
-            .catch((error) => console.error('Error fetching GL accounts:', error));
         axiosInstance.get<{ id: number; name: string }[]>(`/projects/${projectId}/milestones/`)
             .then((res) => setMilestones(res.data || []))
             .catch((error) => console.error('Error fetching milestones:', error));
@@ -124,7 +118,6 @@ export const CreateBillModal: React.FC<CreateBillModalProps> = ({
                 bill_date: billDate,
                 due_date: dueDate,
                 description,
-                gl_account_id: glAccount && !isMonthly ? glAccount.id : undefined,
                 milestone_id: (!isMonthly && milestone) || undefined,
             });
             toast.success(`Bill ${response.data.bill_no} created`);
@@ -224,18 +217,12 @@ export const CreateBillModal: React.FC<CreateBillModalProps> = ({
                 </DrawerSection>
 
                 {!isMonthly && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                            <label className={drawerLabelClass}>GL Account</label>
-                            <SearchableSelect options={glOptions} value={glAccount} onChange={setGlAccount} placeholder="Search account..." />
-                        </div>
-                        <div>
-                            <label className={drawerLabelClass}>Milestone</label>
-                            <select value={milestone} onChange={(e) => setMilestone(e.target.value)} className={drawerInputClass}>
-                                <option value="">No milestone</option>
-                                {milestones.map((m) => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
-                            </select>
-                        </div>
+                    <div>
+                        <label className={drawerLabelClass}>Milestone</label>
+                        <select value={milestone} onChange={(e) => setMilestone(e.target.value)} className={drawerInputClass}>
+                            <option value="">No milestone</option>
+                            {milestones.map((m) => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
+                        </select>
                     </div>
                 )}
 

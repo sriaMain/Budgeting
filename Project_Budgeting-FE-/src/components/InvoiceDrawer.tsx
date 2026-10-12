@@ -12,13 +12,14 @@ import { toast } from 'react-hot-toast';
 import axiosInstance from '../utils/axiosInstance';
 import { Drawer } from './Drawer';
 import { RecordPaymentModal } from './RecordPaymentModal';
+import { InvoicePaymentsList } from './InvoicePaymentsList';
 import { drawerInputClass, drawerLabelClass } from './drawerForm';
 
 interface InvoiceDrawerProps {
     /** Invoice to show; null keeps the drawer closed. */
     invoiceId: number | string | null;
     onClose: () => void;
-    /** Called after anything changes the invoice (payment, edit, delete). */
+    /** Called after anything changes the invoice (payment, edit, delete). A payment also closes the drawer. */
     onChanged?: () => void;
 }
 
@@ -88,6 +89,13 @@ export const InvoiceDrawer: React.FC<InvoiceDrawerProps> = ({ invoiceId, onClose
         onChanged?.();
     };
 
+    // A finished payment action (recorded, confirmed, failed, cancelled) closes
+    // the drawer; the project page refreshes its invoices behind it.
+    const afterPayment = () => {
+        onChanged?.();
+        onClose();
+    };
+
     const startEdit = () => {
         setIssueDate(invoice.issue_date || '');
         setDueDate(invoice.due_date || '');
@@ -102,8 +110,8 @@ export const InvoiceDrawer: React.FC<InvoiceDrawerProps> = ({ invoiceId, onClose
         }
         setIsBusy(true);
         try {
+            // Status isn't sent - the backend re-derives it (e.g. Overdue) from the new due date
             await axiosInstance.put(`/invoices/${invoiceId}/`, {
-                status: invoice.status,
                 client: invoice.client,
                 quote: invoice.quote,
                 issue_date: issueDate,
@@ -188,6 +196,9 @@ export const InvoiceDrawer: React.FC<InvoiceDrawerProps> = ({ invoiceId, onClose
 
     const status: string = invoice?.status_display || invoice?.status || '';
     const balance = n(invoice?.balance_amount);
+    // Recorded but not yet confirmed - not in Paid yet, but can't be recorded again
+    const awaitingConfirmation = n(invoice?.unconfirmed_payment_amount);
+    const recordable = Math.max(balance - awaitingConfirmation, 0);
     // A paid invoice is final - it can't be edited
     const isPaid = invoice?.status === 'Paid' || (n(invoice?.total_amount) > 0 && balance <= 0);
     const payments: any[] = Array.isArray(invoice?.payments) ? invoice.payments : [];
@@ -208,7 +219,7 @@ export const InvoiceDrawer: React.FC<InvoiceDrawerProps> = ({ invoiceId, onClose
                             <button type="button" onClick={sendEmail} disabled={isBusy} className={actionBtn}><Send className="w-4 h-4" />Send</button>
                             <button type="button" onClick={deleteInvoice} disabled={isBusy} className={`${actionBtn} text-red-600 dark:text-red-400`}><Trash2 className="w-4 h-4" />Delete</button>
                         </div>
-                        {balance > 0 && (
+                        {recordable > 0 && invoice.status !== 'Cancelled' && (
                             <button
                                 type="button"
                                 onClick={() => setIsPaymentOpen(true)}
@@ -306,6 +317,9 @@ export const InvoiceDrawer: React.FC<InvoiceDrawerProps> = ({ invoiceId, onClose
                                 <div className="border-t border-gray-200 dark:border-gray-800 my-1" />
                                 <TotalRow label="Total" value={money(invoice.total_amount)} strong />
                                 <TotalRow label="Paid" value={money(invoice.paid_amount)} tone="text-green-600 dark:text-green-400" />
+                                {awaitingConfirmation > 0 && (
+                                    <TotalRow label="Awaiting confirmation" value={money(awaitingConfirmation)} />
+                                )}
                                 <TotalRow label="Balance due" value={money(balance)} strong tone={balance > 0 ? 'text-amber-600 dark:text-amber-400' : ''} />
                             </div>
                         </section>
@@ -314,23 +328,11 @@ export const InvoiceDrawer: React.FC<InvoiceDrawerProps> = ({ invoiceId, onClose
                             <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
                                 Payments <span className="font-normal normal-case tracking-normal text-gray-500">({payments.length})</span>
                             </h4>
-                            {payments.length === 0 ? (
-                                <p className="text-sm text-gray-500 dark:text-gray-400">No payments recorded yet.</p>
-                            ) : (
-                                <ul className="divide-y divide-gray-100 dark:divide-gray-800 rounded-lg border border-gray-200 dark:border-gray-800">
-                                    {payments.map((p) => (
-                                        <li key={p.id} className="px-3 py-2 flex items-center justify-between gap-3 text-sm">
-                                            <div className="min-w-0">
-                                                <p className="text-gray-900 dark:text-white">{fmtDate(p.payment_date)} · {p.payment_method_display || p.payment_method || '-'}</p>
-                                                {(p.reference_no || p.notes) && (
-                                                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{[p.reference_no, p.notes].filter(Boolean).join(' · ')}</p>
-                                                )}
-                                            </div>
-                                            <span className="tabular-nums font-medium text-green-600 dark:text-green-400">{money(p.amount)}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
+                            <InvoicePaymentsList
+                                payments={payments}
+                                canConfirm={!!invoice.can_confirm_payments}
+                                onChanged={afterPayment}
+                            />
                         </section>
                     </div>
                 )}
@@ -341,8 +343,8 @@ export const InvoiceDrawer: React.FC<InvoiceDrawerProps> = ({ invoiceId, onClose
                     isOpen={isPaymentOpen}
                     onClose={() => setIsPaymentOpen(false)}
                     invoiceId={String(invoice.id)}
-                    invoiceData={{ invoice_no: invoice.invoice_no, amount: String(balance) }}
-                    onPaymentRecorded={afterChange}
+                    invoiceData={{ invoice_no: invoice.invoice_no, amount: String(recordable) }}
+                    onPaymentRecorded={afterPayment}
                 />
             )}
         </>

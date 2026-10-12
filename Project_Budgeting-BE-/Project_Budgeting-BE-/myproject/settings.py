@@ -53,7 +53,8 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 INSTALLED_APPS = [
-
+    # Must be first: makes `runserver` serve ASGI so websockets (/ws/timer/) work.
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

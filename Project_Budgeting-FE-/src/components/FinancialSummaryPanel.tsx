@@ -72,18 +72,6 @@ const Row: React.FC<{ label: string; value: string; tone?: Tone; strong?: boolea
 
 const RowRule = () => <div className="border-t border-gray-200 dark:border-gray-800 my-1" />;
 
-/** How much of the cost comes from task allocated hours, plus a warning for hours with no rate. */
-const LabourNote: React.FC<{ labourCost: number; allocatedHours: number; unratedHours: number; currency: string }> = ({ labourCost, allocatedHours, unratedHours, currency }) => (
-    <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 space-y-1">
-        <p>Includes {fmt(labourCost, currency)} labour from {n(allocatedHours).toFixed(2)} h allocated to tasks (allocated hours x assignee rate).</p>
-        {n(unratedHours) > 0 && (
-            <p className="text-amber-600 dark:text-amber-400">
-                {n(unratedHours).toFixed(2)} allocated h are not costed (task unassigned, or assignee has no cost rate) - assign the task and set a rate on the resource assignment, user profile or freelancer's hourly rate.
-            </p>
-        )}
-    </div>
-);
-
 const Badge: React.FC<{ tone: Tone; children: React.ReactNode }> = ({ tone, children }) => {
     const cls: Record<Tone, string> = {
         default: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
@@ -165,7 +153,6 @@ export const FinancialSummaryPanel: React.FC<FinancialSummaryPanelProps> = ({ pr
                             <Stat label="Actual Cost" value={fmt(s.actual_cost, currency)} tone={s.is_over_budget ? 'bad' : 'default'} />
                             <Stat label="Remaining Budget" value={fmt(s.remaining_budget, currency)} tone={n(s.remaining_budget) < 0 ? 'bad' : 'default'} />
                         </dl>
-                        <LabourNote labourCost={s.labour_cost} allocatedHours={s.allocated_hours} unratedHours={s.unrated_hours} currency={currency} />
                         <div className="border-t border-gray-100 dark:border-gray-800/70 my-4" />
                         <dl className={OVERVIEW_ROW}>
                             <Stat label="Invoiced" value={fmt(s.billed_amount, currency)} />
@@ -204,7 +191,6 @@ export const FinancialSummaryPanel: React.FC<FinancialSummaryPanelProps> = ({ pr
                         <Stat label="Actual Cost" value={fmt(t.total_cost, currency)} tone={overBudget ? 'bad' : 'default'} />
                         <Stat label="Remaining Budget" value={fmt(t.remaining_budget, currency)} tone={overBudget ? 'bad' : 'default'} />
                     </dl>
-                    <LabourNote labourCost={t.labour_cost} allocatedHours={t.allocated_hours} unratedHours={t.unrated_hours} currency={currency} />
                     <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-gray-600 dark:text-gray-400">
                         <span>
                             Billing: <span className="font-medium text-gray-900 dark:text-white">{fmt(t.monthly_revenue, currency)}</span> / month

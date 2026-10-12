@@ -111,7 +111,7 @@ export const GenerateMonthlyInvoiceDrawer: React.FC<GenerateMonthlyInvoiceDrawer
                 tax_percentage: taxValue,
                 due_days: parseInt(dueDays, 10) || 30,
             });
-            toast.success(`Invoice created for ${period.label} (Draft)`);
+            toast.success(`Invoice created for ${period.label} (Issued)`);
             onClose();
             onCreated?.();
         } catch (error: any) {
@@ -210,7 +210,7 @@ export const GenerateMonthlyInvoiceDrawer: React.FC<GenerateMonthlyInvoiceDrawer
                         <div className="flex justify-between py-0.5"><dt className="text-gray-600 dark:text-gray-400">Tax ({n(taxPercent)}%)</dt><dd className="tabular-nums">{money(tax)}</dd></div>
                         <div className="flex justify-between py-0.5 border-t border-gray-200 dark:border-gray-800 mt-1 pt-1 font-semibold text-gray-900 dark:text-white"><dt>Total</dt><dd className="tabular-nums">{money(total)} {currency}</dd></div>
                     </dl>
-                    <FieldHint>The invoice is created as a Draft and linked to the selected month. A month can have only one open invoice.</FieldHint>
+                    <FieldHint>The invoice is issued straight away (awaiting payment) and linked to the selected month. A month can have only one open invoice.</FieldHint>
                 </fieldset>
             )}
         </Drawer>

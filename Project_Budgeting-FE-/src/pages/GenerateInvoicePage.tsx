@@ -294,8 +294,9 @@ export default function GenerateInvoicePage() {
 
             if (isEditMode && invoiceId) {
                 // Edit mode - Update existing invoice
+                // No status: it's derived by the backend from the invoice's
+                // confirmed payments and due date, never set by an edit.
                 const updateData = {
-                    status: 'Draft', // You can make this dynamic if needed
                     client: invoiceClientId,
                     quote: invoiceQuoteId,
                     issue_date: dateOfIssue,

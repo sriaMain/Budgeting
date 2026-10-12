@@ -7,7 +7,7 @@
  * bill-linked expense only once (via its bill).
  *
  * Time & Material projects are costed by month, so they track each entry's
- * month (project start date to end date) instead of GL Account / Milestone.
+ * month (project start date to end date) instead of Milestone.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -16,7 +16,6 @@ import { toast } from 'react-hot-toast';
 import axiosInstance from '../utils/axiosInstance';
 import { ReusableTable, type Column } from './ReusableTable';
 import { StatusBadge } from './StatusBadge';
-import { SearchableSelect, type SearchableSelectOption } from './SearchableSelect';
 import { AddExpenseModal } from './AddExpenseModal';
 import { CreateBillModal } from './CreateBillModal';
 import { BillDrawer } from './BillDrawer';
@@ -58,7 +57,6 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
     // Filters
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState(ALL);
-    const [glFilter, setGlFilter] = useState(ALL);
     const [milestoneFilter, setMilestoneFilter] = useState(ALL);
     const [monthFilter, setMonthFilter] = useState(ALL);
     const [dateFrom, setDateFrom] = useState('');
@@ -73,11 +71,9 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
     const [openExpenseId, setOpenExpenseId] = useState<number | null>(null);
     const openEntry = (e: CostEntry) => (e.type === 'bill' ? setOpenBillId(e.id) : setOpenExpenseId(e.id));
 
-    // Tag an existing bill with GL Account / Milestone
+    // Tag an existing bill with a Milestone
     const [tagBill, setTagBill] = useState<CostEntry | null>(null);
-    const [tagGl, setTagGl] = useState<SearchableSelectOption | null>(null);
     const [tagMilestone, setTagMilestone] = useState<string>('');
-    const [glOptions, setGlOptions] = useState<SearchableSelectOption[]>([]);
     const [milestones, setMilestones] = useState<{ id: number; name: string }[]>([]);
     const [isSavingTags, setIsSavingTags] = useState(false);
 
@@ -101,17 +97,12 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
 
     const openTagModal = async (entry: CostEntry) => {
         setTagBill(entry);
-        setTagGl(entry.gl_account ? { id: entry.gl_account, label: entry.gl_account_label || '' } : null);
         setTagMilestone(entry.milestone ? String(entry.milestone) : '');
         try {
-            const [gl, ms] = await Promise.all([
-                axiosInstance.get<{ id: number; code: string; name: string; account_type?: string }[]>('/gl-accounts/?active_only=true'),
-                axiosInstance.get<{ id: number; name: string }[]>(`/projects/${projectId}/milestones/`),
-            ]);
-            setGlOptions((gl.data || []).map((a) => ({ id: a.id, label: `${a.code} - ${a.name}`, sublabel: a.account_type })));
+            const ms = await axiosInstance.get<{ id: number; name: string }[]>(`/projects/${projectId}/milestones/`);
             setMilestones(ms.data || []);
         } catch (error) {
-            console.error('Error loading GL accounts / milestones:', error);
+            console.error('Error loading milestones:', error);
         }
     };
 
@@ -119,8 +110,8 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
         if (!tagBill) return;
         setIsSavingTags(true);
         try {
+            // Only the milestone is sent, so a GL Account already on the bill is left as it is
             await axiosInstance.patch(`/vendor-bills/${tagBill.id}/tags/`, {
-                gl_account_id: tagGl ? tagGl.id : null,
                 milestone_id: tagMilestone || null,
             });
             toast.success('Bill updated');
@@ -135,12 +126,6 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
 
     // Filter option lists come from the entries themselves, so they only
     // offer values that actually exist on this project.
-    const glFilterOptions = useMemo(() => {
-        const map = new Map<number, string>();
-        entries.forEach((e) => { if (e.gl_account) map.set(e.gl_account, e.gl_account_label || `#${e.gl_account}`); });
-        return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-    }, [entries]);
-
     const milestoneFilterOptions = useMemo(() => {
         const map = new Map<number, string>();
         entries.forEach((e) => { if (e.milestone) map.set(e.milestone, e.milestone_name || `#${e.milestone}`); });
@@ -151,24 +136,23 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
         const q = search.trim().toLowerCase();
         const rows = entries.filter((e) => {
             if (typeFilter && e.type !== typeFilter) return false;
-            if (glFilter && String(e.gl_account ?? '') !== glFilter) return false;
             if (milestoneFilter && String(e.milestone ?? '') !== milestoneFilter) return false;
             if (monthFilter && monthForDate(months, e.date)?.value !== monthFilter) return false;
             if (dateFrom && e.date < dateFrom) return false;
             if (dateTo && e.date > dateTo) return false;
             if (!q) return true;
-            return [e.ref_no, e.description, e.payee, e.gl_account_label, e.milestone_name, e.category]
+            return [e.ref_no, e.description, e.payee, e.milestone_name, e.category]
                 .some((v) => v?.toLowerCase().includes(q));
         });
         return rows.sort((a, b) => {
             const cmp = a.date.localeCompare(b.date) || a.key.localeCompare(b.key);
             return sortDirection === 'asc' ? cmp : -cmp;
         });
-    }, [entries, search, typeFilter, glFilter, milestoneFilter, monthFilter, months, dateFrom, dateTo, sortDirection]);
+    }, [entries, search, typeFilter, milestoneFilter, monthFilter, months, dateFrom, dateTo, sortDirection]);
 
-    const hasFilters = !!(search || typeFilter || glFilter || milestoneFilter || monthFilter || dateFrom || dateTo);
+    const hasFilters = !!(search || typeFilter || milestoneFilter || monthFilter || dateFrom || dateTo);
     const clearFilters = () => {
-        setSearch(''); setTypeFilter(ALL); setGlFilter(ALL); setMilestoneFilter(ALL); setMonthFilter(ALL); setDateFrom(''); setDateTo('');
+        setSearch(''); setTypeFilter(ALL); setMilestoneFilter(ALL); setMonthFilter(ALL); setDateFrom(''); setDateTo('');
     };
 
     const money = (v: number) =>
@@ -209,7 +193,6 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
         ...(isTM
             ? [{ header: 'Month', accessor: (e: CostEntry) => <span className="whitespace-nowrap">{entryMonth(e)?.label || '-'}</span> }]
             : [
-                { header: 'GL Account', accessor: (e: CostEntry) => e.gl_account_label || '-' },
                 { header: 'Milestone', accessor: (e: CostEntry) => e.milestone_name || '-' },
             ]),
         {
@@ -244,7 +227,7 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
                             onClick={() => openTagModal(e)}
                             className="px-2 py-1 rounded-md text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
                         >
-                            GL / Milestone
+                            Milestone
                         </button>
                     )}
                 </div>
@@ -305,16 +288,10 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
                         {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                     </select>
                 ) : (
-                    <>
-                        <select value={glFilter} onChange={(e) => setGlFilter(e.target.value)} className={selectClass} aria-label="GL Account">
-                            <option value={ALL}>All GL Accounts</option>
-                            {glFilterOptions.map(([id, label]) => <option key={id} value={String(id)}>{label}</option>)}
-                        </select>
-                        <select value={milestoneFilter} onChange={(e) => setMilestoneFilter(e.target.value)} className={selectClass} aria-label="Milestone">
-                            <option value={ALL}>All Milestones</option>
-                            {milestoneFilterOptions.map(([id, name]) => <option key={id} value={String(id)}>{name}</option>)}
-                        </select>
-                    </>
+                    <select value={milestoneFilter} onChange={(e) => setMilestoneFilter(e.target.value)} className={selectClass} aria-label="Milestone">
+                        <option value={ALL}>All Milestones</option>
+                        {milestoneFilterOptions.map(([id, name]) => <option key={id} value={String(id)}>{name}</option>)}
+                    </select>
                 )}
                 {hasFilters && (
                     <button type="button" onClick={clearFilters} className="px-2 py-2 text-sm text-blue-600 dark:text-blue-400 hover:underline">
@@ -363,7 +340,7 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
                 isOpen={!!tagBill}
                 onClose={() => setTagBill(null)}
                 title={tagBill ? `Bill ${tagBill.ref_no}` : 'Bill'}
-                subtitle="GL Account and Milestone for this bill"
+                subtitle="Milestone for this bill"
                 size="md"
                 footer={(
                     <DrawerFormFooter
@@ -376,11 +353,6 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
                 )}
             >
                 <fieldset disabled={isSavingTags} className="space-y-4">
-                    <div>
-                        <label className={drawerLabelClass}>GL Account</label>
-                        <SearchableSelect options={glOptions} value={tagGl} onChange={setTagGl} placeholder="Search account..." />
-                        <FieldHint>The paid amount counts toward the matching budget line.</FieldHint>
-                    </div>
                     <div>
                         <label className={drawerLabelClass}>Milestone</label>
                         <select value={tagMilestone} onChange={(e) => setTagMilestone(e.target.value)} className={drawerInputClass}>

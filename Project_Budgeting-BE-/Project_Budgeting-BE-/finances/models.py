@@ -175,12 +175,25 @@ class Invoice(models.Model):
         self.tax_amount = taxable * (self.tax_percentage / Decimal("100"))
         self.total_amount = taxable + self.tax_amount
 
+        # Only confirmed (Completed) payments count as received - pending,
+        # processing, failed and cancelled ones never reduce the balance.
         self.paid_amount = (
-            self.payments.aggregate(total=Sum('amount'))['total']
+            self.payments.confirmed().aggregate(total=Sum('amount'))['total']
             or Decimal("0.00")
         )
 
-        self.balance_amount = self.total_amount - self.paid_amount
+        # Never negative (invoice_balance_non_negative) - an over-payment
+        # shows as a zero balance, not a credit.
+        self.balance_amount = max(self.total_amount - self.paid_amount, Decimal("0.00"))
+
+    @property
+    def unconfirmed_payment_amount(self):
+        """Recorded payments still awaiting confirmation (Pending/Processing)."""
+        return (
+            self.payments.filter(status__in=InvoicePayment.OPEN_STATUSES)
+            .aggregate(total=Sum('amount'))['total']
+            or Decimal("0.00")
+        )
 
     def update_status(self, save=True):
         if self.status == 'Cancelled':
@@ -188,10 +201,14 @@ class Invoice(models.Model):
 
         self.calculate_totals()
 
+        # Issued = generated and awaiting payment. 'Draft' is never derived:
+        # every saved invoice is active, so a legacy Draft row moves to its
+        # real payment status the next time it is recalculated.
         if self.balance_amount <= Decimal("0.00"):
             self.status = 'Paid'
         elif self.paid_amount > Decimal("0.00"):
-            self.status = 'Partially Paid'
+            # Partially paid but past due still needs chasing
+            self.status = 'Overdue' if self.due_date < timezone.now().date() else 'Partially Paid'
         elif self.due_date < timezone.now().date():
             self.status = 'Overdue'
         else:
@@ -259,6 +276,12 @@ class InvoiceItem(models.Model):
 
 
 
+class InvoicePaymentQuerySet(models.QuerySet):
+    def confirmed(self):
+        """Payments that count as money received (Completed only)."""
+        return self.filter(status=InvoicePayment.STATUS_COMPLETED)
+
+
 class InvoicePayment(models.Model):
     PAYMENT_METHOD_CHOICES = [
         ('Cash', 'Cash'),
@@ -269,6 +292,34 @@ class InvoicePayment(models.Model):
         ('Cheque', 'Cheque'),
         ('Other', 'Other'),
     ]
+
+    # Payments are recorded manually (bank transfer, cheque, cash...), not via
+    # a gateway, so recording one never means the money has arrived: it starts
+    # Pending and someone with finances.payment.confirm marks it Completed once
+    # it shows up in the bank. Only Completed payments count towards the
+    # invoice's paid amount (see Invoice.calculate_totals).
+    STATUS_PENDING = 'Pending'
+    STATUS_PROCESSING = 'Processing'
+    STATUS_COMPLETED = 'Completed'
+    STATUS_FAILED = 'Failed'
+    STATUS_CANCELLED = 'Cancelled'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending Confirmation'),
+        # e.g. a cheque deposited but not yet cleared
+        (STATUS_PROCESSING, 'Processing'),
+        (STATUS_COMPLETED, 'Completed'),
+        (STATUS_FAILED, 'Failed'),
+        (STATUS_CANCELLED, 'Cancelled'),
+    ]
+    OPEN_STATUSES = (STATUS_PENDING, STATUS_PROCESSING)
+    # Completed/Failed/Cancelled are final
+    ALLOWED_TRANSITIONS = {
+        STATUS_PENDING: {STATUS_PROCESSING, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED},
+        STATUS_PROCESSING: {STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED},
+        STATUS_COMPLETED: set(),
+        STATUS_FAILED: set(),
+        STATUS_CANCELLED: set(),
+    }
 
     invoice = models.ForeignKey(
         Invoice,
@@ -288,6 +339,22 @@ class InvoicePayment(models.Model):
     reference_no = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
 
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        db_index=True
+    )
+    status_note = models.TextField(blank=True)
+    status_updated_at = models.DateTimeField(null=True, blank=True)
+    status_updated_by = models.ForeignKey(
+        'accounts.Account',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='invoice_payment_status_updates'
+    )
+
     attachment = models.FileField(
         upload_to='invoices/payments/',
         null=True,
@@ -301,46 +368,85 @@ class InvoicePayment(models.Model):
         null=True
     )
 
+    objects = InvoicePaymentQuerySet.as_manager()
+
     class Meta:
         ordering = ['-payment_date', '-created_at']
 
-    # def clean(self):
-    #     if self.invoice_id:
-    #         self.invoice.calculate_totals()
-    #         if self.amount > self.invoice.balance_amount:
-    #             raise ValidationError(
-    #                 f"Payment amount cannot exceed balance {self.invoice.balance_amount}"
-    #             )
     def clean(self):
         super().clean()
 
-        # 1️⃣ Cancelled invoice → NO payments allowed
-        if self.invoice.status == 'Cancelled':
+        if not self.invoice_id or self.amount is None:
+            return
+
+        creating = self._state.adding
+        previous_status = None if creating else (
+            InvoicePayment.objects.filter(pk=self.pk).values_list('status', flat=True).first()
+        )
+        status_changed = creating or previous_status != self.status
+
+        # 1️⃣ Only the allowed status moves (Completed/Failed/Cancelled are final)
+        if not creating and status_changed and self.status not in self.ALLOWED_TRANSITIONS.get(previous_status, set()):
+            raise ValidationError({
+                "status": f"A {previous_status} payment cannot be changed to {self.status}."
+            })
+
+        # 2️⃣ Cancelled invoice → no new or newly-confirmed payments
+        if self.invoice.status == 'Cancelled' and (creating or (status_changed and self.status == self.STATUS_COMPLETED)):
             raise ValidationError({
                 "invoice": "Payments are not allowed for cancelled invoices."
             })
 
-        # 2️⃣ Amount must be positive
+        # 3️⃣ Amount must be positive
         if self.amount <= Decimal("0.00"):
             raise ValidationError({
                 "amount": "Payment amount must be greater than zero."
             })
 
-        # 3️⃣ Prevent overpayment
-        if self.amount > self.invoice.balance_amount:
+        others = self.invoice.payments.exclude(pk=self.pk)
+        confirmed_others = others.confirmed().aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
+        remaining = self.invoice.total_amount - confirmed_others
+
+        # 4️⃣ Prevent overpayment: confirming can't take the paid total past
+        # the invoice amount, and a new entry can't exceed what's left after
+        # the payments already awaiting confirmation (so the same money
+        # recorded twice can never be counted twice).
+        if status_changed and self.status == self.STATUS_COMPLETED and self.amount > remaining:
             raise ValidationError({
-                "amount": f"Payment amount cannot exceed balance {self.invoice.balance_amount}."
+                "amount": f"Payment amount cannot exceed balance {max(remaining, Decimal('0.00'))}."
+            })
+        if creating and self.status in self.OPEN_STATUSES:
+            awaiting = others.filter(status__in=self.OPEN_STATUSES).aggregate(total=Sum('amount'))['total'] or Decimal("0.00")
+            if self.amount > remaining - awaiting:
+                available = max(remaining - awaiting, Decimal('0.00'))
+                raise ValidationError({
+                    "amount": (
+                        f"Payment amount cannot exceed balance {available}"
+                        + (f" ({awaiting} is already recorded and awaiting confirmation)." if awaiting else ".")
+                    )
+                })
+
+        live = others.exclude(status__in=[self.STATUS_FAILED, self.STATUS_CANCELLED])
+
+        # 5️⃣ Duplicate reference numbers (a failed/cancelled one may be retried)
+        if self.reference_no and live.filter(reference_no=self.reference_no).exists():
+            raise ValidationError({
+                "reference_no": "Payment with this reference already exists."
             })
 
-        # 4️⃣ Prevent duplicate reference numbers (optional but real-world)
-        if self.reference_no:
-            if InvoicePayment.objects.filter(
-                invoice=self.invoice,
-                reference_no=self.reference_no
-            ).exclude(pk=self.pk).exists():
-                raise ValidationError({
-                    "reference_no": "Payment with this reference already exists."
-                })
+        # 6️⃣ The exact same entry submitted twice
+        if creating and live.filter(
+            amount=self.amount,
+            payment_date=self.payment_date,
+            payment_method=self.payment_method,
+            reference_no=self.reference_no,
+        ).exists():
+            raise ValidationError({
+                "amount": (
+                    "An identical payment (same amount, date and method) is already recorded "
+                    "for this invoice. Add a reference number if this is a separate payment."
+                )
+            })
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -349,13 +455,20 @@ class InvoicePayment(models.Model):
         # 🔁 Update invoice totals & status AFTER payment
         self.invoice.update_status()
 
-    # def save(self, *args, **kwargs):
-    #     self.full_clean()
-    #     super().save(*args, **kwargs)
-    #     self.invoice.update_status()
-
-
-
+    def set_status(self, new_status, user=None, note=''):
+        """Move this payment through its lifecycle (confirm / mark failed /
+        cancel...) and recalculate the invoice. The invoice row is locked so
+        two confirmations on the same invoice can't both pass the balance check."""
+        with transaction.atomic():
+            Invoice.objects.select_for_update().get(pk=self.invoice_id)
+            locked = InvoicePayment.objects.select_for_update().get(pk=self.pk)
+            locked.status = new_status
+            locked.status_note = note or ''
+            locked.status_updated_at = timezone.now()
+            locked.status_updated_by = user
+            locked.save()
+        self.refresh_from_db()
+        return self
 
 
 class PurchaseOrder(models.Model):
@@ -721,7 +834,8 @@ class Expense(models.Model):
 
     expense_date = models.DateField(default=timezone.localdate)
 
-    description = models.TextField()
+    # Optional - an expense can be saved with just its category and amount
+    description = models.TextField(blank=True, default='')
 
     amount = models.DecimalField(
         max_digits=15,

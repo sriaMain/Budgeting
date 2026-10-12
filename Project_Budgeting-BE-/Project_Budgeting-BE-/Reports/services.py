@@ -16,7 +16,7 @@ def get_financial_summary(filters):
         total=Coalesce(Sum("total_amount"), Decimal("0.00"))
     )["total"]
 
-    received = InvoicePayment.objects.aggregate(
+    received = InvoicePayment.objects.confirmed().aggregate(
         total=Coalesce(Sum("amount"), Decimal("0.00"))
     )["total"]
 
@@ -88,7 +88,7 @@ def get_all_tab_data(filters):
                 total=Coalesce(Sum("amount"), Decimal("0.00"))
             )["total"]
 
-        received = InvoicePayment.objects.filter(
+        received = InvoicePayment.objects.confirmed().filter(
             invoice__client=client,
             invoice__project=project
         ).aggregate(
@@ -99,7 +99,7 @@ def get_all_tab_data(filters):
         profit = (received or Decimal("0.00")) - (expenses or Decimal("0.00"))
         profit_margin = (profit / total_invoiced * 100) if total_invoiced > 0 else Decimal("0.00")
 
-        last_payment_date = InvoicePayment.objects.filter(
+        last_payment_date = InvoicePayment.objects.confirmed().filter(
             invoice__client=client,
             invoice__project=project
         ).aggregate(
@@ -116,7 +116,7 @@ def get_all_tab_data(filters):
             "total_expenses": float(expenses or Decimal("0.00")),
             "profit": float(profit),
             "profit_margin_percent": float(profit_margin),
-            "latest_invoice_status": latest_invoice.status or "Draft",
+            "latest_invoice_status": latest_invoice.status or "Issued",
             "last_receipt_date": last_payment_date,
             "outstanding_amount": float(outstanding),
             "collection_rate_percent": float((received or Decimal("0.00")) / total_invoiced * 100) if total_invoiced > 0 else 0,
@@ -139,7 +139,7 @@ def get_all_tab_data(filters):
         total=Coalesce(Sum("total_amount"), Decimal("0.00"))
     )["total"]
 
-    total_received = InvoicePayment.objects.filter(invoice__in=qs).aggregate(
+    total_received = InvoicePayment.objects.confirmed().filter(invoice__in=qs).aggregate(
         total=Coalesce(Sum("amount"), Decimal("0.00"))
     )["total"]
 
@@ -197,7 +197,7 @@ def get_financial_tab_data(filters):
 
     data = []
     for invoice in qs.order_by("-issue_date"):
-        received = InvoicePayment.objects.filter(
+        received = InvoicePayment.objects.confirmed().filter(
             invoice=invoice
         ).aggregate(
             total=Coalesce(Sum("amount"), Decimal("0.00"))
@@ -205,7 +205,7 @@ def get_financial_tab_data(filters):
         
         outstanding = invoice.total_amount - (received or Decimal("0.00"))
         
-        last_payment_date = InvoicePayment.objects.filter(
+        last_payment_date = InvoicePayment.objects.confirmed().filter(
             invoice=invoice
         ).aggregate(
             last_date=Max("payment_date")
@@ -258,7 +258,7 @@ def get_project_tab_data(filters):
             total=Coalesce(Sum("total_amount"), Decimal("0.00"))
         )["total"]
 
-        payment_qs = InvoicePayment.objects.filter(invoice__project=pb.project)
+        payment_qs = InvoicePayment.objects.confirmed().filter(invoice__project=pb.project)
         if from_date:
             payment_qs = payment_qs.filter(payment_date__gte=from_date)
         if to_date:
@@ -326,6 +326,7 @@ def get_payment_tab_data(filters):
                 "invoice__client__company_name",
                 "payment_method",
                 "amount",
+                "status",
                 "invoice__status",
             )
         )

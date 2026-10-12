@@ -92,7 +92,7 @@ class DashboardMetricsAPIView(APIView):
         total_invoiced = _money_sum(invoiced_qs, "total_amount")
 
         # 3️⃣ Received → InvoicePayment.amount
-        received_qs = InvoicePayment.objects.all()
+        received_qs = InvoicePayment.objects.confirmed()
         total_received = _money_sum(received_qs, "amount")
 
         # 4️⃣ Expenses → OutgoingPayment.amount (vendor bill payments) + Expense.amount (logged expenses)
@@ -187,7 +187,7 @@ class DashboardOrgOverviewAPIView(APIView):
                     Invoice.objects.filter(status__in=["Issued", "Partially Paid", "Paid", "Overdue"]),
                     "total_amount", "issue_date", start, end,
                 ),
-                "received": _money_sum(InvoicePayment.objects.all(), "amount", "payment_date", start, end),
+                "received": _money_sum(InvoicePayment.objects.confirmed(), "amount", "payment_date", start, end),
                 "expenses": _money_sum(OutgoingPayment.objects.all(), "amount", "payment_date", start, end),
             })
 
@@ -504,7 +504,7 @@ class AdminDashboardOverviewAPIView(APIView):
         )
         overdue = _money_sum(open_invoices.filter(due_date__lt=today), "balance_amount")
         paid_this_month = _money_sum(
-            InvoicePayment.objects.filter(payment_date__gte=month_start), "amount"
+            InvoicePayment.objects.confirmed().filter(payment_date__gte=month_start), "amount"
         )
 
         invoice_rows = [

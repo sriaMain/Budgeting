@@ -117,6 +117,9 @@ class InvoicePaymentSerializer(serializers.ModelSerializer):
     )
     created_by_name = serializers.SerializerMethodField()
     invoice_no = serializers.CharField(source="invoice.invoice_no", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    status_updated_by_name = serializers.SerializerMethodField()
+    is_confirmed = serializers.SerializerMethodField()
 
     class Meta:
         model = InvoicePayment
@@ -131,18 +134,36 @@ class InvoicePaymentSerializer(serializers.ModelSerializer):
             "reference_no",
             "notes",
             "attachment",
+            "status",
+            "status_display",
+            "status_note",
+            "status_updated_at",
+            "status_updated_by_name",
+            "is_confirmed",
             "created_at",
             "created_by",
             "created_by_name",
         ]
-        read_only_fields = ["invoice", "created_at", "created_by", "created_by_name"]
+        # Status is never set by recording a payment - it starts Pending and
+        # only moves via InvoicePaymentStatusView (confirm / fail / cancel).
+        read_only_fields = [
+            "invoice", "created_at", "created_by", "created_by_name",
+            "status", "status_note", "status_updated_at",
+        ]
+
+    def _user_name(self, user):
+        if not user:
+            return None
+        return user.get_full_name() or getattr(user, "username", None)
 
     def get_created_by_name(self, obj):
-        return (
-            obj.created_by.get_full_name()
-            if obj.created_by and obj.created_by.get_full_name()
-            else getattr(obj.created_by, "username", None)
-        )
+        return self._user_name(obj.created_by)
+
+    def get_status_updated_by_name(self, obj):
+        return self._user_name(obj.status_updated_by)
+
+    def get_is_confirmed(self, obj):
+        return obj.status == InvoicePayment.STATUS_COMPLETED
 
     def validate_payment_date(self, value):
         if value > timezone.now().date():
@@ -166,13 +187,15 @@ class InvoicePaymentSerializer(serializers.ModelSerializer):
                 {"errors": "Invoice is already fully paid."}
             )
 
-        
-        if amount > invoice.balance_amount:
-            raise serializers.ValidationError(
-                {
-                    "errors": f"Payment amount exceeds remaining balance ({invoice.balance_amount})."
-                }
-            )
+        # Payments already recorded but not yet confirmed still use up the
+        # balance - otherwise the same money could be recorded twice.
+        awaiting = invoice.unconfirmed_payment_amount
+        available = max(invoice.balance_amount - awaiting, Decimal("0.00"))
+        if amount > available:
+            message = f"Payment amount exceeds remaining balance ({available})."
+            if awaiting:
+                message += f" {awaiting} is already recorded and awaiting confirmation."
+            raise serializers.ValidationError({"errors": message})
 
         return attrs
 
@@ -397,10 +420,27 @@ class InvoiceDetailSerializer(serializers.ModelSerializer):
     payment_status = serializers.SerializerMethodField()
     is_overdue = serializers.SerializerMethodField()
     days_until_due = serializers.SerializerMethodField()
+    # Recorded payments still awaiting confirmation - not yet in paid_amount
+    unconfirmed_payment_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    can_confirm_payments = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
         fields = '__all__'
+        # Status and money totals are always derived from items and confirmed
+        # payments (Invoice.update_status) - never accepted from the client,
+        # so an edit can't set Draft/Paid by hand.
+        read_only_fields = (
+            'invoice_no', 'status', 'sub_total', 'tax_amount', 'total_amount',
+            'paid_amount', 'balance_amount', 'cancelled_at', 'cancelled_by',
+        )
+
+    def get_can_confirm_payments(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return False
+        return bool(user.is_superuser or user.has_role_permission('finances.payment.confirm'))
 
     def get_quote_id(self, obj):
         """Quote is optional now (milestone/T&M invoices have none)."""

@@ -4,7 +4,7 @@ from . import views
 from django.http import HttpResponse
 
 from .views import (DownloadAttachmentView, ProjectAttachmentView, QuotationDetailView, InvoiceListView, InvoiceDetailView,
-                    GenerateInvoiceView, RecordPaymentView, InvoicePaymentListView,  
+                    GenerateInvoiceView, RecordPaymentView, InvoicePaymentListView, InvoicePaymentStatusView,
                     DownloadInvoicePDFView, SendInvoiceEmailView, CancelInvoiceView,
                     InvoiceStatusChoicesAPIView,InvoiceShareableLinkView, PublicInvoiceView, InvoiceStatisticsView, DownloadInvoicePDFView,PublicInvoicePDFView,ShareInvoiceLinkView,
                     ProjectPaymentAPIView, ProjectPaymentSummaryAPIView, ProjectPaymentsListAPIView,
@@ -23,6 +23,7 @@ path("invoices/<int:invoice_id>/", InvoiceDetailView.as_view()),
 path("invoices/generate/", GenerateInvoiceView.as_view()),
 path("invoices/<int:invoice_id>/payment/", RecordPaymentView.as_view()),
 path("invoices/<int:invoice_id>/payments/", InvoicePaymentListView.as_view()),
+path("invoices/payments/<int:payment_id>/status/", InvoicePaymentStatusView.as_view()),
 path("invoices/<int:invoice_id>/send-email/", SendInvoiceEmailView.as_view()),
 path("invoices/<int:invoice_id>/cancel/", CancelInvoiceView.as_view()),
 path("invoices/<int:invoice_id>/share/", InvoiceShareableLinkView.as_view()),

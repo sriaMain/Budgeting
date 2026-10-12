@@ -47,16 +47,29 @@ export interface Expense {
     created_at: string;
 }
 
+/**
+ * Payments are recorded manually and start Pending; only Completed ones count
+ * towards the invoice's paid amount. Completed/Failed/Cancelled are final.
+ */
+export type InvoicePaymentStatus = 'Pending' | 'Processing' | 'Completed' | 'Failed' | 'Cancelled';
+
 export interface InvoicePayment {
     id: number;
     payment_date: string;
-    amount: number;
+    amount: number | string;
     payment_method: string;
+    payment_method_display?: string;
     reference_no: string;
     notes?: string;
+    status?: InvoicePaymentStatus;
+    status_display?: string;
+    status_note?: string;
+    status_updated_at?: string | null;
+    status_updated_by_name?: string | null;
     created_at: string;
 }
 
+/** 'Draft' only exists on old records - every saved invoice is active (Issued onwards). */
 export type InvoiceStatus = 'Draft' | 'Issued' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Cancelled';
 
 export interface Invoice {
@@ -280,7 +293,7 @@ export interface TMPeriodDetail extends TMPeriodRow {
         invoices: {
             id: number; invoice_no: string; status: string; issue_date: string; due_date: string;
             total_amount: number; paid_amount: number; balance_amount: number;
-            payments: { id: number; payment_date: string; amount: number; payment_method: string; reference_no: string }[];
+            payments: { id: number; payment_date: string; amount: number; payment_method: string; reference_no: string; status?: InvoicePaymentStatus; status_display?: string }[];
         }[];
     };
 }

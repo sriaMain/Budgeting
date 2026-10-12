@@ -363,6 +363,8 @@ def period_detail(project, period, today=None):
         payments[pay.invoice_id].append({
             "id": pay.id, "payment_date": pay.payment_date, "amount": pay.amount,
             "payment_method": pay.payment_method, "reference_no": pay.reference_no,
+            # Only Completed payments are in the invoice's paid_amount
+            "status": pay.status, "status_display": pay.get_status_display(),
         })
     row["items"] = {
         "expenses": items[period.month]['expenses'],

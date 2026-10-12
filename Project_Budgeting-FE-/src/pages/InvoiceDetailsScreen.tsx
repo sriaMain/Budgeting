@@ -8,6 +8,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Edit, FileText, Share2, Send, ArrowLeft, Trash2 } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import { RecordPaymentModal, type PaymentData } from '../components/RecordPaymentModal';
+import { InvoicePaymentsList } from '../components/InvoicePaymentsList';
 import { toast } from 'react-hot-toast';
 import axiosInstance from '../utils/axiosInstance';
 
@@ -134,8 +135,8 @@ export default function InvoiceDetailsScreen({
             setIsActionLoading(true);
 
             // Prepare the complete invoice data for PUT request using invoiceData directly
+            // Status isn't sent - the backend derives it from confirmed payments and the due date
             const updateData = {
-                status: invoiceData.status,
                 client: invoiceData.client,
                 quote: invoiceData.quote,
                 issue_date: invoiceData.issue_date,
@@ -282,6 +283,9 @@ export default function InvoiceDetailsScreen({
 
     // A paid invoice is final - it can't be edited
     const isPaid = invoiceData.status === 'Paid' || (Number(invoiceData.total_amount) > 0 && Number(invoiceData.balance_amount) <= 0);
+    // Payments recorded but not yet confirmed still use up the balance
+    const awaitingConfirmation = Number(invoiceData.unconfirmed_payment_amount) || 0;
+    const recordable = Math.max((Number(invoiceData.balance_amount) || 0) - awaitingConfirmation, 0);
 
     return (
         <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
@@ -320,7 +324,7 @@ export default function InvoiceDetailsScreen({
 
                             </>
                         )}
-                        {status !== 'Paid' && (
+                        {!isPaid && recordable > 0 && invoiceData.status !== 'Cancelled' && (
                             <button
                                 onClick={() => setIsRecordPaymentOpen(true)}
                                 className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-semibold transition-colors shadow-md hover:shadow-lg"
@@ -524,6 +528,27 @@ export default function InvoiceDetailsScreen({
                     </div>
                 </div>
 
+                {/* Payments - only confirmed (Completed) ones count towards Paid */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6 dark:bg-gray-900 dark:border-gray-800">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+                        <h3 className="text-sm font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+                            Payments <span className="font-normal normal-case tracking-normal text-gray-500">({(invoiceData.payments || []).length})</span>
+                        </h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                            Paid <span className="font-semibold text-green-600 dark:text-green-400">₹{(Number(invoiceData.paid_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            {' · '}Outstanding <span className="font-semibold text-gray-900 dark:text-white">₹{(Number(invoiceData.balance_amount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            {awaitingConfirmation > 0 && (
+                                <>{' · '}Awaiting confirmation <span className="font-semibold text-amber-600 dark:text-amber-400">₹{awaitingConfirmation.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></>
+                            )}
+                        </p>
+                    </div>
+                    <InvoicePaymentsList
+                        payments={invoiceData.payments || []}
+                        canConfirm={!!invoiceData.can_confirm_payments}
+                        onChanged={fetchInvoiceData}
+                    />
+                </div>
+
                 {/* Action Buttons */}
                 <div className="flex items-center gap-3">
                     <button
@@ -568,7 +593,7 @@ export default function InvoiceDetailsScreen({
                 invoiceId={invoiceId || ''}
                 invoiceData={{
                     invoice_no: invoiceData.invoice_no,
-                    amount: invoiceData.balance_amount || totals.to_be_voiced
+                    amount: String(recordable)
                 }}
                 onPaymentRecorded={handlePaymentRecorded}
             />

@@ -721,6 +721,10 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'client': {'required': False},
             'remaining_amount': {'read_only': True},
+            # Optional on input: a project created from a quote takes the
+            # quote's dates when none are sent (see validate()).
+            'start_date': {'required': False},
+            'end_date': {'required': False},
         }
     def get_fields(self):
         fields = super().get_fields()
@@ -744,8 +748,27 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
         project_type = data.get('project_type')
         quotation = data.get('created_from_quotation')
         budget = data.get('budget')
-        start_date = data.get('start_date')
-        end_date = data.get('end_date')
+
+        # 🔹 Dates from the quote: Date of Issue -> Start Date, End Date
+        # (Quote.due_date) -> End Date. Only fills what wasn't sent, and only
+        # on create - after that the project keeps its own dates, so editing
+        # the quote later never overwrites them.
+        if not self.instance and quotation:
+            if not data.get('start_date') and quotation.date_of_issue:
+                data['start_date'] = quotation.date_of_issue
+            if not data.get('end_date') and quotation.due_date:
+                data['end_date'] = quotation.due_date
+
+        start_date = data.get('start_date') or getattr(self.instance, 'start_date', None)
+        end_date = data.get('end_date') or getattr(self.instance, 'end_date', None)
+
+        if not self.instance:
+            missing = {
+                field: "This field is required."
+                for field in ('start_date', 'end_date') if not data.get(field)
+            }
+            if missing:
+                raise serializers.ValidationError(missing)
 
         # 🔒 Common date validation
         if start_date and end_date and end_date < start_date:

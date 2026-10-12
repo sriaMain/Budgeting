@@ -107,8 +107,9 @@ export const ExpenseDrawer: React.FC<ExpenseDrawerProps> = ({ expenseId, onClose
             });
             toast.success(`Payment of ${money(amount)} recorded`);
             setIsPaymentOpen(false);
-            await fetchExpense();
+            // Done - close the drawer; the project page refreshes behind it
             onChanged?.();
+            onClose();
         } catch (error: any) {
             console.error('Error recording expense payment:', error);
             toast.error(error.response?.data?.error || 'Failed to record payment');

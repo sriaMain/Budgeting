@@ -38,6 +38,12 @@ const BILLING_FREQUENCIES: { value: string; label: string }[] = [
     { value: 'monthly', label: 'Monthly' },
 ];
 
+// YYYY-MM-DD in local time - toISOString() is UTC and can be a day off
+const todayIso = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     isOpen,
     onClose,
@@ -56,13 +62,16 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     const [client, setClient] = useState<SearchableSelectOption | null>(null);
     const [clientLocked, setClientLocked] = useState(false);
     const [clientContact, setClientContact] = useState<{ name: string; email: string } | null>(null);
-    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+    const [startDate, setStartDate] = useState(todayIso());
     const [dueDate, setDueDate] = useState('');
     const [totalHours, setTotalHours] = useState('');
     const [totalBudget, setTotalBudget] = useState('');
     const [billsExpenses, setBillsExpenses] = useState('0');
     const [priceList, setPriceList] = useState('INR');
     const [isLoadingQuoteBudget, setIsLoadingQuoteBudget] = useState(false);
+    // Status of the source quote - only a not-yet-Confirmed (legacy) quote is
+    // confirmed before the project is created.
+    const [quoteStatus, setQuoteStatus] = useState('');
 
     // Project Types / Financial Management: engagement model - a DIFFERENT
     // axis from internal/external above (project_type), controls the
@@ -131,6 +140,12 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                 : 0;
 
             setTotalHours(hoursFromItems ? String(hoursFromItems) : '');
+            // Project dates come from the quote: Date of Issue -> Start Date,
+            // End Date (due_date) -> End Date. Both stay editable, and once the
+            // project is saved it keeps its own dates.
+            setStartDate(quote.date_of_issue || todayIso());
+            setDueDate(quote.due_date || '');
+            setQuoteStatus(quote.status || '');
             setTotalBudget(quote.total_amount != null ? String(quote.total_amount) : '');
             setBillsExpenses(quote.outsourced_cost != null ? String(quote.outsourced_cost) : '0');
             if (quote.currency) {
@@ -143,6 +158,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             }
         } catch (error) {
             console.error('Failed to fetch quote budget data:', error);
+            toast.error("Couldn't load the quote's details - enter the dates and amounts manually");
         } finally {
             setIsLoadingQuoteBudget(false);
         }
@@ -156,6 +172,9 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                 fetchQuoteBudgetData(quoteId);
             } else {
                 // No quote to source budget data from; keep fields blank/default
+                setStartDate(todayIso());
+                setDueDate('');
+                setQuoteStatus('');
                 setTotalHours('');
                 setTotalBudget('');
                 setBillsExpenses('0');
@@ -177,6 +196,14 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             toast.error('Monthly billing amount is required for Time & Material projects');
             return;
         }
+        if (!startDate || !dueDate) {
+            toast.error('Start date and end date are required');
+            return;
+        }
+        if (dueDate < startDate) {
+            toast.error('End date cannot be before the start date');
+            return;
+        }
 
         setIsSaving(true);
         try {
@@ -184,8 +211,9 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             // quote is always external and linked to it; otherwise internal.
             const projectType: 'internal' | 'external' = quoteId ? 'external' : 'internal';
 
-            // Auto-confirm the quote if we are creating an external project from a quote
-            if (quoteId) {
+            // New quotes are already Confirmed; only an older quote still in an
+            // earlier stage needs confirming before a project can be created from it.
+            if (quoteId && quoteStatus && quoteStatus !== 'Confirmed') {
                 try {
                     console.log(`Auto-confirming quote ${quoteId} before project creation...`);
                     await axiosInstance.put(`/quotes/${quoteId}/`, {
@@ -202,7 +230,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                 project_name: projectName,
                 project_type: projectType,
                 start_date: startDate,
-                end_date: dueDate || null,
+                end_date: dueDate,
                 budget: {},
                 engagement_type: engagementType,
             };
@@ -255,8 +283,10 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                 // Extract project ID from the actual response structure
                 let newProjectId;
 
-                // The backend returns: { Projects: [{ company_name: "...", project_details: [...] }] }
-                if (response.data.Projects && response.data.Projects.length > 0) {
+                // The backend returns: { message, project: { project_no, ... } }
+                if (response.data.project?.project_no) {
+                    newProjectId = response.data.project.project_no;
+                } else if (response.data.Projects && response.data.Projects.length > 0) {
                     const projectDetails = response.data.Projects[0].project_details;
                     if (projectDetails && projectDetails.length > 0) {
                         // Get the last project (the newly created one)
@@ -429,10 +459,18 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                                 <InputField
                                                     type="date"
                                                     value={dueDate}
+                                                    min={startDate || undefined}
                                                     onChange={(e) => setDueDate(e.target.value)}
                                                 />
                                             </div>
                                         </div>
+                                        {quoteId && (
+                                            <p className="-mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                                {isLoadingQuoteBudget
+                                                    ? "Loading the quote's dates..."
+                                                    : "Filled from the quote's Date of Issue and End Date - you can change them."}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             </div>

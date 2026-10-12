@@ -17,7 +17,7 @@ interface RecordPaymentModalProps {
     invoiceId: string;
     invoiceData: {
         invoice_no: string;
-        /** Balance still to be received - pre-fills the amount. */
+        /** Balance still to be recorded (outstanding minus payments awaiting confirmation) - pre-fills the amount. */
         amount: string;
     };
     onPaymentRecorded?: (paymentData: PaymentData) => void;
@@ -87,7 +87,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         setIsSubmitting(true);
         try {
             const response = await axiosInstance.post(`invoices/${invoiceId}/payment/`, paymentData);
-            toast.success(response.data?.message || 'Payment recorded successfully!');
+            toast.success(response.data?.message || 'Payment recorded - awaiting confirmation');
             if (onPaymentRecorded) await onPaymentRecorded(paymentData);
             onClose();
         } catch (error: any) {
@@ -131,7 +131,10 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                         {Number.isFinite(balance) && amt > balance && (
                             <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Amount is more than the balance due.</p>
                         )}
-                        <FieldHint>Pre-filled with the balance due.</FieldHint>
+                        <FieldHint>
+                            Pre-filled with the balance due. The payment is saved as Pending Confirmation and
+                            is added to the invoice's paid amount once finance confirms it has been received.
+                        </FieldHint>
                     </div>
                 </DrawerSection>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

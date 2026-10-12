@@ -68,7 +68,9 @@ class Quote(models.Model):
     quote_name = models.CharField(max_length=100)
     date_of_issue = models.DateField()
     due_date = models.DateField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Oppurtunity')
+    # New quotes are created Confirmed (QuoteSerializer.create enforces it);
+    # the earlier stages remain only for historical quotes.
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Confirmed')
 
     
     # Link to the Client and POC models

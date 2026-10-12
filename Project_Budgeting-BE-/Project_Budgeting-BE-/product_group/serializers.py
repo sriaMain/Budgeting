@@ -302,6 +302,10 @@ class QuoteSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         items_data = validated_data.pop("items", [])
+        # A new quote is always saved as Confirmed - whatever (if anything)
+        # the client sent. Later status moves (Closed, Cancelled...) go
+        # through update() and validate() as before.
+        validated_data["status"] = "Confirmed"
         with transaction.atomic():
             quote = Quote.objects.create(**validated_data)
             self._create_items(quote, items_data)

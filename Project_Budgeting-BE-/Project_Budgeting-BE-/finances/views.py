@@ -71,6 +71,19 @@ def _log_financial_audit(entity_type, entity_id, action, request, project=None, 
     )
 
 
+def _validation_error_response(exc):
+    """A model-level (Django) ValidationError - e.g. from InvoicePayment.clean()
+    - as a 400 with its first message, instead of an unhandled 500."""
+    if hasattr(exc, "message_dict"):
+        messages = [m for msgs in exc.message_dict.values() for m in msgs]
+    else:
+        messages = exc.messages
+    return Response(
+        {"error": messages[0] if messages else "Invalid data."},
+        status=status.HTTP_400_BAD_REQUEST
+    )
+
+
 class FinancialAuditLogListView(APIView):
     """Section 25's financial activity log for one project - read-only,
     entries are written internally by _log_financial_audit() at each
@@ -127,6 +140,9 @@ class InvoiceStatusChoicesAPIView(APIView):
                 "label": choice[1]
             }
             for choice in Invoice.STATUS_CHOICES
+            # Draft is kept on the model for history only - no saved invoice
+            # is a draft, so it isn't offered as a status.
+            if choice[0] != 'Draft'
         ]
 
         return Response(
@@ -173,9 +189,9 @@ class InvoiceListView(APIView):
                 Q(client__name__icontains=search)
             )
         
-        # Update overdue invoices
+        # Update overdue invoices (incl. part-paid ones and legacy Drafts)
         overdue_invoices = queryset.filter(
-            status='Issued',
+            status__in=['Draft', 'Issued', 'Partially Paid'],
             due_date__lt=timezone.now().date()
         )
         for invoice in overdue_invoices:
@@ -218,21 +234,33 @@ class InvoiceDetailView(APIView):
             id=invoice_id
         )
         
-        # Calculate and update totals
-        invoice.calculate_totals()
-        invoice.save()
-        
-        serializer = InvoiceDetailSerializer(invoice)
+        # Calculate and update totals (and the status that follows from them -
+        # e.g. Overdue once the due date passes)
+        if invoice.status == 'Cancelled':
+            invoice.calculate_totals()
+            invoice.save()
+        else:
+            invoice.update_status()
+
+        serializer = InvoiceDetailSerializer(invoice, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     def put(self, request, invoice_id):
         invoice = get_object_or_404(Invoice, id=invoice_id)
-        
-        serializer = InvoiceDetailSerializer(invoice, data=request.data, partial=True)
+
+        serializer = InvoiceDetailSerializer(
+            invoice, data=request.data, partial=True, context={'request': request}
+        )
         if serializer.is_valid():
-            serializer.save(updated_by=request.user)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        
+            invoice = serializer.save(updated_by=request.user)
+            # Status is derived, never sent: re-derive it from the (possibly
+            # new) due date, tax and discount.
+            invoice.update_status()
+            return Response(
+                InvoiceDetailSerializer(invoice, context={'request': request}).data,
+                status=status.HTTP_200_OK
+            )
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
   
@@ -365,28 +393,102 @@ class RecordPaymentView(APIView):
         )
         serializer.is_valid(raise_exception=True)
 
-        payment = serializer.save(
-            invoice=invoice,
-            created_by=request.user
-        )
+        # Recorded as Pending (model default) - it only counts towards the
+        # invoice once confirmed via InvoicePaymentStatusView.
+        try:
+            payment = serializer.save(
+                invoice=invoice,
+                created_by=request.user
+            )
+        except ValidationError as e:
+            transaction.set_rollback(True)
+            return _validation_error_response(e)
 
         _log_financial_audit(
             "payment", payment.id, "payment_recorded", request, project=invoice.project,
-            field_name="invoice", new_value=f"{payment.amount} against invoice {invoice.invoice_no}",
+            field_name="invoice", new_value=f"{payment.amount} against invoice {invoice.invoice_no} ({payment.status})",
         )
-        if invoice.status in ("Paid", "Partially Paid"):
+
+        return Response(
+            {
+                "success": True,
+                "message": "Payment recorded - it will count towards the invoice once confirmed.",
+                "data": InvoicePaymentSerializer(payment).data
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+
+class InvoicePaymentStatusView(APIView):
+    """
+    Move a recorded payment through its manual confirmation workflow.
+
+    POST /api/invoices/payments/<payment_id>/status/
+    Body: {"status": "Processing" | "Completed" | "Failed" | "Cancelled", "note": "..."}
+
+    Only Completed payments count towards the invoice's paid amount; the
+    invoice's paid/outstanding amounts and status are recalculated here.
+    """
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    authentication_classes = [JWTAuthentication]
+    permission_code = "finances.payment.confirm"
+
+    def post(self, request, payment_id):
+        payment = get_object_or_404(InvoicePayment.objects.select_related('invoice'), id=payment_id)
+
+        new_status = request.data.get("status")
+        valid_statuses = dict(InvoicePayment.STATUS_CHOICES)
+        if new_status not in valid_statuses or new_status == InvoicePayment.STATUS_PENDING:
+            return Response(
+                {"error": "Status must be one of: Processing, Completed, Failed, Cancelled."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if new_status == payment.status:
+            return Response(
+                {"error": f"Payment is already {payment.get_status_display()}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        note = str(request.data.get("note") or "").strip()
+        if new_status == InvoicePayment.STATUS_FAILED and not note:
+            return Response(
+                {"error": "Give a reason when marking a payment as failed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        old_status = payment.status
+        old_invoice_status = payment.invoice.status
+        try:
+            payment.set_status(new_status, user=request.user, note=note)
+        except ValidationError as e:
+            return _validation_error_response(e)
+
+        invoice = payment.invoice
+        invoice.refresh_from_db()
+
+        _log_financial_audit(
+            "payment", payment.id, "status_changed", request, project=invoice.project,
+            field_name="status", old_value=old_status, new_value=new_status,
+        )
+        if invoice.status != old_invoice_status:
             _log_financial_audit(
                 "invoice", invoice.id, "status_changed", request, project=invoice.project,
-                field_name="status", new_value=invoice.status,
+                field_name="status", old_value=old_invoice_status, new_value=invoice.status,
             )
 
         return Response(
             {
                 "success": True,
-                "message": "Entry recorded successfully.",
-                "data": InvoicePaymentSerializer(payment).data
+                "message": f"Payment marked as {payment.get_status_display()}.",
+                "data": InvoicePaymentSerializer(payment).data,
+                "invoice": {
+                    "id": invoice.id,
+                    "status": invoice.status,
+                    "paid_amount": invoice.paid_amount,
+                    "balance_amount": invoice.balance_amount,
+                },
             },
-            status=status.HTTP_201_CREATED
+            status=status.HTTP_200_OK
         )
 
 
@@ -594,8 +696,8 @@ class InvoiceStatisticsView(APIView):
                 'label': choice[1]
             }
         
-        # Payment method breakdown
-        payments = InvoicePayment.objects.filter(
+        # Payment method breakdown (money actually received only)
+        payments = InvoicePayment.objects.confirmed().filter(
             invoice__in=invoices
         ).values('payment_method').annotate(
             total=Sum('amount'),
@@ -785,17 +887,20 @@ class ProjectPaymentAPIView(APIView):
             project=project
         )
 
-        serializer = InvoicePaymentSerializer(data=request.data)
+        serializer = InvoicePaymentSerializer(data=request.data, context={"invoice": invoice})
         serializer.is_valid(raise_exception=True)
 
-        payment = serializer.save(
-            invoice=invoice,
-            created_by=request.user
-        )
+        try:
+            payment = serializer.save(
+                invoice=invoice,
+                created_by=request.user
+            )
+        except ValidationError as e:
+            return _validation_error_response(e)
 
         return Response(
             {
-                "message": "Payment recorded successfully",
+                "message": "Payment recorded - it will count towards the invoice once confirmed.",
                 "payment": InvoicePaymentSerializer(payment).data
             },
             status=status.HTTP_201_CREATED
@@ -851,7 +956,9 @@ class ProjectPaymentsListAPIView(APIView):
             .order_by("-payment_date")
         )
 
-        total_incoming = invoice_payments.aggregate(
+        # Received = confirmed payments only; pending/failed/cancelled ones are
+        # still listed (with their status) but not counted.
+        total_incoming = invoice_payments.confirmed().aggregate(
             total=Sum("amount")
         )["total"] or 0
 
@@ -865,6 +972,8 @@ class ProjectPaymentsListAPIView(APIView):
                 "payment_method": p.get_payment_method_display(),
                 "reference_no": p.reference_no,
                 "notes": p.notes,
+                "status": p.status,
+                "status_display": p.get_status_display(),
                 "created_by": p.created_by.get_full_name() if p.created_by else None,
                 "created_at": p.created_at,
             }

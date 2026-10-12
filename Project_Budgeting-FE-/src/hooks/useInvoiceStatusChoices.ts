@@ -39,7 +39,6 @@ export const useInvoiceStatusChoices = () => {
 
                 // Fallback to default status choices if API fails
                 setStatusChoices([
-                    { value: 'Draft', label: 'Draft' },
                     { value: 'Issued', label: 'Issued' },
                     { value: 'Partially Paid', label: 'Partially Paid' },
                     { value: 'Paid', label: 'Paid' },

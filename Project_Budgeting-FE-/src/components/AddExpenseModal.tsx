@@ -9,7 +9,7 @@
  * dropdowns empty for most users.
  *
  * Time & Material projects (`months` given) charge the expense to a project
- * month instead of a GL Account / Milestone; its date picks the month.
+ * month instead of a Milestone; its date picks the month.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -45,7 +45,6 @@ export interface ExpenseData {
     amount: number;
     description: string;
     project: number;
-    gl_account?: number;
     freelancer?: number;
     employee?: number;
     vendor?: number;
@@ -103,8 +102,6 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     const [notes, setNotes] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [categories, setCategories] = useState<Array<{ key: string; label: string }>>([]);
-    const [glAccountOptions, setGlAccountOptions] = useState<SearchableSelectOption[]>([]);
-    const [glAccount, setGlAccount] = useState<SearchableSelectOption | null>(null);
     const [pocOptions, setPocOptions] = useState<PocOption[]>([]);
     const [payee, setPayee] = useState<SearchableSelectOption | null>(null);
     const [expenseDate, setExpenseDate] = useState(todayIso());
@@ -121,7 +118,6 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
         setAmount('');
         setDescription('');
         setNotes('');
-        setGlAccount(null);
         setPayee(null);
         setMilestone('');
         setLinkedBill(null);
@@ -138,9 +134,6 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 console.error('Error fetching categories:', error);
                 setCategories(FALLBACK_CATEGORIES);
             });
-        axiosInstance.get<{ id: number; code: string; name: string; account_type?: string }[]>('/gl-accounts/?active_only=true')
-            .then((res) => setGlAccountOptions((res.data || []).map((acc) => ({ id: acc.id, label: `${acc.code} - ${acc.name}`, sublabel: acc.account_type }))))
-            .catch((error) => console.error('Error fetching GL accounts:', error));
         axiosInstance.get<PocOption[]>('/projects/poc-options/')
             .then((res) => setPocOptions(Array.isArray(res.data) ? res.data : []))
             .catch((error) => console.error('Error fetching employees / freelancers / vendors:', error));
@@ -169,7 +162,6 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
         if (!category) e.category = 'Select a category.';
         const amt = parseFloat(amount);
         if (Number.isNaN(amt) || amt <= 0) e.amount = 'Amount must be greater than zero.';
-        if (!description.trim()) e.description = 'Description is required.';
         return e;
     };
 
@@ -185,7 +177,6 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
             project: parseInt(projectId),
             expense_date: expenseDate,
         };
-        if (glAccount && !isMonthly) expenseData.gl_account = Number(glAccount.id);
         if (payee && payeeType === 'freelancer') expenseData.freelancer = Number(payee.id);
         if (payee && payeeType === 'employee') expenseData.employee = Number(payee.id);
         if (payee && payeeType === 'vendor') expenseData.vendor = Number(payee.id);
@@ -315,12 +306,6 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 </DrawerSection>
 
                 {!isMonthly && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                        <label className={drawerLabelClass}>GL Account</label>
-                        <SearchableSelect options={glAccountOptions} value={glAccount} onChange={setGlAccount} placeholder="Search account..." />
-                        <FieldHint>Rolls up into the matching budget line.</FieldHint>
-                    </div>
                     <div>
                         <label className={drawerLabelClass}>Milestone</label>
                         <select value={milestone} onChange={(e) => setMilestone(e.target.value)} className={drawerInputClass}>
@@ -329,7 +314,6 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                         </select>
                         <FieldHint>Counts in the milestone's Actual Cost.</FieldHint>
                     </div>
-                </div>
                 )}
 
                 {billOptions.length > 0 && (
@@ -346,11 +330,11 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 )}
 
                 <div>
-                    <label className={drawerLabelClass}>Description *</label>
+                    <label className={drawerLabelClass}>Description</label>
                     <textarea
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
-                        placeholder="What was this expense for?"
+                        placeholder="What was this expense for? (optional)"
                         rows={3}
                         className={`${drawerInputClass} resize-none ${errors.description ? drawerErrorBorder : ''}`}
                     />

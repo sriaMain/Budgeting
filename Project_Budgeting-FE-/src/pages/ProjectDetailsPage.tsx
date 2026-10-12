@@ -14,6 +14,7 @@ import { ResourcesPanel } from '../components/ResourcesPanel';
 import { FinancialSummaryPanel } from '../components/FinancialSummaryPanel';
 import { GenerateMonthlyInvoiceDrawer } from '../components/GenerateMonthlyInvoiceDrawer';
 import { InvoiceDrawer } from '../components/InvoiceDrawer';
+import { paymentStatusVariant } from '../utils/paymentStatus';
 import { BillDrawer } from '../components/BillDrawer';
 import { ExpenseDrawer } from '../components/ExpenseDrawer';
 import { toast } from 'react-hot-toast';
@@ -1114,7 +1115,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                         {
                                             header: 'Status',
                                             accessor: (invoice) => {
-                                                const status = invoice.status || 'Draft';
+                                                const status = invoice.status || 'Issued';
                                                 return (
                                                     <StatusBadge
                                                         status={status}
@@ -1156,6 +1157,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 currency={budgetCurrency}
                                 userBudget={totalBudgetAmount}
                                 quotationAmount={Number(project?.contract_value) || 0}
+                                projectStart={project?.start_date || undefined}
                                 onChanged={refreshInvoices}
                             />
                         )}
@@ -1389,6 +1391,18 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                             {payment.type === 'Incoming' ? '+' : '-'}₹{parseFloat(payment.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                         </span>
                                                     ),
+                                                    className: 'uppercase text-xs'
+                                                },
+                                                {
+                                                    // Incoming payments count as received only once Completed
+                                                    header: 'STATUS',
+                                                    accessor: (payment) => payment.type === 'Incoming' && payment.status ? (
+                                                        <StatusBadge
+                                                            status={payment.status}
+                                                            variant={paymentStatusVariant(payment.status)}
+                                                            label={payment.status_display || payment.status}
+                                                        />
+                                                    ) : <span className="text-xs text-gray-400">-</span>,
                                                     className: 'uppercase text-xs'
                                                 },
                                                 {

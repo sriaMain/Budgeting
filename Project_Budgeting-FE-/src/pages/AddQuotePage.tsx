@@ -84,9 +84,6 @@ interface UnitChoice {
   label: string;
 }
 
-// First pipeline stage - backend Quote.status default (spelling matches the backend value).
-const NEW_QUOTE_STATUS = 'Oppurtunity';
-
 export default function AddQuotePage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -116,7 +113,9 @@ export default function AddQuotePage() {
   const [isAddPOCModalOpen, setIsAddPOCModalOpen] = useState(false);
   const [isAddServiceModalOpen, setIsAddServiceModalOpen] = useState(false);
   const [originalStatus, setOriginalStatus] = useState<string>(''); // Track original status for edit mode
-  const [isConfirmedQuote, setIsConfirmedQuote] = useState(false); // Track if editing a confirmed quote
+  // Header fields lock once a project has been created from the quote (every
+  // quote is Confirmed from creation, so Confirmed alone no longer locks it).
+  const [isConfirmedQuote, setIsConfirmedQuote] = useState(false);
   // Existing budget/hours summary of the project this phase quote is being added to
   const [projectSummary, setProjectSummary] = useState<any>(null);
   const [isLoadingProjectSummary, setIsLoadingProjectSummary] = useState(false);
@@ -126,9 +125,9 @@ export default function AddQuotePage() {
     dueDate: getTodayDate(),
     client: '',
     poc: '',
-    // A new quote always starts at the first pipeline stage (backend Quote default);
-    // edit mode replaces this with the saved status.
-    status: isEditMode ? '' : NEW_QUOTE_STATUS,
+    // New quotes are saved as Confirmed by the backend - there is no status to
+    // pick on create. Edit mode fills in the saved status.
+    status: '',
     quoteName: '',
   });
 
@@ -211,8 +210,8 @@ export default function AddQuotePage() {
             quoteName: data.project_name || '',
           });
         } else {
-          // Check if quote is confirmed - set flag but allow editing
-          if (data.status?.toLowerCase() === 'confirmed') {
+          // Lock the header once a project exists for this quote
+          if (data.has_project) {
             setIsConfirmedQuote(true);
           }
 
@@ -265,7 +264,8 @@ export default function AddQuotePage() {
       await Promise.allSettled([
         fetchClients(),
         fetchProductGroupsWithModules(),
-        fetchStatusChoices(),
+        // Status is only chosen when editing an existing quote
+        ...(isEditMode ? [fetchStatusChoices()] : []),
         fetchUnitChoices(),
       ]);
     } catch (error) {
@@ -321,12 +321,6 @@ export default function AddQuotePage() {
       if (response.status === 200) {
         const choices: StatusChoice[] = response.data;
         setStatusChoices(choices);
-        // Fill in a default only when nothing is set yet - never overwrite the
-        // status of a quote being edited (this response can arrive after it loads).
-        if (!isEditMode && choices.length > 0) {
-          const initial = choices.find(c => c.value === NEW_QUOTE_STATUS)?.value ?? choices[0].value;
-          setQuoteDetails(prev => (prev.status ? prev : { ...prev, status: initial }));
-        }
       }
     } catch (err) {
       console.error('Failed to fetch status choices:', err);
@@ -486,10 +480,11 @@ export default function AddQuotePage() {
         ...(forProjectId && { project: parseInt(forProjectId, 10) })
       };
 
-      // Only add status if it's a new quote OR if status has changed in edit mode
+      // A new quote never sends a status (the backend saves it as Confirmed);
+      // in edit mode only send it when it was changed.
       const payload = {
         ...basePayload,
-        ...(!isEditMode || quoteDetails.status !== originalStatus ? { status: quoteDetails.status } : {})
+        ...(isEditMode && quoteDetails.status && quoteDetails.status !== originalStatus ? { status: quoteDetails.status } : {})
       };
 
       let response;
@@ -759,25 +754,28 @@ export default function AddQuotePage() {
                       className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-gray-100 disabled:cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500 dark:disabled:bg-gray-800/50"
                     />
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                    <label className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-300">Status</label>
-                    <div className="relative">
-                      <select
-                        value={quoteDetails.status}
-                        onChange={(e) => handleDetailChange('status', e.target.value)}
-                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 cursor-pointer dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                        disabled={isLoadingData || statusChoices.length === 0}
-                      >
-                        <option value="" disabled>Select Status</option>
-                        {statusChoices.map(choice => (
-                          <option key={choice.value} value={choice.value}>
-                            {choice.label}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none dark:text-gray-500" />
+                  {/* No status on create - a new quote is saved as Confirmed */}
+                  {isEditMode && (
+                    <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
+                      <label className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-300">Status</label>
+                      <div className="relative">
+                        <select
+                          value={quoteDetails.status}
+                          onChange={(e) => handleDetailChange('status', e.target.value)}
+                          className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 cursor-pointer dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
+                          disabled={isLoadingData || statusChoices.length === 0}
+                        >
+                          <option value="" disabled>Select Status</option>
+                          {statusChoices.map(choice => (
+                            <option key={choice.value} value={choice.value}>
+                              {choice.label}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none dark:text-gray-500" />
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>

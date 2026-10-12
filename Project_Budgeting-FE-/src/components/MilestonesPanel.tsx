@@ -65,6 +65,8 @@ interface MilestonesPanelProps {
     userBudget?: number;
     /** Project quotation amount before tax - Bill % is taken of this. */
     quotationAmount?: number;
+    /** Project start date (YYYY-MM-DD) - the first milestone's default Planned Start. */
+    projectStart?: string;
     /** Called after a milestone is added/edited/archived/billed, so the page can refresh its own figures. */
     onChanged?: () => void;
 }
@@ -105,6 +107,15 @@ const PAYMENT_BADGE: Record<string, { label: string; className: string }> = {
     overdue: { label: 'Overdue', className: 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300' },
 };
 
+// YYYY-MM-DD of the day after `iso` (UTC arithmetic, so no timezone shift)
+const dayAfter = (iso: string) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+};
+
+const fmtShortDate = (iso: string) =>
+    new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
 const emptyForm = {
     name: '',
     description: '',
@@ -116,7 +127,7 @@ const emptyForm = {
     status: 'not_started',
 };
 
-export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, currency = 'INR', userBudget = 0, quotationAmount = 0, onChanged }) => {
+export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, currency = 'INR', userBudget = 0, quotationAmount = 0, projectStart, onChanged }) => {
     const [milestones, setMilestones] = useState<Milestone[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     // Only the first load shows "Loading..."; background refreshes swap data in silently.
@@ -126,6 +137,10 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
     const [form, setForm] = useState(emptyForm);
     const [formErrors, setFormErrors] = useState<Record<string, string>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
+    // Loading the latest milestones before the add form opens with its defaults
+    const [isPreparingForm, setIsPreparingForm] = useState(false);
+    // Where the add form's Planned Start default came from
+    const [startHint, setStartHint] = useState('');
 
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editForm, setEditForm] = useState(emptyForm);
@@ -215,6 +230,9 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
             const clash = milestones.find((m) => m.id !== excludeId && num(m.sequence) === sequence);
             if (clash) errors.sequence = `Sequence ${sequence} is already used by "${clash.name}".`;
         }
+        if (values.planned_start_date && values.planned_end_date && values.planned_end_date < values.planned_start_date) {
+            errors.planned_end_date = 'Planned end cannot be before planned start.';
+        }
         const budgetPct = Number(values.budget_percent);
         const billPct = Number(values.bill_percent);
         const available = availableFor(excludeId);
@@ -242,19 +260,65 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
         status: values.status,
     });
 
-    // Open the add form pre-filled with the next sequence number and whatever
-    // budget / bill % the existing milestones haven't used yet.
-    const toggleAddForm = () => {
+    // Open the add form pre-filled so milestones follow on from each other:
+    // the next sequence number, a Planned Start the day after the previous
+    // milestone ends (the first one starts with the project), and whatever
+    // budget / bill % the existing milestones haven't used yet. Defaults come
+    // from a fresh fetch, so they're right even if the list was stale.
+    const toggleAddForm = async () => {
         if (showAddForm) {
             setShowAddForm(false);
             return;
         }
-        const nextSequence = milestones.reduce((max, m) => Math.max(max, num(m.sequence)), 0) + 1;
-        const budgetLeft = pctOfBase(addAvailable.budget, budgetBase);
-        const billLeft = pctOfBase(addAvailable.bill, quotationBase);
+
+        let list = milestones;
+        setIsPreparingForm(true);
+        const requestId = ++latestRequest.current;
+        try {
+            const res = await axiosInstance.get<Milestone[]>(`/projects/${projectId}/milestones/`);
+            if (Array.isArray(res.data)) {
+                list = res.data;
+                if (requestId === latestRequest.current) setMilestones(res.data);
+            }
+        } catch (error) {
+            console.error('Failed to refresh milestones:', error);
+        } finally {
+            setIsPreparingForm(false);
+        }
+
+        const ordered = [...list].sort((a, b) => num(a.sequence) - num(b.sequence) || a.id - b.id);
+        const nextSequence = ordered.reduce((max, m) => Math.max(max, num(m.sequence)), 0) + 1;
+
+        const budgetBaseNow = list.length > 0 ? num(list[0].project_budget_base ?? userBudget) : userBudget;
+        const quotationBaseNow = list.length > 0 ? num(list[0].quotation_base ?? quotationAmount) : quotationAmount;
+        const used = list.reduce(
+            (acc, m) => ({ budget: acc.budget + num(m.budget_amount), bill: acc.bill + num(m.billing_amount) }),
+            { budget: 0, bill: 0 }
+        );
+        const budgetLeft = pctOfBase(Math.max(budgetBaseNow - used.budget, 0), budgetBaseNow);
+        const billLeft = pctOfBase(Math.max(quotationBaseNow - used.bill, 0), quotationBaseNow);
+
+        // Previous milestone = the last one by sequence; if it has no end date,
+        // use the latest end date of any milestone.
+        const previous = ordered[ordered.length - 1];
+        const previousEnd = previous?.planned_end_date
+            || ordered.map((m) => m.planned_end_date).filter((d): d is string => !!d).sort().pop();
+        let plannedStart = '';
+        if (previousEnd) {
+            plannedStart = dayAfter(previousEnd);
+            const endedBy = ordered.find((m) => m.planned_end_date === previousEnd);
+            setStartHint(`Day after ${endedBy?.name || 'the previous milestone'} ends (${fmtShortDate(previousEnd)})`);
+        } else if (ordered.length === 0 && projectStart) {
+            plannedStart = projectStart;
+            setStartHint('Project start date');
+        } else {
+            setStartHint('');
+        }
+
         setForm({
             ...emptyForm,
             sequence: String(nextSequence),
+            planned_start_date: plannedStart,
             budget_percent: budgetLeft > 0 ? String(budgetLeft) : '',
             bill_percent: billLeft > 0 ? String(billLeft) : '',
         });
@@ -360,7 +424,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                 `/projects/${projectId}/milestones/${invoiceModalMilestone.id}/create-invoice/`,
                 { amount, due_days: parseInt(invoiceDueDays, 10) || 30 }
             );
-            toast.success('Invoice created (Draft)');
+            toast.success('Invoice created (Issued)');
             setInvoiceModalMilestone(null);
             fetchMilestones();
             onChanged?.();
@@ -387,9 +451,10 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                 <button
                     type="button"
                     onClick={toggleAddForm}
-                    className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
+                    disabled={isPreparingForm}
+                    className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-60"
                 >
-                    {showAddForm ? 'Cancel' : '+ Add Milestone'}
+                    {showAddForm ? 'Cancel' : isPreparingForm ? 'Loading...' : '+ Add Milestone'}
                 </button>
             </div>
 
@@ -435,15 +500,20 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                 onChange={(e) => setForm({ ...form, planned_start_date: e.target.value })}
                                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
                             />
+                            {startHint && form.planned_start_date && (
+                                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">{startHint}</p>
+                            )}
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Planned End</label>
                             <input
                                 type="date"
                                 value={form.planned_end_date}
+                                min={form.planned_start_date || undefined}
                                 onChange={(e) => setForm({ ...form, planned_end_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.planned_end_date ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
                             />
+                            {formErrors.planned_end_date && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.planned_end_date}</p>}
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Budget Amount (%)</label>
@@ -776,7 +846,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                             })()}
                         </DrawerSection>
                         <FieldHint>
-                            Bill amount {num(invoiceModalMilestone.billing_amount).toLocaleString('en-IN')} {currency} &middot; already invoiced {num(invoiceModalMilestone.billed_base_amount ?? invoiceModalMilestone.billed_amount).toLocaleString('en-IN')} {currency}. The invoice is created as a Draft.
+                            Bill amount {num(invoiceModalMilestone.billing_amount).toLocaleString('en-IN')} {currency} &middot; already invoiced {num(invoiceModalMilestone.billed_base_amount ?? invoiceModalMilestone.billed_amount).toLocaleString('en-IN')} {currency}. The invoice is issued straight away, awaiting payment.
                         </FieldHint>
                     </fieldset>
                 )}
