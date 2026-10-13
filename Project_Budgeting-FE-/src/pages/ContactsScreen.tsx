@@ -17,8 +17,11 @@ import { FreelancerListContent } from "./freelancer-onboarding/FreelancerListPag
 export default function ContactsScreen() {
   // ?clientId=<id> (from the header's global search) deep-links straight to
   // that client's details view instead of always landing on the list.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkedClientId = searchParams.get("clientId");
+  // ?onboard=client (e.g. the Create Project modal's "Create client" button) opens the
+  // client onboarding drawer straight away.
+  const openOnboardingOnLoad = searchParams.get("onboard") === "client";
 
   // Real logged-in role from Redux, same pattern as AdministrationScreen/VendorListPage.
   // Falls back to the least-privileged role (not "admin") if it's ever unset.
@@ -44,7 +47,7 @@ export default function ContactsScreen() {
   const [pocs, setPocs] = useState<POC[]>([]);
 
   // Create/edit drawer state
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(openOnboardingOnLoad);
   const [editingClient, setEditingClient] = useState<Client | undefined>(undefined);
   // Wizard step to open on (set when opened from an onboarding step card).
   const [editingStep, setEditingStep] = useState<WizardStepKey | undefined>(undefined);
@@ -132,7 +135,15 @@ export default function ContactsScreen() {
     setIsDrawerOpen(true);
   };
 
-  const closeDrawer = () => setIsDrawerOpen(false);
+  const closeDrawer = () => {
+    setIsDrawerOpen(false);
+    // Drop ?onboard=client so a refresh doesn't reopen the drawer.
+    if (searchParams.has("onboard")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("onboard");
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   // Every save inside the onboarding drawer (create, draft, submit, approval, review) and the
   // details page's actions: upsert the client into the list - the drawer shows its own toasts.

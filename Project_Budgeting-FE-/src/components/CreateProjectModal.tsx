@@ -9,7 +9,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { InputField } from './InputField';
 import { SearchableSelect } from './SearchableSelect';
 import type { SearchableSelectOption } from './SearchableSelect';
@@ -419,15 +419,25 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                                     )}
                                 </div>
 
-                                {/* Project Setup */}
+                                {/* Client + dates */}
                                 <div>
-                                    <label className="block text-base font-medium text-gray-900 dark:text-white mb-3">
-                                        Project Setup
-                                    </label>
                                     <div className="space-y-4">
                                         {/* Client */}
                                         <div>
-                                            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Client</label>
+                                            {!clientLocked && (
+                                                <div className="flex justify-end mb-1.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            onClose();
+                                                            navigate('/contacts?onboard=client');
+                                                        }}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md border border-blue-600 text-blue-600 hover:bg-blue-50 dark:border-violet-500 dark:text-violet-300 dark:hover:bg-violet-500/10"
+                                                    >
+                                                        <Plus className="w-3.5 h-3.5" /> Create client
+                                                    </button>
+                                                </div>
+                                            )}
                                             <SearchableSelect
                                                 options={clientOptions}
                                                 value={client}
