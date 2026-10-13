@@ -24,3 +24,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Staging / rollback folders used by deploy/deploy.sh
+dist.new
+dist.prev

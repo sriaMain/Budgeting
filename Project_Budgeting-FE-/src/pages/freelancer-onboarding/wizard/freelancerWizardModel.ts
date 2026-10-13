@@ -634,7 +634,7 @@ export function stepOfKey(formKey: string): WizardStepKey | null {
 }
 
 /** Server field errors ({field: message}, from parseApiErrors) -> form keys. */
-export function formErrorsFromServer(parsed: Record<string, string>): FormErrors {
+export function formErrorsFromServer(parsed: Record<string, string | undefined>): FormErrors {
   const e: FormErrors = {};
   Object.entries(parsed).forEach(([key, message]) => {
     if (key === 'general' || !message) return;
