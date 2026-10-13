@@ -1,1217 +1,588 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import axiosInstance from '../utils/axiosInstance';
-import { parseApiErrors } from '../utils/parseApiErrors';
-import { fetchPincodeDetails } from '../utils/pincodeLookup';
-import { InputField } from './InputField';
-import { SelectField } from './SelectField';
-import { Checkbox } from './Checkbox';
-import { SearchableSelect, type SearchableSelectOption } from './SearchableSelect';
-import { ClientDocumentsSection, type StagedClientDocument, type DocumentPreviewSource } from './ClientDocumentsSection';
+import { AlertTriangle, Lock } from 'lucide-react';
+import { Drawer } from './Drawer';
+import { ConfirmDialog } from './ConfirmDialog';
 import { StatusBadge } from './StatusBadge';
-import { COMPACT_LABEL, COMPACT_FIELD_PADDING } from './fieldDensity';
-import type { FormErrors } from '../types';
+import { CompactFields } from './fieldDensity';
+import { ClientDocumentsSection } from './ClientDocumentsSection';
+import { WizardFooter, WizardProgress, type WizardStep, type WizardStepState } from './onboarding/OnboardingWizard';
+import { useCountryCurrency } from './onboarding/useCountryCurrency';
+import type { AddressValue } from './onboarding/addressForm';
+import type { BankFormValue } from './onboarding/bankForm';
+import { useCountries, useCountryConfig } from '../hooks/useCountries';
 import {
-  CLIENT_TYPE_OPTIONS,
-  CURRENCY_OPTIONS,
-  KYC_STATUS_OPTIONS,
-  RISK_RATING_OPTIONS,
-  EDITABLE_ONBOARDING_STEPS,
-  BANKING_VERIFICATION_STATUS_OPTIONS,
-  SANCTIONS_SCREENING_OPTIONS,
-  BENEFICIAL_OWNERSHIP_OPTIONS,
-  TAX_RESIDENCY_STATUS_OPTIONS,
-  ENHANCED_DUE_DILIGENCE_OPTIONS,
-  PAYMENT_TERMS_OPTIONS,
-  INVOICE_REQUIREMENTS_OPTIONS,
-  BILLING_FREQUENCY_OPTIONS,
+  createClient,
+  fetchClient,
+  fetchCompanyTags,
+  listClientDocuments,
+  readClientApiError,
+  revealClientBankAccount,
+  submitClient,
+  updateClient,
+} from '../services/clientOnboarding';
+import {
+  ADDRESS_FIELD,
+  BANK_FIELD,
+  WIZARD_STEP_ORDER,
+  buildClientForm,
+  changedPayload,
+  createPayload,
+  documentProblems,
+  effectiveBankCountry,
+  firstStepWithError,
+  isBillingCurrency,
+  isFormDirty,
+  slotStatus,
+  stepForField,
+  validateAll,
+  validateStep,
+  type ClientFormState,
+  type FieldErrors,
+  type ValidationContext,
+} from '../pages/client-onboarding/clientForm';
+import { AddressStep, BankingStep, BasicStep, CommercialsStep, IdentityStep, type IdentityVerificationSummary } from '../pages/client-onboarding/ClientWizardSteps';
+import { ClientReviewStep } from '../pages/client-onboarding/ClientReviewStep';
+import { clientRecordPermissions, useClientPermissions } from '../pages/client-onboarding/useClientPermissions';
+import {
+  BILLING_CURRENCIES,
   clientTypeLabel,
   kycStatusLabel,
-  computeJurisdiction,
-  stepStatusLabel,
-  stepStatusVariant,
-} from '../pages/ClientListPage';
-import type { Client, CompanyTag, ClientDocument, UserRole, StepStatuses, OnboardingStep } from '../pages/ClientListPage';
+  kycStatusVariant,
+  type Client,
+  type ClientDocument,
+  type ClientDocumentSlot,
+  type CompanyTag,
+  type UserRole,
+  type WizardStepKey,
+} from '../pages/client-onboarding/clientTypes';
 
-interface CountryCodeOption {
-  name: string;
-  iso_code: string;
-  dial_code: string;
-}
-
-interface ClientKycDrawerContentProps {
-  /** Omit for create mode. */
+interface ClientKycDrawerProps {
+  isOpen: boolean;
+  /** Omit to onboard a new client. */
   client?: Client;
   userRole: UserRole;
-  onSaved: (client: Client, meta: { kycAutoChanged: boolean; keepOpen?: boolean }) => void;
-  onCancel: () => void;
-  /** Called with the re-fetched client after document changes (upload/delete/verify), which can
-   * move server-computed step_statuses - keeps the list's onboarding panel in sync without
-   * closing the drawer. */
-  onClientRefreshed?: (client: Client) => void;
-  /** Onboarding step whose form section should be scrolled into view on open (e.g. from a
-   * step card on the Clients list). Omit to open at the top as usual. */
-  initialSection?: OnboardingStep;
+  /** Step to open on (e.g. from an onboarding step card). */
+  initialStep?: WizardStepKey;
+  onClose: () => void;
+  /** Any saved change (create, draft, submit, approval, compliance review) - keeps the caller's list in sync. */
+  onClientChanged: (client: Client) => void;
 }
 
-// Standard GSTIN format: 2-digit state code, 10-char PAN, 1-char entity code, "Z", 1 checksum char.
-const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}Z[A-Z\d]{1}$/;
-// Standard PAN format: AAAAA9999A.
-const PAN_REGEX = /^[A-Z]{5}\d{4}[A-Z]{1}$/;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const STEPS: { key: WizardStepKey; title: string; description: string }[] = [
+  { key: 'basic', title: 'Basic Information', description: 'Legal name, type, country, currency and contact' },
+  { key: 'identity', title: 'Identity & KYC', description: 'PAN / GSTIN or the country tax ID, registration and signatory' },
+  { key: 'address', title: 'Address', description: 'Registered address' },
+  { key: 'banking', title: 'Banking', description: 'Bank account, verified by a reviewer' },
+  { key: 'commercials', title: 'Commercials', description: 'Payment terms, billing contact and invoicing' },
+  { key: 'documents', title: 'KYC Documents', description: 'Required documents for this client' },
+  { key: 'review', title: 'Review & Submit', description: 'Check everything and submit for approval' },
+];
 
-// Compact, enterprise-density label/field style for this form only (opt-in via
-// InputField/SelectField's labelClassName - every other form in the app is unaffected).
-// Same colors as everywhere else in the app (gray-500/gray-900, blue/violet focus rings) -
-// only the label typography and field density change, not the palette.
-const compactField = { labelClassName: COMPACT_LABEL, className: COMPACT_FIELD_PADDING };
+const IDENTITY_CATEGORIES = new Set(['pan_document', 'gst_certificate', 'registration_certificate', 'authorised_signatory_id', 'government_id', 'tax_certificate', 'tax_residency_certificate']);
 
-interface FormState {
-  company_name: string;
-  client_type: Client['client_type'];
-  currency: Client['currency'];
-  email: string;
-  country_code: string;
-  mobile_number: string;
-  selectedTags: number[];
+const FORM_KEY_TO_API: Partial<Record<keyof ClientFormState, string>> = { phone: 'mobile_number' };
 
-  address1: string;
-  address2: string;
-  city: string;
-  postal_code: string;
-  state: string;
-  country: string;
-
-  gstin: string;
-  registration_no: string;
-  pan: string;
-  tax_id: string;
-  authorised_signatory_name: string;
-  authorised_signatory_role: string;
-
-  bank_name: string;
-  bank_account_number: string;
-  bank_code: string;
-  bank_branch: string;
-  bank_country: string;
-  bank_address: string;
-  banking_verification_status: Client['banking_verification_status'];
-
-  sanctions_screening_status: Client['sanctions_screening_status'];
-  beneficial_ownership_status: Client['beneficial_ownership_status'];
-  tax_residency_status: Client['tax_residency_status'];
-  enhanced_due_diligence_status: Client['enhanced_due_diligence_status'];
-  compliance_remarks: string;
-  compliance_reviewed_by: string;
-  compliance_reviewed_at: string;
-
-  payment_terms: Client['payment_terms'];
-  custom_payment_terms: string;
-  withholding_tax_applicable: boolean;
-  withholding_tax_percentage: string;
-  invoice_requirements: Client['invoice_requirements'];
-  po_required: boolean;
-  billing_frequency: Client['billing_frequency'];
-  billing_contact: string;
-  billing_email: string;
-  commercial_remarks: string;
-
-  kyc_status: Client['kyc_status'];
-  risk_rating: Client['risk_rating'];
-  onboarding_step: Client['onboarding_step'];
-  is_active: boolean;
+function identityVerification(slots: ClientDocumentSlot[], documents: ClientDocument[], saved: boolean): IdentityVerificationSummary {
+  const identity = slots.filter((s) => s.required && IDENTITY_CATEGORIES.has(s.category));
+  if (!saved || identity.length === 0) {
+    return { tone: 'neutral', label: 'Not started', detail: 'Upload the identity documents in KYC Documents; a reviewer verifies them.' };
+  }
+  const statuses = identity.map((s) => slotStatus(s, documents));
+  if (statuses.every((s) => s === 'verified')) return { tone: 'ok', label: 'Verified by reviewer', detail: 'Every required identity document has been verified.' };
+  if (statuses.includes('rejected')) return { tone: 'bad', label: 'Document rejected', detail: 'A reviewer rejected an identity document - see KYC Documents.' };
+  if (statuses.includes('expired')) return { tone: 'bad', label: 'Document expired', detail: 'Upload a current version of the expired document.' };
+  if (statuses.includes('missing')) return { tone: 'neutral', label: 'Documents missing', detail: 'Some required identity documents have not been uploaded yet.' };
+  return { tone: 'warn', label: 'Awaiting reviewer verification', detail: 'Uploaded documents are not verified until a reviewer checks them.' };
 }
-
-/** datetime-local inputs need "YYYY-MM-DDTHH:mm", not a full ISO string with seconds/zone. */
-const toDatetimeLocal = (iso?: string | null): string => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-
-const buildInitialForm = (client?: Client): FormState => ({
-  company_name: client?.company_name || '',
-  client_type: client?.client_type || 'company',
-  currency: client?.currency || 'INR',
-  email: client?.email || '',
-  country_code: client?.country_code || '+91',
-  mobile_number: client?.mobile_number || '',
-  selectedTags: client?.tags?.map((t) => t.id) || [],
-
-  address1: client?.address1 || '',
-  address2: client?.address2 || '',
-  city: client?.city || '',
-  postal_code: client?.postal_code || '',
-  state: client?.state || '',
-  country: client?.country || '',
-
-  gstin: client?.gstin || '',
-  registration_no: client?.registration_no || '',
-  pan: client?.pan || '',
-  tax_id: client?.tax_id || '',
-  authorised_signatory_name: client?.authorised_signatory_name || '',
-  authorised_signatory_role: client?.authorised_signatory_role || '',
-
-  bank_name: client?.bank_name || '',
-  bank_account_number: '',
-  bank_code: client?.bank_code || '',
-  bank_branch: client?.bank_branch || '',
-  bank_country: client?.bank_country || '',
-  bank_address: client?.bank_address || '',
-  banking_verification_status: client?.banking_verification_status || 'not_verified',
-
-  sanctions_screening_status: client?.sanctions_screening_status || 'not_checked',
-  beneficial_ownership_status: client?.beneficial_ownership_status || 'not_verified',
-  tax_residency_status: client?.tax_residency_status || 'pending',
-  enhanced_due_diligence_status: client?.enhanced_due_diligence_status || 'not_required',
-  compliance_remarks: client?.compliance_remarks || '',
-  compliance_reviewed_by: client?.compliance_reviewed_by != null ? String(client.compliance_reviewed_by) : '',
-  compliance_reviewed_at: toDatetimeLocal(client?.compliance_reviewed_at),
-
-  payment_terms: client?.payment_terms || 'net_30',
-  custom_payment_terms: client?.custom_payment_terms || '',
-  withholding_tax_applicable: client?.withholding_tax_applicable ?? false,
-  withholding_tax_percentage: client?.withholding_tax_percentage != null ? String(client.withholding_tax_percentage) : '',
-  invoice_requirements: client?.invoice_requirements || 'standard',
-  po_required: client?.po_required ?? false,
-  billing_frequency: client?.billing_frequency || 'monthly',
-  billing_contact: client?.billing_contact || '',
-  billing_email: client?.billing_email || '',
-  commercial_remarks: client?.commercial_remarks || '',
-
-  kyc_status: client?.kyc_status || 'draft',
-  risk_rating: client?.risk_rating || 'low',
-  onboarding_step: client?.onboarding_step || 'intake',
-  is_active: client?.is_active ?? true,
-});
 
 /**
- * Create/edit KYC form rendered inside <Drawer>. Two-column layout using the app's shared
- * form primitives (InputField/SelectField/Checkbox/SearchableSelect) instead of raw HTML
- * inputs, per the redesign - only AddClientPage/AddClientModal predate this convention.
- *
- * The server can silently override kyc_status on save (see onSaved's kycAutoChanged flag) -
- * callers are expected to re-render from the saved response and surface that explanation.
+ * Client onboarding wizard in a drawer: Basic Information -> Identity & KYC -> Address -> Banking
+ * -> Commercials -> KYC Documents -> Review & Submit. One form state for every step; Save draft
+ * PATCHes only changed fields (only malformed values are rejected), Save & next validates the
+ * step first, Submit validates everything and the server re-checks required fields and documents.
  */
-export const ClientKycDrawerContent: React.FC<ClientKycDrawerContentProps> = ({ client, userRole, onSaved, onCancel, onClientRefreshed, initialSection }) => {
-  const isEditing = !!client;
-  const formRef = useRef<HTMLFormElement>(null);
-  const [form, setForm] = useState<FormState>(() => buildInitialForm(client));
+export const ClientKycDrawer: React.FC<ClientKycDrawerProps> = (props) => (props.isOpen ? <ClientKycWizard {...props} /> : null);
+
+const ClientKycWizard: React.FC<ClientKycDrawerProps> = ({ client, userRole, initialStep, onClose, onClientChanged }) => {
+  const { countries } = useCountries();
+  const { can } = useClientPermissions(userRole);
+  const [record, setRecord] = useState<Client | undefined>(client);
+  const [form, setForm] = useState<ClientFormState>(() => buildClientForm(client));
+  const [baseline, setBaseline] = useState<ClientFormState>(() => buildClientForm(client));
+  const [step, setStep] = useState<WizardStepKey>(initialStep ?? 'basic');
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [banner, setBanner] = useState<{ text: string; items?: string[] } | null>(null);
+  const [busy, setBusy] = useState<null | 'saving' | 'submitting'>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<ClientDocument[] | null>(null);
+  const [docsError, setDocsError] = useState<string | null>(null);
   const [tags, setTags] = useState<CompanyTag[]>([]);
-  const [countryCodes, setCountryCodes] = useState<CountryCodeOption[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isFetchingPincode, setIsFetchingPincode] = useState(false);
-  const [isChangingBankAccount, setIsChangingBankAccount] = useState(!isEditing);
-  const [errors, setErrors] = useState<FormErrors>({});
+  const [confirmClose, setConfirmClose] = useState(false);
 
-  const [documents, setDocuments] = useState<ClientDocument[]>([]);
-  const [docsLoading, setDocsLoading] = useState(false);
-  // Files picked but not uploaded yet - on a create they wait for the new client's id.
-  const [stagedDocs, setStagedDocs] = useState<StagedClientDocument[]>([]);
-  const [isUploadingDocs, setIsUploadingDocs] = useState(false);
-  const [documentsError, setDocumentsError] = useState<string | undefined>();
-  const [docsLoadError, setDocsLoadError] = useState<string | undefined>();
-  const [recentlyUploadedIds, setRecentlyUploadedIds] = useState<Set<number>>(new Set());
-  // Latest staged list for async upload loops / unmount cleanup (updated after each commit).
-  const stagedDocsRef = useRef(stagedDocs);
+  const recordId = record?.id;
+  const perms = clientRecordPermissions(can, record);
+  const readOnly = !perms.edit;
+  const bankingReadOnly = readOnly || !perms.edit_banking;
+  const commercialsReadOnly = readOnly || !perms.edit_commercials;
+
+  const { config: countryConfig } = useCountryConfig(form.country);
+  const { config: bankConfig } = useCountryConfig(effectiveBankCountry(form));
+
+  const dirty = isFormDirty(form, baseline);
+  const dirtyRef = useRef(dirty);
   useEffect(() => {
-    stagedDocsRef.current = stagedDocs;
-  }, [stagedDocs]);
+    dirtyRef.current = dirty;
+  }, [dirty]);
 
-  // Release thumbnail object URLs for anything still staged when the drawer closes.
-  useEffect(
-    () => () => stagedDocsRef.current.forEach((d) => d.previewUrl && URL.revokeObjectURL(d.previewUrl)),
-    []
-  );
-
-  // The Drawer unmounts its children while closed, so this runs once per open.
+  // List rows can be stale: re-read the client (permissions, document slots) when the drawer opens.
+  const initialId = client?.id;
   useEffect(() => {
-    if (!initialSection) return;
-    formRef.current
-      ?.querySelector(`[data-kyc-section="${initialSection}"]`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [initialSection]);
+    if (!initialId) return;
+    let alive = true;
+    fetchClient(initialId)
+      .then((fresh) => {
+        if (!alive) return;
+        setRecord(fresh);
+        if (!dirtyRef.current) {
+          setForm(buildClientForm(fresh));
+          setBaseline(buildClientForm(fresh));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [initialId]);
 
   useEffect(() => {
-    axiosInstance.get('/company-tags/').then((res) => setTags(res.data)).catch(() => {});
-    axiosInstance.get('/country-codes/').then((res) => setCountryCodes(res.data)).catch(() => {});
+    let alive = true;
+    fetchCompanyTags()
+      .then((rows) => {
+        if (alive) setTags(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  const loadDocuments = (clientId: number) => {
-    setDocsLoading(true);
-    setDocsLoadError(undefined);
-    return axiosInstance
-      .get(`/client/${clientId}/documents/`)
-      .then((res) => setDocuments(res.data))
-      .catch((err) => {
-        console.error('Failed to load client documents', err);
-        const status = (err as { response?: { status?: number } })?.response?.status;
-        setDocsLoadError(
-          status === 401
-            ? 'Your session has expired. Please sign in again.'
-            : status === 403
-              ? "You don't have permission to view this client's documents."
-              : 'Unable to load KYC documents. Please try again.'
-        );
-      })
-      .finally(() => setDocsLoading(false));
-  };
-
   useEffect(() => {
-    if (!client?.id) return;
-    loadDocuments(client.id);
-  }, [client?.id]);
-
-  const jurisdiction = useMemo(() => computeJurisdiction(form.country), [form.country]);
-
-  // Admin and Manager both have client.company.approve (this round grants it to Manager
-  // too) - "Approved" itself is no longer a selectable Onboarding Step option for anyone,
-  // it's only ever set by the Submit for Approval action below.
-  const canApprove = userRole === 'admin' || userRole === 'manager';
-
-  const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
-  const [approvalMissing, setApprovalMissing] = useState<string[] | null>(null);
-
-  /** Renders a small step-status pill in a section header, sourced from the client's
-   * step_statuses. Only available in edit mode, once a client id exists. */
-  const stepPill = (stepKey: keyof StepStatuses) => {
-    const value = client?.step_statuses?.[stepKey];
-    if (!isEditing || !value) return null;
-    return <StatusBadge status={value} variant={stepStatusVariant(value)} label={stepStatusLabel(value)} />;
-  };
-
-  const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-    setErrors((prev) => ({ ...prev, [key as string]: undefined, general: undefined }));
-  };
-
-  const handlePostalCodeChange = (value: string) => {
-    const digitsOnly = value.replace(/[^0-9]/g, '').slice(0, 6);
-    setField('postal_code', digitsOnly);
-    if (digitsOnly.length === 6) {
-      setIsFetchingPincode(true);
-      fetchPincodeDetails(digitsOnly)
-        .then((details) => {
-          if (details) {
-            setForm((prev) => ({ ...prev, city: details.city, state: details.state }));
-          }
-        })
-        .finally(() => setIsFetchingPincode(false));
-    }
-  };
-
-  const handleTagToggle = (tagId: number) => {
-    setForm((prev) => ({
-      ...prev,
-      selectedTags: prev.selectedTags.includes(tagId)
-        ? prev.selectedTags.filter((id) => id !== tagId)
-        : [...prev.selectedTags, tagId],
-    }));
-  };
-
-  const validate = (): FormErrors => {
-    const errs: FormErrors = {};
-    if (!form.company_name.trim()) errs.company_name = 'Company name is required.';
-    const digitsOnly = form.mobile_number.replace(/\D/g, '');
-    if (!digitsOnly || digitsOnly.length !== 10) errs.mobile_number = 'A valid 10-digit mobile number is required.';
-    if (!form.email.trim()) errs.email = 'Email is required.';
-    else if (!EMAIL_REGEX.test(form.email.trim())) errs.email = 'Enter a valid email address.';
-    if (!form.country.trim()) errs.country = 'Country is required.';
-    if (!form.state.trim()) errs.state = 'State is required.';
-    if (form.gstin && !GSTIN_REGEX.test(form.gstin)) errs.gstin = 'Enter a valid 15-character GSTIN.';
-    if (form.pan && !PAN_REGEX.test(form.pan)) errs.pan = 'PAN must be in AAAAA9999A format.';
-    if (form.payment_terms === 'custom' && !form.custom_payment_terms.trim()) {
-      errs.custom_payment_terms = 'Custom payment terms is required when Payment Terms is Custom.';
-    }
-    if (form.withholding_tax_applicable && !form.withholding_tax_percentage.trim()) {
-      errs.withholding_tax_percentage = 'Withholding tax % is required when Withholding Tax Applicable is checked.';
-    }
-    return errs;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const validationErrors = validate();
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
-    }
-    if (stagedDocs.some((d) => !d.category)) {
-      setDocumentsError('Select a document type for each document before saving.');
-      formRef.current?.querySelector('[data-kyc-section="documents"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
-
-    setIsSaving(true);
-    setErrors({});
-
-    // PATCH is server-side partial=True, but the serializer's validate() unconditionally
-    // requires country_code + mobile_number - so every submission (create or edit) always
-    // sends the complete form, never a partial diff of just the changed fields.
-    const payload: Record<string, unknown> = {
-      company_name: form.company_name.trim(),
-      client_type: form.client_type,
-      currency: form.currency,
-      email: form.email.trim(),
-      country_code: form.country_code,
-      mobile_number: form.mobile_number.replace(/\D/g, ''),
-      tags: form.selectedTags,
-      address1: form.address1,
-      address2: form.address2,
-      city: form.city,
-      postal_code: form.postal_code,
-      state: form.state,
-      country: form.country,
-      gstin: form.gstin,
-      registration_no: form.registration_no,
-      pan: form.pan,
-      tax_id: form.tax_id,
-      authorised_signatory_name: form.authorised_signatory_name,
-      authorised_signatory_role: form.authorised_signatory_role,
-      bank_name: form.bank_name,
-      bank_code: form.bank_code,
-      bank_branch: form.bank_branch,
-      bank_country: form.bank_country,
-      bank_address: form.bank_address,
-      banking_verification_status: form.banking_verification_status,
-      sanctions_screening_status: form.sanctions_screening_status,
-      beneficial_ownership_status: form.beneficial_ownership_status,
-      tax_residency_status: form.tax_residency_status,
-      enhanced_due_diligence_status: form.enhanced_due_diligence_status,
-      compliance_remarks: form.compliance_remarks,
-      compliance_reviewed_by: form.compliance_reviewed_by.trim() ? Number(form.compliance_reviewed_by.trim()) : null,
-      compliance_reviewed_at: form.compliance_reviewed_at ? new Date(form.compliance_reviewed_at).toISOString() : null,
-      payment_terms: form.payment_terms,
-      custom_payment_terms: form.payment_terms === 'custom' ? form.custom_payment_terms : '',
-      withholding_tax_applicable: form.withholding_tax_applicable,
-      withholding_tax_percentage: form.withholding_tax_applicable && form.withholding_tax_percentage.trim() ? form.withholding_tax_percentage.trim() : null,
-      invoice_requirements: form.invoice_requirements,
-      po_required: form.po_required,
-      billing_frequency: form.billing_frequency,
-      billing_contact: form.billing_contact,
-      billing_email: form.billing_email,
-      commercial_remarks: form.commercial_remarks,
-      kyc_status: form.kyc_status,
-      risk_rating: form.risk_rating,
-      onboarding_step: form.onboarding_step,
-      is_active: form.is_active,
-    };
-    // bank_account_number is write-only and never returned - only send it when the user
-    // actually typed a new one, so an unchanged masked value never overwrites what's on file.
-    if (isChangingBankAccount && form.bank_account_number.trim()) {
-      payload.bank_account_number = form.bank_account_number.trim();
-    }
-
-    try {
-      const res = client
-        ? await axiosInstance.put(`/client/${client.id}/`, payload)
-        : await axiosInstance.post('/client/', payload);
-
-      // Always re-render from the server's response, not the submitted payload - it may
-      // have silently forced kyc_status to enhanced_review (high risk / undocumented overseas).
-      let saved: Client = res.data;
-      const kycAutoChanged = saved.kyc_status !== form.kyc_status;
-      // Documents need a real client id, so files picked before the client existed (or not
-      // yet uploaded on an edit) go up now, against the id the save just returned.
-      let failedUploads = 0;
-      if (stagedDocs.length > 0) {
-        const result = await uploadStagedDocuments(saved.id);
-        failedUploads = result.failed;
-        if (result.uploaded > 0) saved = (await fetchClient(saved.id)) ?? saved;
-        if (failedUploads > 0) {
-          toast.error(`${failedUploads} document${failedUploads === 1 ? '' : 's'} failed to upload - retry from the Documents section.`);
-        }
-      }
-      // On a create, ask the caller to keep this drawer open (switched into edit mode for
-      // the new client) so the rest of KYC can continue in place; likewise on any failed upload.
-      onSaved(saved, { kycAutoChanged, keepOpen: !client || failedUploads > 0 });
-    } catch (err) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      const apiErrors = parseApiErrors(err);
-      if (status === 403) {
-        toast.error(apiErrors.general || "You don't have permission to perform this action.");
-      } else {
-        setErrors(apiErrors);
-      }
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // The Final Approval action - replaces the old "select Approved in the Onboarding Step
-  // dropdown" flow. Only ever reachable once a client exists and only for admin/manager
-  // (the backend grants client.company.approve to both roles this round).
-  const handleSubmitForApproval = async () => {
-    if (!client?.id) return;
-    setIsSubmittingApproval(true);
-    setApprovalMissing(null);
-    try {
-      const res = await axiosInstance.post(`/client/${client.id}/submit-for-approval/`, {});
-      toast.success('Client approved and marked project-ready.');
-      onSaved(res.data, { kycAutoChanged: false });
-    } catch (err) {
-      const response = (err as { response?: { status?: number; data?: { missing?: string[] } } })?.response;
-      if (response?.status === 400 && Array.isArray(response.data?.missing)) {
-        setApprovalMissing(response.data!.missing!);
-      } else if (response?.status === 403) {
-        toast.error("You don't have permission to approve this client.");
-      } else {
-        toast.error('Failed to submit client for approval.');
-      }
-    } finally {
-      setIsSubmittingApproval(false);
-    }
-  };
-
-  const fetchClient = async (id: number): Promise<Client | undefined> => {
-    try {
-      return (await axiosInstance.get(`/client/${id}/`)).data;
-    } catch {
-      return undefined;
-    }
-  };
-
-  /** Re-reads the client after a document change so step_statuses / approval blockers stay current. */
-  const refreshClientAfterDocChange = async () => {
-    if (!client?.id || !onClientRefreshed) return;
-    const fresh = await fetchClient(client.id);
-    if (fresh) onClientRefreshed(fresh);
-  };
-
-  /** Maps an upload failure to a safe, user-facing message (technical detail goes to the console). */
-  const describeUploadError = (err: unknown): { message: string; code?: string } => {
-    console.error('Client document upload failed', err);
-    const e = err as { code?: string; response?: { status?: number; data?: { message?: unknown; detail?: unknown; error?: unknown } } };
-    const response = e.response;
-    if (!response) return { message: 'Unable to upload document. Please check your connection and try again.' };
-    const code = typeof response.data?.error === 'string' ? response.data.error : undefined;
-    if (response.status === 401) return { message: 'Your session has expired. Please sign in again.', code };
-    if (response.status === 403) return { message: "You don't have permission to upload KYC documents.", code };
-    if (response.status === 413) return { message: 'File is too large.', code };
-    if (response.status === 429) return { message: 'Too many uploads right now. Please try again shortly.', code };
-    if ((response.status ?? 0) >= 500) return { message: 'Server could not process the document. Please try again.', code };
-    const serverMessage = [response.data?.message, response.data?.detail].find((m): m is string => typeof m === 'string' && m.length > 0);
-    return { message: serverMessage || 'Unable to upload document. Please try again.', code };
-  };
-
-  const markRecentlyUploaded = (id: number) => {
-    setRecentlyUploadedIds((prev) => new Set(prev).add(id));
-    setTimeout(() => setRecentlyUploadedIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    }), 6000);
-  };
-
-  const patchStaged = (key: string, patch: Partial<StagedClientDocument>) =>
-    setStagedDocs((prev) => prev.map((d) => (d.key === key ? { ...d, ...patch } : d)));
-
-  /** Uploads one staged file through the existing multipart endpoint. Content-Type is left to the
-   * browser so the multipart boundary is set correctly. */
-  const uploadOneStaged = async (clientId: number, staged: StagedClientDocument): Promise<{ ok: boolean; code?: string }> => {
-    patchStaged(staged.key, { state: 'uploading', progress: 0, error: undefined });
-    try {
-      const fd = new FormData();
-      fd.append('file', staged.file);
-      fd.append('category', staged.category);
-      fd.append('is_required', 'false');
-      const res = await axiosInstance.post(`/client/${clientId}/documents/`, fd, {
-        onUploadProgress: (e) => {
-          if (e.total) patchStaged(staged.key, { progress: Math.min(99, Math.round((e.loaded / e.total) * 100)) });
-        },
+    if (!recordId) return;
+    let alive = true;
+    listClientDocuments(recordId)
+      .then((rows) => {
+        if (!alive) return;
+        setDocuments(rows);
+        setDocsError(null);
+      })
+      .catch((err) => {
+        if (alive) setDocsError(readClientApiError(err, 'Unable to load the KYC documents.').message);
       });
-      setDocuments((prev) => [res.data, ...prev.filter((d) => d.id !== res.data.id)]);
-      if (staged.previewUrl) URL.revokeObjectURL(staged.previewUrl);
-      setStagedDocs((prev) => prev.filter((d) => d.key !== staged.key));
-      markRecentlyUploaded(res.data.id);
-      return { ok: true };
-    } catch (err) {
-      const { message, code } = describeUploadError(err);
-      patchStaged(staged.key, { state: 'error', progress: undefined, error: message });
-      return { ok: false, code };
-    }
+    return () => {
+      alive = false;
+    };
+  }, [recordId]);
+
+  const reloadDocuments = () => {
+    if (!recordId) return;
+    setDocsError(null);
+    listClientDocuments(recordId)
+      .then(setDocuments)
+      .catch((err) => setDocsError(readClientApiError(err, 'Unable to load the KYC documents.').message));
   };
 
-  /** Uploads every staged file sequentially - the backend's 8-document cap is checked per request. */
-  const uploadStagedDocuments = async (clientId: number, keys?: string[]): Promise<{ uploaded: number; failed: number }> => {
-    let uploaded = 0;
-    let failed = 0;
-    setIsUploadingDocs(true);
-    setDocumentsError(undefined);
-    const queue = stagedDocsRef.current.filter((d) => d.category && (!keys || keys.includes(d.key)));
-    for (let i = 0; i < queue.length; i++) {
-      const result = await uploadOneStaged(clientId, queue[i]);
-      if (result.ok) {
-        uploaded++;
-        continue;
-      }
-      failed++;
-      if (result.code === 'document_limit_reached' || result.code === 'duplicate_document') {
-        // Our list was out of date - re-sync it so the counter and limit reflect the server.
-        loadDocuments(clientId);
-      }
-      if (result.code === 'document_limit_reached') {
-        // Every remaining file would hit the same limit - don't send them.
-        const rest = queue.slice(i + 1);
-        rest.forEach((d) => patchStaged(d.key, { state: 'error', error: 'Maximum 8 KYC documents are allowed. Delete a document to upload another.' }));
-        failed += rest.length;
-        break;
-      }
-    }
-    setIsUploadingDocs(false);
-    return { uploaded, failed };
+  /** Re-reads the client after a server-side change (documents, review actions) without touching the form. */
+  const refreshRecord = (id = recordId) => {
+    if (!id) return;
+    fetchClient(id)
+      .then((fresh) => {
+        setRecord(fresh);
+        onClientChanged(fresh);
+      })
+      .catch(() => undefined);
   };
 
-  const reportUploadResult = ({ uploaded, failed }: { uploaded: number; failed: number }) => {
-    if (uploaded > 0) {
-      toast.success(uploaded === 1 ? 'KYC document uploaded successfully' : `${uploaded} KYC documents uploaded successfully`);
-      refreshClientAfterDocChange();
-    }
-    if (failed > 0) toast.error(`${failed} document${failed === 1 ? '' : 's'} could not be uploaded - see the reason on each file.`);
+  const currency = useCountryCurrency({
+    currency: form.currency,
+    setCurrency: (code) => setForm((f) => ({ ...f, currency: isBillingCurrency(code) ? code : f.currency })),
+    allowed: BILLING_CURRENCIES,
+  });
+
+  const clearErrors = (keys: string[]) =>
+    setErrors((prev) => {
+      if (!keys.some((k) => k in prev)) return prev;
+      const next = { ...prev };
+      keys.forEach((k) => delete next[k]);
+      return next;
+    });
+
+  const setField = <K extends keyof ClientFormState>(key: K, value: ClientFormState[K]) => {
+    setForm((f) => ({ ...f, [key]: value }));
+    clearErrors([FORM_KEY_TO_API[key] ?? key]);
+  };
+  const patchAddress = (patch: Partial<AddressValue>) => {
+    setForm((f) => ({ ...f, address: { ...f.address, ...patch } }));
+    clearErrors(Object.keys(patch).map((k) => ADDRESS_FIELD[k] ?? k));
+  };
+  const patchBank = (patch: Partial<BankFormValue>) => {
+    setForm((f) => ({ ...f, bank: { ...f.bank, ...patch } }));
+    clearErrors(Object.keys(patch).map((k) => BANK_FIELD[k] ?? k));
+  };
+  const changeCountry = (name: string) => {
+    const previous = form.country;
+    setForm((f) => ({ ...f, country: name }));
+    clearErrors(['country', 'tax_id', 'pan', 'gstin', 'postal_code']);
+    currency.onCountryChange(previous, name);
   };
 
-  const handleUploadStagedNow = async () => {
-    if (!client?.id) return;
-    reportUploadResult(await uploadStagedDocuments(client.id));
+  const slots = record?.document_slots ?? [];
+  const slotCategories = slots.map((s) => s.category as string);
+  const ctx: ValidationContext = {
+    countries,
+    countryConfig,
+    bankConfig,
+    hasSavedAccount: !!record?.bank_account_number_masked,
+    slots,
+    documents: documents ?? [],
   };
 
-  const handleRetryStaged = async (key: string) => {
-    if (!client?.id) return;
-    reportUploadResult(await uploadStagedDocuments(client.id, [key]));
+  const showErrors = (found: FieldErrors, message: string) => {
+    setErrors(found);
+    const target = firstStepWithError(found, slotCategories);
+    if (target) setStep(target);
+    toast.error(message);
   };
 
-  const handleVerifyDocument = async (doc: ClientDocument, status: 'verified' | 'rejected', remarks?: string) => {
-    if (!client?.id) return;
-    const res = await axiosInstance.post(`/client/${client.id}/documents/${doc.id}/verify/`, { status, remarks });
-    setDocuments((prev) => prev.map((d) => (d.id === doc.id ? res.data : d)));
-    toast.success(status === 'verified' ? 'Document verified' : 'Document rejected');
-    refreshClientAfterDocChange();
+  const applySaved = (saved: Client) => {
+    const next = buildClientForm(saved);
+    setRecord(saved);
+    setForm(next);
+    setBaseline(next);
+    setSavedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    onClientChanged(saved);
   };
 
-  const handleDeleteDocument = async (doc: ClientDocument) => {
-    if (!client?.id) return;
+  const showSaveError = (err: unknown, fallback: string) => {
+    const apiError = readClientApiError(err, fallback);
+    const fieldErrors = { ...apiError.fields };
+    apiError.issues.forEach((issue) => {
+      fieldErrors[issue.field] = issue.message;
+    });
+    const mapped = Object.keys(fieldErrors).filter((f) => stepForField(f, slotCategories));
+    setErrors(fieldErrors);
+    setBanner({ text: apiError.message, items: apiError.missing.length > 1 ? apiError.missing : undefined });
+    const target = apiError.issues[0]?.step ?? firstStepWithError(fieldErrors, slotCategories);
+    if (target && mapped.length) setStep(target);
+    toast.error(apiError.message);
+  };
+
+  /** Creates the client or PATCHes the changed fields. Returns the saved client, or null on failure. */
+  const persist = async (): Promise<Client | null> => {
     try {
-      await axiosInstance.delete(`/client/${client.id}/documents/${doc.id}/`);
-    } catch (err) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      toast.error(status === 403 ? "You don't have permission to delete documents." : 'Failed to delete document');
-      throw err;
-    }
-    setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
-    toast.success('Document deleted');
-    refreshClientAfterDocChange();
-  };
-
-  /** Short-lived signed URL from the existing permission-checked download endpoint. */
-  const getSignedDocumentUrl = async (doc: ClientDocument): Promise<string | undefined> => {
-    if (!client?.id) return undefined;
-    const res = await axiosInstance.get(`/client/${client.id}/documents/${doc.id}/download/`);
-    return res.data.download_url;
-  };
-
-  /** Fetches the file into a same-origin blob typed with its real MIME type, so PDFs/images
-   * render inline for preview and downloads keep their original filename. Falls back to the
-   * signed URL itself if the storage host refuses a cross-origin fetch. */
-  const loadDocumentBlobUrl = async (doc: ClientDocument): Promise<{ blobUrl?: string; signedUrl?: string }> => {
-    const signedUrl = await getSignedDocumentUrl(doc);
-    if (!signedUrl) return {};
-    try {
-      const response = await fetch(signedUrl);
-      if (!response.ok) throw new Error(String(response.status));
-      const blob = await response.blob();
-      const typed = new Blob([blob], { type: doc.file_type || blob.type });
-      return { blobUrl: URL.createObjectURL(typed), signedUrl };
-    } catch {
-      return { signedUrl };
-    }
-  };
-
-  const handleLoadPreview = async (doc: ClientDocument): Promise<DocumentPreviewSource | undefined> => {
-    const { blobUrl, signedUrl } = await loadDocumentBlobUrl(doc);
-    if (blobUrl) return { url: blobUrl, isBlob: true };
-    return signedUrl ? { url: signedUrl, isBlob: false } : undefined;
-  };
-
-  /** Opens the file in a new tab via a short-lived signed URL. */
-  const handleOpenDocument = async (doc: ClientDocument) => {
-    // Opened synchronously (before any await) so popup blockers treat it as user-initiated.
-    const win = window.open('', '_blank');
-    try {
-      const signedUrl = await getSignedDocumentUrl(doc);
-      if (!signedUrl) throw new Error('No download URL returned');
-      if (win) {
-        win.opener = null;
-        win.location.href = signedUrl;
-      } else {
-        window.open(signedUrl, '_blank', 'noopener');
+      if (!record) {
+        const created = await createClient(createPayload(form, bankConfig));
+        applySaved(created);
+        toast.success('Client saved as a draft - continue with the next steps');
+        return created;
       }
+      const payload = changedPayload(form, baseline, bankConfig);
+      if (Object.keys(payload).length === 0) return record;
+      const updated = await updateClient(record.id, payload);
+      applySaved(updated);
+      return updated;
     } catch (err) {
-      console.error('Opening client document failed', err);
-      win?.close();
-      toast.error('Unable to open the document. Please try again.');
+      showSaveError(err, 'Could not save the client.');
+      return null;
     }
   };
 
-  const handleDownloadDocument = async (doc: ClientDocument) => {
-    try {
-      const { blobUrl, signedUrl } = await loadDocumentBlobUrl(doc);
-      if (blobUrl) {
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = doc.file_name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
-      } else if (signedUrl) {
-        window.open(signedUrl, '_blank', 'noopener');
+  const goTo = (key: WizardStepKey) => {
+    setBanner(null);
+    setStep(key);
+  };
+
+  const stepIndex = WIZARD_STEP_ORDER.indexOf(step);
+
+  const handleSaveDraft = async () => {
+    setBanner(null);
+    const found = { ...validateAll(form, ctx, 'draft'), ...(record ? {} : validateStep('basic', form, ctx, 'full')) };
+    if (Object.keys(found).length) {
+      showErrors(found, record ? 'Fix the highlighted values before saving.' : 'Complete Basic Information to save the client.');
+      return;
+    }
+    setBusy('saving');
+    const wasNew = !record;
+    const saved = await persist();
+    setBusy(null);
+    if (saved && !wasNew) toast.success('Draft saved');
+  };
+
+  const handleNext = async () => {
+    const next = WIZARD_STEP_ORDER[stepIndex + 1];
+    if (!next) return;
+    if (readOnly || step === 'documents' || step === 'review') {
+      if (step === 'documents' && record && documentProblems(slots, documents ?? []).length) {
+        toast('Some required documents are still missing - you can upload them before submitting.', { icon: '⚠️' });
       }
-    } catch (err) {
-      console.error('Client document download failed', err);
-      toast.error('Unable to download the document. Please try again.');
+      goTo(next);
+      return;
+    }
+    setBanner(null);
+    const found = {
+      ...validateAll(form, ctx, 'draft'),
+      ...(record ? {} : validateStep('basic', form, ctx, 'full')),
+      ...validateStep(step, form, ctx, 'full'),
+    };
+    if (Object.keys(found).length) {
+      showErrors(found, 'Complete the highlighted fields to continue.');
+      return;
+    }
+    setBusy('saving');
+    const saved = await persist();
+    setBusy(null);
+    if (saved) {
+      setErrors({});
+      goTo(next);
     }
   };
 
-  const countryCodeOptions: SearchableSelectOption[] = countryCodes.map((c) => ({
-    id: c.dial_code,
-    label: c.dial_code,
-    sublabel: c.name,
-  }));
-  const selectedCountryCode = countryCodeOptions.find((o) => o.id === form.country_code) || null;
+  const handlePrevious = () => {
+    const previous = WIZARD_STEP_ORDER[stepIndex - 1];
+    if (previous) goTo(previous);
+  };
 
-  const countryOptions: SearchableSelectOption[] = countryCodes.map((c) => ({
-    id: c.name,
-    label: c.name,
-    sublabel: c.iso_code,
-  }));
-  const selectedCountry =
-    countryOptions.find((o) => o.id === form.country) || (form.country ? { id: form.country, label: form.country } : null);
+  const handleSubmit = async () => {
+    if (!record) return;
+    setBanner(null);
+    const found = validateAll(form, ctx, 'full');
+    if (Object.keys(found).length) {
+      showErrors(found, 'Complete the highlighted fields before submitting.');
+      return;
+    }
+    setBusy('submitting');
+    try {
+      const saved = await persist();
+      if (!saved) return;
+      const submitted = await submitClient(saved.id);
+      applySaved(submitted);
+      toast.success('Submitted for approval');
+      onClose();
+    } catch (err) {
+      showSaveError(err, 'Could not submit the client.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const requestClose = () => {
+    if (dirty && !readOnly) setConfirmClose(true);
+    else onClose();
+  };
+
+  const revealAccount = async () => {
+    if (!recordId) return null;
+    try {
+      return await revealClientBankAccount(recordId);
+    } catch (err) {
+      toast.error(readClientApiError(err, 'Could not reveal the account number.').message);
+      return null;
+    }
+  };
+
+  /* ---------------- step states / issues ---------------- */
+
+  const docList = documents ?? [];
+  const docProblems = record ? documentProblems(slots, docList) : [];
+  const stepIssues: Partial<Record<WizardStepKey, string[]>> = {};
+  const addIssue = (key: WizardStepKey, message: string) => {
+    const list = (stepIssues[key] ??= []);
+    if (!list.includes(message)) list.push(message);
+  };
+  Object.entries(validateAll(form, ctx, 'full')).forEach(([field, message]) => {
+    const key = stepForField(field, slotCategories);
+    if (key) addIssue(key, message);
+  });
+  Object.entries(errors).forEach(([field, message]) => {
+    const key = stepForField(field, slotCategories);
+    if (key) addIssue(key, message);
+  });
+  if (!record) addIssue('documents', 'Save the client to upload its KYC documents');
+
+  const stateFor = (key: WizardStepKey): WizardStepState => {
+    if (Object.keys(errors).some((f) => stepForField(f, slotCategories) === key)) return 'error';
+    if (key === 'review') return record && (record.kyc_status === 'submitted' || record.kyc_status === 'verified') ? 'complete' : 'incomplete';
+    if (key === 'documents') return record && documents && docProblems.length === 0 ? 'complete' : 'incomplete';
+    return stepIssues[key]?.length ? 'incomplete' : 'complete';
+  };
+  const wizardSteps: WizardStep[] = STEPS.map((s) => ({ ...s, state: stateFor(s.key) }));
+
+  const submitBlockedReason = !record
+    ? 'Save the client and upload its documents first'
+    : documents === null
+      ? 'Loading documents…'
+      : docProblems.length
+        ? `Required documents missing, rejected or expired: ${docProblems.map((p) => p.slot.label).join(', ')}`
+        : undefined;
+
+  const statusText = record ? (
+    <span className="flex flex-wrap items-center gap-2">
+      <StatusBadge status={record.kyc_status} variant={kycStatusVariant(record.kyc_status)} label={`KYC: ${kycStatusLabel(record.kyc_status)}`} />
+      {perms.locked && (
+        <span className="inline-flex items-center gap-1 text-gray-500 dark:text-gray-400">
+          <Lock className="w-3.5 h-3.5" /> Read-only while awaiting approval
+        </span>
+      )}
+      {!perms.locked && readOnly && <span className="text-gray-500 dark:text-gray-400">Read-only - you don't have permission to edit this client</span>}
+    </span>
+  ) : (
+    'New client - nothing is saved until you save the Basic Information.'
+  );
+
+  const note = dirty ? 'Unsaved changes' : savedAt ? `Saved at ${savedAt}` : undefined;
+
+  const footer = (
+    <WizardFooter
+      isFirst={stepIndex === 0}
+      isLast={step === 'review'}
+      onPrevious={handlePrevious}
+      onNext={handleNext}
+      onSaveDraft={readOnly ? undefined : handleSaveDraft}
+      onSubmit={perms.submit || !record ? handleSubmit : undefined}
+      onCancel={requestClose}
+      isSaving={busy === 'saving'}
+      isSubmitting={busy === 'submitting'}
+      submitLabel="Submit for approval"
+      submitBlockedReason={submitBlockedReason}
+      readOnly={readOnly}
+      note={note}
+    />
+  );
+
+  const title = record ? record.company_name : 'Onboard client';
+  const subtitle = record
+    ? [clientTypeLabel(record.client_type), record.country, record.currency].filter(Boolean).join(' · ')
+    : 'New client onboarding';
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className="space-y-8">
-      {errors.general && (
-        <div className="p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400">
-          {errors.general}
-        </div>
-      )}
+    <Drawer isOpen onClose={requestClose} title={title} subtitle={subtitle} size="xl" footer={footer}>
+      <CompactFields>
+        <div className="space-y-5">
+          <div className="sticky top-0 z-20 -mx-6 -mt-5 px-6 pt-5 pb-3 bg-white border-b border-gray-100 dark:bg-gray-900 dark:border-gray-800">
+            <WizardProgress steps={wizardSteps} currentKey={step} onStepChange={(key) => goTo(key as WizardStepKey)} statusText={statusText} />
+          </div>
 
-      {/* General */}
-      <section data-kyc-section="intake">
-        <div className="flex items-center justify-between mb-4">
-          <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">General</h4>
-          {stepPill('intake')}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-          <div className="md:col-span-2">
-            <InputField
-              {...compactField}
-              label="Legal Name *"
-              value={form.company_name}
-              onChange={(e) => setField('company_name', e.target.value)}
-              error={errors.company_name}
-              placeholder="Client legal entity"
-            />
-          </div>
-          <SelectField
-            {...compactField}
-            label="Client Type"
-            options={CLIENT_TYPE_OPTIONS}
-            value={form.client_type}
-            onChange={(e) => setField('client_type', e.target.value as Client['client_type'])}
-          />
-          <div className="w-full mb-5">
-            <label className={COMPACT_LABEL}>
-              Country <span className="text-red-500">*</span>
-            </label>
-            <SearchableSelect
-              options={countryOptions}
-              value={selectedCountry}
-              onChange={(opt) => setField('country', opt ? opt.label : '')}
-              placeholder="Select country"
-            />
-            {errors.country && <p className="mt-1.5 text-sm text-red-600 dark:text-red-400">{errors.country}</p>}
-          </div>
-          <SelectField
-            {...compactField}
-            label="Currency"
-            options={CURRENCY_OPTIONS}
-            value={form.currency}
-            onChange={(e) => setField('currency', e.target.value as Client['currency'])}
-          />
-          <InputField
-            {...compactField}
-            label="Registration No."
-            value={form.registration_no}
-            onChange={(e) => setField('registration_no', e.target.value)}
-            placeholder="CIN / LLPIN / company no."
-          />
-          <InputField
-            {...compactField}
-            label="Billing Email *"
-            type="email"
-            value={form.email}
-            onChange={(e) => setField('email', e.target.value)}
-            error={errors.email}
-            placeholder="finance@client.com"
-          />
-          <div className="w-full mb-5">
-            <label className={COMPACT_LABEL}>
-              Phone Number <span className="text-red-500">*</span>
-            </label>
-            <div className="flex gap-2">
-              <div className="w-36 flex-shrink-0">
-                <SearchableSelect
-                  options={countryCodeOptions}
-                  value={selectedCountryCode}
-                  onChange={(opt) => setField('country_code', opt ? String(opt.id) : '+91')}
-                  placeholder="Code"
-                />
-              </div>
-              <div className="flex-1">
-                <input
-                  value={form.mobile_number}
-                  onChange={(e) => setField('mobile_number', e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
-                  maxLength={10}
-                  placeholder="98765 43210"
-                  className={`w-full px-4 py-2.5 bg-input-bg dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] dark:shadow-none focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white dark:focus:bg-gray-800 dark:focus:ring-violet-500 transition-all ${
-                    errors.mobile_number ? 'ring-2 ring-red-500 bg-red-50 dark:bg-red-950/40' : ''
-                  }`}
-                />
-              </div>
+          {banner && (
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+              <p className="font-semibold flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" /> {banner.text}</p>
+              {banner.items && (
+                <ul className="mt-1 list-disc list-inside space-y-0.5">
+                  {banner.items.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              )}
             </div>
-            {errors.mobile_number && <p className="mt-1.5 text-sm text-red-600 dark:text-red-400">{errors.mobile_number}</p>}
-          </div>
-          <div className="md:col-span-2 mb-5">
-            <p className={COMPACT_LABEL}>Tags</p>
-            <div className="flex flex-wrap gap-3">
-              {tags.map((tag) => (
-                <label key={tag.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer dark:text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={form.selectedTags.includes(tag.id)}
-                    onChange={() => handleTagToggle(tag.id)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
-                  />
-                  {tag.name}
-                </label>
-              ))}
-              {tags.length === 0 && <p className="text-sm text-gray-400 dark:text-gray-500">No tags configured yet.</p>}
-            </div>
-          </div>
-        </div>
-      </section>
+          )}
 
-      {/* Identity & KYC */}
-      <section data-kyc-section="identity_kyc" className="border-t pt-6 dark:border-gray-800">
-        <div className="flex items-center justify-between mb-4">
-          <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">Identity &amp; KYC</h4>
-          {stepPill('identity_kyc')}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-          <InputField
-            {...compactField}
-            label="GSTIN"
-            value={form.gstin}
-            onChange={(e) => setField('gstin', e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 15))}
-            error={errors.gstin}
-            placeholder="GSTIN (India, 15 characters)"
-          />
-          <InputField
-            {...compactField}
-            label="Tax ID"
-            value={form.tax_id}
-            onChange={(e) => setField('tax_id', e.target.value)}
-            placeholder="VAT / EIN / Tax ID (overseas)"
-          />
-          <InputField
-            {...compactField}
-            label="PAN"
-            value={form.pan}
-            onChange={(e) => setField('pan', e.target.value.toUpperCase().slice(0, 10))}
-            error={errors.pan}
-            placeholder="AAAAA9999A (India)"
-          />
-          <InputField
-            {...compactField}
-            label="Authorised Signatory Name"
-            value={form.authorised_signatory_name}
-            onChange={(e) => setField('authorised_signatory_name', e.target.value)}
-            placeholder="Full name"
-          />
-          <InputField
-            {...compactField}
-            label="Authorised Signatory Role"
-            value={form.authorised_signatory_role}
-            onChange={(e) => setField('authorised_signatory_role', e.target.value)}
-            placeholder="e.g. CFO, Director"
-          />
-        </div>
-      </section>
-
-      {/* Address */}
-      <section className="border-t pt-6 dark:border-gray-800">
-        <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4 dark:text-gray-300">Registered Address</h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-          <div className="md:col-span-2">
-            <InputField {...compactField} label="Address 1" value={form.address1} onChange={(e) => setField('address1', e.target.value)} placeholder="Registered office / overseas business address" />
-          </div>
-          <InputField {...compactField} label="Address 2" value={form.address2} onChange={(e) => setField('address2', e.target.value)} placeholder="Area, landmark (optional)" />
-          <div>
-            <InputField
-              {...compactField}
-              label="Postal Code"
-              value={form.postal_code}
-              onChange={(e) => handlePostalCodeChange(e.target.value)}
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="6-digit pincode"
-            />
-            {isFetchingPincode && <p className="-mt-4 mb-4 text-xs text-gray-400 dark:text-gray-500">Fetching city and state…</p>}
-          </div>
-          <InputField {...compactField} label="City" value={form.city} onChange={(e) => setField('city', e.target.value)} placeholder="Enter city" />
-          <InputField {...compactField} label="State *" value={form.state} onChange={(e) => setField('state', e.target.value)} error={errors.state} placeholder="Enter state" />
-        </div>
-      </section>
-
-      {/* Compliance */}
-      <section data-kyc-section="compliance" className="border-t pt-6 dark:border-gray-800">
-        <div className="flex items-center justify-between mb-4">
-          <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">Compliance</h4>
-          {stepPill('compliance')}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-          <SelectField
-            {...compactField}
-            label="Sanctions Screening"
-            options={SANCTIONS_SCREENING_OPTIONS}
-            value={form.sanctions_screening_status}
-            onChange={(e) => setField('sanctions_screening_status', e.target.value as Client['sanctions_screening_status'])}
-          />
-          <SelectField
-            {...compactField}
-            label="Beneficial Ownership"
-            options={BENEFICIAL_OWNERSHIP_OPTIONS}
-            value={form.beneficial_ownership_status}
-            onChange={(e) => setField('beneficial_ownership_status', e.target.value as Client['beneficial_ownership_status'])}
-          />
-          <SelectField
-            {...compactField}
-            label="Tax Residency"
-            options={TAX_RESIDENCY_STATUS_OPTIONS}
-            value={form.tax_residency_status}
-            onChange={(e) => setField('tax_residency_status', e.target.value as Client['tax_residency_status'])}
-          />
-          <SelectField
-            {...compactField}
-            label="Enhanced Due Diligence"
-            options={ENHANCED_DUE_DILIGENCE_OPTIONS}
-            value={form.enhanced_due_diligence_status}
-            onChange={(e) => setField('enhanced_due_diligence_status', e.target.value as Client['enhanced_due_diligence_status'])}
-          />
-          <div className="md:col-span-2">
-            <label className={COMPACT_LABEL}>Compliance Remarks</label>
-            <textarea
-              value={form.compliance_remarks}
-              onChange={(e) => setField('compliance_remarks', e.target.value)}
-              rows={3}
-              placeholder="Notes for the compliance review"
-              className="w-full px-4 py-2.5 bg-input-bg dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] dark:shadow-none focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white dark:focus:bg-gray-800 dark:focus:ring-violet-500 transition-all mb-5"
-            />
-          </div>
-          <div>
-            <InputField
-              {...compactField}
-              label="Reviewed By (User ID)"
-              type="number"
-              value={form.compliance_reviewed_by}
-              onChange={(e) => setField('compliance_reviewed_by', e.target.value)}
-              placeholder="User ID of the compliance reviewer"
-            />
-            {client?.compliance_reviewed_by != null && (
-              <p className="-mt-4 mb-4 text-xs text-gray-400 dark:text-gray-500">Currently reviewed by user #{client.compliance_reviewed_by}</p>
-            )}
-          </div>
-          <div>
-            <InputField
-              {...compactField}
-              label="Review Date"
-              type="datetime-local"
-              value={form.compliance_reviewed_at}
-              onChange={(e) => setField('compliance_reviewed_at', e.target.value)}
-            />
-            {client?.compliance_reviewed_at && (
-              <p className="-mt-4 mb-4 text-xs text-gray-400 dark:text-gray-500">
-                Currently reviewed on {new Date(client.compliance_reviewed_at).toLocaleString()}
-              </p>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* Commercials */}
-      <section data-kyc-section="commercials" className="border-t pt-6 dark:border-gray-800">
-        <div className="flex items-center justify-between mb-4">
-          <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">Commercials</h4>
-          {stepPill('commercials')}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-          <SelectField
-            {...compactField}
-            label="Payment Terms"
-            options={PAYMENT_TERMS_OPTIONS}
-            value={form.payment_terms}
-            onChange={(e) => setField('payment_terms', e.target.value as Client['payment_terms'])}
-          />
-          {form.payment_terms === 'custom' && (
-            <InputField
-              {...compactField}
-              label="Custom Payment Terms *"
-              value={form.custom_payment_terms}
-              onChange={(e) => setField('custom_payment_terms', e.target.value)}
-              error={errors.custom_payment_terms}
+          {step === 'basic' && (
+            <BasicStep
+              form={form}
+              errors={errors}
+              readOnly={readOnly}
+              setField={setField}
+              tags={tags}
+              onCountryChange={changeCountry}
+              currencyNotice={currency.notice}
             />
           )}
-          <div className="flex items-end pb-5">
-            <Checkbox
-              label="Withholding Tax Applicable"
-              checked={form.withholding_tax_applicable}
-              onChange={(e) => setField('withholding_tax_applicable', e.target.checked)}
-            />
-          </div>
-          {form.withholding_tax_applicable && (
-            <InputField
-              {...compactField}
-              label="Withholding Tax % *"
-              type="number"
-              value={form.withholding_tax_percentage}
-              onChange={(e) => setField('withholding_tax_percentage', e.target.value)}
-              error={errors.withholding_tax_percentage}
-              placeholder="e.g. 10"
+          {step === 'identity' && (
+            <IdentityStep
+              form={form}
+              errors={errors}
+              readOnly={readOnly}
+              setField={setField}
+              countryConfig={countryConfig}
+              verification={identityVerification(slots, docList, !!record)}
             />
           )}
-          <SelectField
-            {...compactField}
-            label="Invoice Requirements"
-            options={INVOICE_REQUIREMENTS_OPTIONS}
-            value={form.invoice_requirements}
-            onChange={(e) => setField('invoice_requirements', e.target.value as Client['invoice_requirements'])}
-          />
-          <div className="flex items-end pb-5">
-            <Checkbox label="PO Required" checked={form.po_required} onChange={(e) => setField('po_required', e.target.checked)} />
-          </div>
-          <SelectField
-            {...compactField}
-            label="Billing Frequency"
-            options={BILLING_FREQUENCY_OPTIONS}
-            value={form.billing_frequency}
-            onChange={(e) => setField('billing_frequency', e.target.value as Client['billing_frequency'])}
-          />
-          <InputField {...compactField} label="Billing Contact" value={form.billing_contact} onChange={(e) => setField('billing_contact', e.target.value)} />
-          <InputField
-            {...compactField}
-            label="Billing Email"
-            type="email"
-            value={form.billing_email}
-            onChange={(e) => setField('billing_email', e.target.value)}
-          />
-          <div className="md:col-span-2">
-            <label className={COMPACT_LABEL}>Commercial Remarks</label>
-            <textarea
-              value={form.commercial_remarks}
-              onChange={(e) => setField('commercial_remarks', e.target.value)}
-              rows={3}
-              placeholder="Notes on commercial terms"
-              className="w-full px-4 py-2.5 bg-input-bg dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] dark:shadow-none focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white dark:focus:bg-gray-800 dark:focus:ring-violet-500 transition-all mb-5"
+          {step === 'address' && <AddressStep form={form} errors={errors} readOnly={readOnly} patchAddress={patchAddress} />}
+          {step === 'banking' && (
+            <BankingStep
+              form={form}
+              errors={errors}
+              readOnly={bankingReadOnly}
+              noBankingPermission={!readOnly && !perms.edit_banking}
+              patchBank={patchBank}
+              maskedAccountNumber={record?.bank_account_number_masked}
+              onRevealAccountNumber={perms.view_unmasked_bank && record ? revealAccount : undefined}
+              canVerify={perms.verify_documents && !!record}
+              verifyDisabled={readOnly}
+              onVerificationChange={(value) => setField('banking_verification_status', value)}
             />
-          </div>
-        </div>
-      </section>
-
-      {/* Banking */}
-      <section data-kyc-section="banking" className="border-t pt-6 dark:border-gray-800">
-        <div className="flex items-center justify-between mb-4">
-          <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">Banking</h4>
-          {stepPill('banking')}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-          <InputField {...compactField} label="Bank Name" value={form.bank_name} onChange={(e) => setField('bank_name', e.target.value)} placeholder="Bank / branch" />
-          <div className="md:col-span-2 mb-5">
-            <label className={COMPACT_LABEL}>Account Number</label>
-            {isEditing && !isChangingBankAccount ? (
-              <div className="flex items-center gap-3">
-                <span className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300">
-                  {client?.bank_account_number_masked || 'Not on file'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsChangingBankAccount(true)}
-                  className="text-sm font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-400"
-                >
-                  Change
-                </button>
-              </div>
-            ) : (
-              <InputField
-                {...compactField}
-                value={form.bank_account_number}
-                onChange={(e) => setField('bank_account_number', e.target.value.replace(/\s/g, ''))}
-                placeholder="Client bank account number"
+          )}
+          {step === 'commercials' && (
+            <CommercialsStep
+              form={form}
+              errors={errors}
+              readOnly={commercialsReadOnly}
+              setField={setField}
+              noCommercialPermission={!readOnly && !perms.edit_commercials}
+            />
+          )}
+          {step === 'documents' &&
+            (record ? (
+              <ClientDocumentsSection
+                clientId={record.id}
+                slots={slots}
+                documents={docList}
+                onDocumentsChange={setDocuments}
+                onChanged={() => refreshRecord()}
+                canUpload={perms.upload_documents}
+                canDelete={perms.delete_documents}
+                canVerify={perms.verify_documents}
+                readOnly={!perms.upload_documents}
+                loading={documents === null && !docsError}
+                loadError={docsError}
+                onRetry={reloadDocuments}
               />
-            )}
-          </div>
-          <InputField {...compactField} label="IFSC / SWIFT / IBAN" value={form.bank_code} onChange={(e) => setField('bank_code', e.target.value)} placeholder="HDFC0001234 / CHASUS33" />
-          <SelectField
-            {...compactField}
-            label="Banking Verification Status"
-            options={BANKING_VERIFICATION_STATUS_OPTIONS}
-            value={form.banking_verification_status}
-            onChange={(e) => setField('banking_verification_status', e.target.value as Client['banking_verification_status'])}
-          />
-          <InputField {...compactField} label="Bank Branch" value={form.bank_branch} onChange={(e) => setField('bank_branch', e.target.value)} />
-          <InputField {...compactField} label="Bank Country" value={form.bank_country} onChange={(e) => setField('bank_country', e.target.value)} />
-          <div className="md:col-span-2">
-            <InputField {...compactField} label="Bank Address" value={form.bank_address} onChange={(e) => setField('bank_address', e.target.value)} />
-          </div>
-        </div>
-      </section>
-
-      {/* KYC & Onboarding */}
-      <section data-kyc-section="approved" className="border-t pt-6 dark:border-gray-800">
-        <div className="flex items-center justify-between mb-4">
-          <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide dark:text-gray-300">KYC &amp; Onboarding</h4>
-          {stepPill('approved')}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-          <SelectField
-            {...compactField}
-            label="KYC Status"
-            options={KYC_STATUS_OPTIONS}
-            value={form.kyc_status}
-            onChange={(e) => setField('kyc_status', e.target.value as Client['kyc_status'])}
-          />
-          <SelectField
-            {...compactField}
-            label="Risk Rating"
-            options={RISK_RATING_OPTIONS}
-            value={form.risk_rating}
-            onChange={(e) => setField('risk_rating', e.target.value as Client['risk_rating'])}
-          />
-          <SelectField
-            {...compactField}
-            label="Onboarding Step"
-            options={EDITABLE_ONBOARDING_STEPS}
-            value={form.onboarding_step}
-            onChange={(e) => setField('onboarding_step', e.target.value as Client['onboarding_step'])}
-            error={errors.onboarding_step}
-          />
-          <div className="flex items-end pb-5">
-            <Checkbox label="Active" checked={form.is_active} onChange={(e) => setField('is_active', e.target.checked)} />
-          </div>
-        </div>
-        <p className="text-xs text-gray-400 -mt-3 mb-4 dark:text-gray-500">
-          "Approved" is no longer chosen here - it's only set once this client is submitted for
-          approval and passes every requirement below.
-        </p>
-        {isEditing && client?.id && client.onboarding_step !== 'approved' && (
-          <div className="pt-2 border-t dark:border-gray-800">
-            {canApprove ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleSubmitForApproval}
-                  disabled={isSubmittingApproval}
-                  className="px-6 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSubmittingApproval ? 'Submitting…' : 'Submit for Approval'}
-                </button>
-                {approvalMissing && approvalMissing.length > 0 && (
-                  <div className="mt-3 p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-300">
-                    <p className="font-semibold mb-1">Cannot approve client. Missing:</p>
-                    <ul className="list-disc list-inside space-y-0.5">
-                      {approvalMissing.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
             ) : (
-              <p className="text-xs text-gray-400 dark:text-gray-500">
-                Submitting a client for approval requires Admin or Manager permissions.
+              <p className="rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                Save the Basic Information first - documents are uploaded against the saved client.
               </p>
-            )}
-          </div>
-        )}
-      </section>
-
-      {/* Documents */}
-      <section data-kyc-section="documents" className="border-t pt-6 dark:border-gray-800">
-        <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3 dark:text-gray-300">KYC Documents</h4>
-        <ClientDocumentsSection
-          jurisdiction={jurisdiction}
-          documents={documents}
-          staged={stagedDocs}
-          onStagedChange={(next) => {
-            setDocumentsError(undefined);
-            setStagedDocs(next);
-          }}
-          canUploadNow={isEditing}
-          onUploadStaged={handleUploadStagedNow}
-          onRetryStaged={handleRetryStaged}
-          isUploading={isUploadingDocs}
-          isLoading={docsLoading}
-          loadError={docsLoadError}
-          onReloadDocuments={client?.id ? () => loadDocuments(client.id) : undefined}
-          recentlyUploadedIds={recentlyUploadedIds}
-          onLoadPreview={handleLoadPreview}
-          onOpenDocument={handleOpenDocument}
-          onDownload={handleDownloadDocument}
-          onDelete={handleDeleteDocument}
-          resolveThumbnailUrl={isEditing ? getSignedDocumentUrl : undefined}
-          canVerify={canApprove && isEditing}
-          onVerify={handleVerifyDocument}
-          fieldEvidence={{
-            registration_no: !!form.registration_no.trim(),
-            gstin: !!form.gstin.trim(),
-            pan: !!form.pan.trim(),
-            tax_id: !!form.tax_id.trim(),
-          }}
-          error={documentsError}
-        />
-      </section>
-
-      {/* Footer summary */}
-      <div className="border-t pt-6 space-y-3 dark:border-gray-800">
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {clientTypeLabel(form.client_type)} client &middot; {jurisdiction} &middot; {form.currency} &middot; {kycStatusLabel(form.kyc_status)}
-        </p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">
-          Fields marked * are required. All other fields are optional and can be completed as onboarding progresses.
-        </p>
-        <div className="flex justify-end gap-3 pt-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={isSaving}
-            className="px-6 py-2.5 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="px-8 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSaving
-              ? isUploadingDocs ? 'Uploading documents…' : 'Saving…'
-              : isEditing
-                ? 'Update Client'
-                : stagedDocs.length > 0 ? `Create Client & Upload ${stagedDocs.length}` : 'Create Client'}
-          </button>
+            ))}
+          {step === 'review' && (
+            <ClientReviewStep
+              form={form}
+              record={record}
+              perms={perms}
+              countryConfig={countryConfig}
+              bankConfig={bankConfig}
+              stepIssues={stepIssues}
+              slots={slots}
+              documents={docList}
+              tags={tags}
+              dirty={dirty}
+              onEditStep={goTo}
+              onRecordChange={(updated) => refreshRecord(updated.id)}
+              onApproved={(approved) => {
+                applySaved(approved);
+                onClose();
+              }}
+            />
+          )}
         </div>
-      </div>
-    </form>
+      </CompactFields>
+
+      <ConfirmDialog
+        isOpen={confirmClose}
+        onClose={() => setConfirmClose(false)}
+        onConfirm={() => {
+          setConfirmClose(false);
+          onClose();
+        }}
+        title="Discard unsaved changes?"
+        message="You have changes that haven't been saved. Close the onboarding form anyway?"
+        confirmLabel="Discard changes"
+      />
+    </Drawer>
   );
 };

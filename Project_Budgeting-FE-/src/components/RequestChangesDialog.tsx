@@ -1,23 +1,21 @@
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
-import axiosInstance from '../utils/axiosInstance';
-import { parseApiErrors } from '../utils/parseApiErrors';
 import { Modal } from './Modal';
 import { SelectField } from './SelectField';
-import { CHANGE_REQUEST_SECTION_OPTIONS } from '../pages/ClientListPage';
-import type { ChangeRequestSection, ClientChangeRequest } from '../pages/ClientListPage';
+import { createChangeRequest, readClientApiError } from '../services/clientOnboarding';
+import { CHANGE_REQUEST_SECTION_OPTIONS, type ChangeRequestSection, type ClientChangeRequest } from '../pages/client-onboarding/clientTypes';
 
 interface RequestChangesDialogProps {
   isOpen: boolean;
   clientId: number;
   onClose: () => void;
+  /** The client moves to "Changes requested" - callers should re-read it. */
   onCreated: (changeRequest: ClientChangeRequest) => void;
 }
 
 /**
- * Small modal form (reuses the shared <Modal>, not <Drawer>) for filing a change request
- * against one of the 6 onboarding sections. Wired from both ApprovalSummaryPanel and
- * ClientDetailsPage's open-change-requests banner.
+ * Reviewer's "Request changes": files a change request against one section of the client. The
+ * client moves to Changes Requested and returns to Draft once every open request is resolved.
  */
 export const RequestChangesDialog: React.FC<RequestChangesDialogProps> = ({ isOpen, clientId, onClose, onCreated }) => {
   const [section, setSection] = useState<ChangeRequestSection>('intake');
@@ -36,23 +34,24 @@ export const RequestChangesDialog: React.FC<RequestChangesDialogProps> = ({ isOp
 
   const handleSubmit = async () => {
     if (!requiredChanges.trim()) {
-      setError('Required changes is required.');
+      setError('Describe the changes that are needed.');
       return;
     }
     setIsSaving(true);
     setError(undefined);
     try {
-      const res = await axiosInstance.post(`/client/${clientId}/change-requests/`, {
+      const created = await createChangeRequest(clientId, {
         section,
         required_changes: requiredChanges.trim(),
         comments: comments.trim() || undefined,
       });
-      toast.success('Change request submitted.');
-      onCreated(res.data);
+      toast.success('Changes requested - the client is back with the maker.');
+      onCreated(created);
       resetAndClose();
     } catch (err) {
-      const apiErrors = parseApiErrors(err);
-      toast.error(apiErrors.general || 'Failed to submit change request.');
+      const apiError = readClientApiError(err, 'Failed to submit the change request.');
+      if (apiError.fields.required_changes) setError(apiError.fields.required_changes);
+      toast.error(apiError.message);
     } finally {
       setIsSaving(false);
     }
@@ -80,23 +79,25 @@ export const RequestChangesDialog: React.FC<RequestChangesDialogProps> = ({ isOp
             disabled={isSaving}
             className="px-5 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSaving ? 'Submitting…' : 'Submit Request'}
+            {isSaving ? 'Submitting…' : 'Request changes'}
           </button>
         </>
       }
     >
       <div className="space-y-4">
         <SelectField
+          id="change-request-section"
           label="Section *"
           options={CHANGE_REQUEST_SECTION_OPTIONS}
           value={section}
           onChange={(e) => setSection(e.target.value as ChangeRequestSection)}
         />
         <div>
-          <label className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">
-            Required Changes <span className="text-red-500">*</span>
+          <label htmlFor="change-request-required" className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">
+            Required changes <span className="text-red-500">*</span>
           </label>
           <textarea
+            id="change-request-required"
             value={requiredChanges}
             onChange={(e) => setRequiredChanges(e.target.value)}
             rows={4}
@@ -108,12 +109,13 @@ export const RequestChangesDialog: React.FC<RequestChangesDialogProps> = ({ isOp
           {error && <p className="mt-1.5 text-sm text-red-600 dark:text-red-400">{error}</p>}
         </div>
         <div>
-          <label className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">Comments (optional)</label>
+          <label htmlFor="change-request-comments" className="block text-base font-medium text-gray-900 mb-2 dark:text-gray-200">Comments (optional)</label>
           <textarea
+            id="change-request-comments"
             value={comments}
             onChange={(e) => setComments(e.target.value)}
             rows={3}
-            placeholder="Additional context for the client-facing team (optional)"
+            placeholder="Additional context for the team updating the client (optional)"
             className="w-full px-4 py-3 bg-input-bg dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-[0_2px_5px_rgba(0,0,0,0.03)] dark:shadow-none focus:outline-none focus:ring-2 focus:ring-brand-800 focus:bg-white dark:focus:bg-gray-800 dark:focus:ring-violet-500 transition-all"
           />
         </div>

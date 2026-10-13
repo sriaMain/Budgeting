@@ -17,7 +17,7 @@ interface InviteFreelancerModalProps {
     onInvited: (freelancer: Freelancer) => void;
 }
 
-const EMPTY: InviteFreelancerPayload = { full_name: '', email: '' };
+const EMPTY: InviteFreelancerPayload = { first_name: '', middle_name: '', last_name: '', email: '' };
 
 export const InviteFreelancerModal: React.FC<InviteFreelancerModalProps> = ({ isOpen, onClose, onInvited }) => {
     const [values, setValues] = useState<InviteFreelancerPayload>(EMPTY);
@@ -73,13 +73,27 @@ export const InviteFreelancerModal: React.FC<InviteFreelancerModalProps> = ({ is
                     Send the freelancer a secure link to complete their own profile. You only need to provide their
                     name and email - they fill in everything else.
                 </p>
-                <InputField
-                    label="Freelancer Name *"
-                    placeholder="Enter freelancer name"
-                    value={values.full_name}
-                    onChange={set('full_name')}
-                    error={errors.full_name}
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-3">
+                    <InputField
+                        label="First Name *"
+                        placeholder="First name"
+                        value={values.first_name}
+                        onChange={set('first_name')}
+                        error={errors.first_name}
+                    />
+                    <InputField
+                        label="Middle Name"
+                        placeholder="Middle name"
+                        value={values.middle_name}
+                        onChange={set('middle_name')}
+                    />
+                    <InputField
+                        label="Last Name"
+                        placeholder="Last name"
+                        value={values.last_name}
+                        onChange={set('last_name')}
+                    />
+                </div>
                 <InputField
                     label="Email Address *"
                     type="email"

@@ -47,9 +47,10 @@ def _send(template, subject, recipients, context):
         # Freelancer row is untouched either way, and the admin can always
         # use "Resend Invitation" once the underlying issue is fixed.
         email.send(fail_silently=False)
-    except Exception:
-        logger.exception(
-            "Freelancer onboarding email '%s' failed to send to %s", template, recipients
+    except Exception as exc:
+        # No addresses in the log - the template name and error class are enough to triage.
+        logger.error(
+            "Freelancer onboarding email '%s' failed to send (%s)", template, exc.__class__.__name__
         )
 
 
@@ -73,4 +74,42 @@ def send_freelancer_invited_notification(freelancer_id, raw_token):
         "Complete Your Freelancer Onboarding",
         _freelancer_recipients(freelancer),
         context,
+    )
+
+
+@shared_task
+def send_freelancer_changes_requested_notification(freelancer_id, raw_token):
+    """The reviewer sent the onboarding back: remarks, the steps to revisit and the link."""
+    from .kyc import STEP_LABELS
+    from .models import Freelancer, FreelancerAccessToken
+    freelancer = Freelancer.objects.filter(pk=freelancer_id).first()
+    if not freelancer:
+        return
+    token_row = FreelancerAccessToken.objects.filter(token=raw_token).first()
+    context = {
+        **_base_context(freelancer),
+        "secure_freelancer_url": build_onboarding_url(raw_token),
+        "token_expires_at": token_row.expires_at if token_row else None,
+        "review_remarks": freelancer.review_remarks,
+        "sections": [STEP_LABELS.get(key, key) for key in (freelancer.changes_requested_sections or [])],
+    }
+    _send(
+        "freelancer_changes_requested.html",
+        "Action Needed: Update Your Freelancer Onboarding",
+        _freelancer_recipients(freelancer),
+        context,
+    )
+
+
+@shared_task
+def send_freelancer_approved_notification(freelancer_id):
+    from .models import Freelancer
+    freelancer = Freelancer.objects.filter(pk=freelancer_id).first()
+    if not freelancer:
+        return
+    _send(
+        "freelancer_approved.html",
+        "Your Freelancer Onboarding Is Approved",
+        _freelancer_recipients(freelancer),
+        _base_context(freelancer),
     )

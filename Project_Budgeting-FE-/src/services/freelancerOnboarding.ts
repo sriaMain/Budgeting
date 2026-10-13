@@ -1,12 +1,13 @@
 import axiosInstance from "../utils/axiosInstance";
 import type {
-  Freelancer, FreelancerChoices, FreelancerDocument, FreelancerListFilters,
-  FreelancerManualPayload, InviteFreelancerPayload, FreelancerRateCard, FreelancerRateCardPayload,
+  Freelancer, FreelancerDetail, FreelancerChoices, FreelancerDocument, FreelancerListFilters,
+  FreelancerProfilePayload, InviteFreelancerPayload, FreelancerRateCard, FreelancerRateCardPayload,
   FreelancerContract, FreelancerContractPayload, FreelancerProjectAssignment,
   FreelancerProjectAssignmentPayload, CapacityCheckResult, FreelancerTaskAssignment,
   FreelancerTaskAssignmentPayload, FreelancerTimeEntry, FreelancerTimeEntryPayload, SimpleTask,
   FreelancerBankDetail, FreelancerBankDetailPayload, FreelancerBankDetailUnmasked,
   FreelancerPANUnmasked, FreelancerEquipment, FreelancerEquipmentPayload, FreelancerAuditLog,
+  FreelancerIdentityUnmasked, BankVerificationPayload, DocumentUploadOptions, OnboardingStepKey,
 } from "../types/freelancerOnboarding.types";
 
 const BASE = "/freelancer-onboarding";
@@ -22,28 +23,72 @@ export const listFreelancers = async (filters: FreelancerListFilters = {}): Prom
   return res.data;
 };
 
-export const getFreelancer = async (id: number): Promise<Freelancer> => {
+export const getFreelancer = async (id: number): Promise<FreelancerDetail> => {
   const res = await axiosInstance.get(`${BASE}/freelancers/${id}/`);
   return res.data;
 };
 
-export const inviteFreelancer = async (payload: InviteFreelancerPayload): Promise<Freelancer> => {
+export const inviteFreelancer = async (payload: InviteFreelancerPayload): Promise<FreelancerDetail> => {
   const res = await axiosInstance.post(`${BASE}/freelancers/invite/`, payload);
   return res.data;
 };
 
-export const addFreelancerManually = async (payload: FreelancerManualPayload): Promise<Freelancer> => {
+/** "Onboard Freelancer" - creates a draft the admin completes (status draft). */
+export const addFreelancerManually = async (payload: FreelancerProfilePayload): Promise<FreelancerDetail> => {
   const res = await axiosInstance.post(`${BASE}/freelancers/`, payload);
   return res.data;
 };
 
-export const updateFreelancer = async (id: number, payload: Partial<FreelancerManualPayload>): Promise<Freelancer> => {
+export const updateFreelancer = async (id: number, payload: FreelancerProfilePayload): Promise<FreelancerDetail> => {
   const res = await axiosInstance.patch(`${BASE}/freelancers/${id}/`, payload);
   return res.data;
 };
 
-export const resendInvite = async (id: number): Promise<void> => {
-  await axiosInstance.post(`${BASE}/freelancers/${id}/resend-invite/`);
+/** (Re)sends the secure onboarding link (also the first send for a draft). */
+export const resendInvite = async (id: number): Promise<{ detail: string; freelancer: FreelancerDetail }> => {
+  const res = await axiosInstance.post(`${BASE}/freelancers/${id}/resend-invite/`);
+  return res.data;
+};
+
+export const revokeLink = async (id: number): Promise<FreelancerDetail> => {
+  const res = await axiosInstance.post(`${BASE}/freelancers/${id}/revoke-link/`);
+  return res.data;
+};
+
+/** Admin "Submit for review" - 400 with `missing` when requirements are unmet. */
+export const submitFreelancer = async (id: number): Promise<FreelancerDetail> => {
+  const res = await axiosInstance.post(`${BASE}/freelancers/${id}/submit/`);
+  return res.data;
+};
+
+/** 400 with `missing` while documents / bank / PAN aren't verified. */
+export const approveFreelancer = async (id: number, remarks = ""): Promise<FreelancerDetail> => {
+  const res = await axiosInstance.post(`${BASE}/freelancers/${id}/approve/`, { remarks });
+  return res.data;
+};
+
+export const requestFreelancerChanges = async (
+  id: number, payload: { remarks: string; sections: OnboardingStepKey[] },
+): Promise<FreelancerDetail> => {
+  const res = await axiosInstance.post(`${BASE}/freelancers/${id}/request-changes/`, payload);
+  return res.data;
+};
+
+export const getIdentityUnmasked = async (id: number): Promise<FreelancerIdentityUnmasked> => {
+  const res = await axiosInstance.get(`${BASE}/freelancers/${id}/identity-unmasked/`);
+  return res.data;
+};
+
+export const uploadProfilePhoto = async (id: number, file: File): Promise<FreelancerDetail> => {
+  const formData = new FormData();
+  formData.append("photo", file);
+  const res = await axiosInstance.post(`${BASE}/freelancers/${id}/profile-photo/`, formData);
+  return res.data;
+};
+
+export const removeProfilePhoto = async (id: number): Promise<FreelancerDetail> => {
+  const res = await axiosInstance.delete(`${BASE}/freelancers/${id}/profile-photo/`);
+  return res.data;
 };
 
 export const archiveFreelancer = async (id: number): Promise<Freelancer> => {
@@ -61,11 +106,19 @@ export const listDocuments = async (id: number): Promise<FreelancerDocument[]> =
   return res.data;
 };
 
-export const uploadDocument = async (id: number, category: string, file: File): Promise<FreelancerDocument> => {
+/** Multipart upload; `replaces` swaps a document atomically, `expiryDate` is YYYY-MM-DD. */
+export const uploadDocument = async (
+  id: number, category: string, file: File, opts: DocumentUploadOptions = {},
+): Promise<FreelancerDocument> => {
   const formData = new FormData();
   formData.append("category", category);
   formData.append("file", file);
-  const res = await axiosInstance.post(`${BASE}/freelancers/${id}/documents/`, formData);
+  if (opts.replaces) formData.append("replaces", String(opts.replaces));
+  if (opts.expiryDate) formData.append("expiry_date", opts.expiryDate);
+  if (opts.documentNumber) formData.append("document_number", opts.documentNumber);
+  const res = await axiosInstance.post(`${BASE}/freelancers/${id}/documents/`, formData, {
+    onUploadProgress: (e) => opts.onProgress?.((e.loaded / (e.total || e.loaded || 1)) * 100),
+  });
   return res.data;
 };
 
@@ -75,6 +128,14 @@ export const deleteDocument = async (id: number, docId: number) => {
 
 export const downloadDocument = async (id: number, docId: number): Promise<{ file_name: string; download_url: string }> => {
   const res = await axiosInstance.get(`${BASE}/freelancers/${id}/documents/${docId}/download/`);
+  return res.data;
+};
+
+/** Reviewer decision; `remarks` is required to reject. */
+export const verifyDocument = async (
+  id: number, docId: number, status: "verified" | "rejected" | "under_review", remarks?: string,
+): Promise<FreelancerDocument> => {
+  const res = await axiosInstance.post(`${BASE}/freelancers/${id}/documents/${docId}/verify/`, { status, remarks: remarks || "" });
   return res.data;
 };
 
@@ -241,6 +302,14 @@ export const updateBankDetail = async (
   freelancerId: number, payload: FreelancerBankDetailPayload,
 ): Promise<FreelancerBankDetail> => {
   const res = await axiosInstance.patch(`${BASE}/freelancers/${freelancerId}/bank-detail/`, payload);
+  return res.data;
+};
+
+/** Reviewer decision on the payout details ('bank') or the PAN / tax ID ('pan'). */
+export const verifyBankDetail = async (
+  freelancerId: number, payload: BankVerificationPayload,
+): Promise<FreelancerBankDetail> => {
+  const res = await axiosInstance.post(`${BASE}/freelancers/${freelancerId}/bank-detail/verify/`, payload);
   return res.data;
 };
 

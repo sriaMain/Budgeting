@@ -2,7 +2,7 @@ import React from 'react';
 import { Archive, ArchiveRestore, Mail } from 'lucide-react';
 import { StatusBadge } from '../../../components/StatusBadge';
 import type { Freelancer } from '../../../types/freelancerOnboarding.types';
-import { formatRate, freelancerPercent, freelancerStepStatuses, FREELANCER_ONBOARDING_STEPS, initials } from './freelancerDisplay';
+import { formatRate, freelancerPercent, freelancerStepStatuses, FREELANCER_ONBOARDING_STEPS, initials, ONBOARDING_STATUSES, statusVariant } from './freelancerDisplay';
 
 interface Props {
   freelancer: Freelancer;
@@ -53,7 +53,7 @@ export const FreelancerCard: React.FC<Props> = ({
           <p className="font-semibold text-gray-900 truncate dark:text-white" title={f.full_name}>{f.full_name || 'Untitled freelancer'}</p>
           <p className="text-sm text-gray-500 truncate dark:text-gray-400" title={f.professional_title}>{f.professional_title || f.email || '—'}</p>
         </div>
-        <StatusBadge status={f.status} label={statusLabel(f.status)} />
+        <StatusBadge status={f.status} variant={statusVariant(f.status)} label={statusLabel(f.status)} />
       </div>
 
       {/* Commercials */}
@@ -83,13 +83,13 @@ export const FreelancerCard: React.FC<Props> = ({
       <div className="flex items-center justify-between gap-2 pt-3 border-t border-gray-100 mt-auto dark:border-gray-800">
         <p className="text-xs font-mono text-gray-500 min-w-0 truncate dark:text-gray-400">{f.freelancer_code || '—'}</p>
         <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-          {f.status === 'invited' && (
+          {ONBOARDING_STATUSES.includes(f.status) && (
             <button
               type="button"
               onClick={onResendInvite}
               disabled={isResending}
               className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800"
-              title="Resend invitation email"
+              title={f.status === 'draft' ? 'Send the onboarding link' : 'Resend the onboarding link'}
               aria-label="Resend invitation"
             >
               <Mail className="w-4 h-4" />

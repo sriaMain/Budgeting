@@ -6,6 +6,7 @@ from cloudinary.models import CloudinaryField
 from phonenumber_field.modelfields import PhoneNumberField
 
 from core.app_constants import CURRENCY_CHOICES
+from core.countries import is_india
 
 class CompanyTag(models.Model):
 
@@ -37,8 +38,13 @@ class Company(models.Model):
         ("other", "Other"),
     ]
 
+    # draft -> submitted (maker, POST submit/) -> verified (approver, POST approve/).
+    # A reviewer's change request moves it to changes_requested; resolving the last open
+    # request returns it to draft. enhanced_review / review_due are compliance flags.
     KYC_STATUS_CHOICES = [
         ("draft", "Draft"),
+        ("submitted", "Submitted - awaiting approval"),
+        ("changes_requested", "Changes Requested"),
         ("verified", "Verified"),
         ("enhanced_review", "Enhanced Review"),
         ("review_due", "Review Due"),
@@ -123,6 +129,8 @@ class Company(models.Model):
         help_text="Enter mobile number with country code (e.g. +919876543210)"
     )
     email = models.EmailField(unique=True)
+    # Primary contact person at the client (an individual client is their own contact).
+    contact_person = models.CharField(max_length=150, blank=True)
     # Optional - not a mandatory field
     gstin = models.CharField(
         max_length=15,
@@ -158,12 +166,25 @@ class Company(models.Model):
     authorised_signatory_name = models.CharField(max_length=150, blank=True)
     authorised_signatory_role = models.CharField(max_length=100, blank=True)
 
-    # Bank details
+    # Bank details. Identifiers are country-specific (core.countries.bank_config): India uses
+    # the IFSC, other countries a local routing code (ABA / sort code / BSB / transit ...),
+    # plus SWIFT / IBAN where they apply.
+    bank_account_holder_name = models.CharField(max_length=150, blank=True)
     bank_name = models.CharField(max_length=150, blank=True)
     bank_account_number = models.CharField(max_length=34, blank=True)
+    bank_ifsc_code = models.CharField(max_length=11, blank=True)
+    bank_swift_code = models.CharField(max_length=11, blank=True)
+    bank_iban = models.CharField(max_length=34, blank=True)
+    bank_routing_code = models.CharField(
+        max_length=34, blank=True,
+        help_text="Local routing identifier outside India - ABA, sort code, BSB, transit number ...",
+    )
+    bank_account_type = models.CharField(max_length=20, blank=True)
+    # Legacy single "IFSC / SWIFT / IBAN" field. Kept read-only: migration 0016 copied each
+    # value into the matching field above and the forms no longer write it.
     bank_code = models.CharField(
         max_length=34, blank=True,
-        help_text="IFSC / SWIFT / IBAN"
+        help_text="Legacy IFSC / SWIFT / IBAN (read-only - see bank_ifsc_code / bank_swift_code / bank_iban / bank_routing_code)"
     )
     bank_branch = models.CharField(max_length=150, blank=True)
     bank_country = models.CharField(max_length=100, blank=True)
@@ -240,7 +261,10 @@ class Company(models.Model):
 
     @property
     def jurisdiction(self):
-        return "Indian" if self.country in ("India", "IN", "") else "Overseas"
+        """'Indian' for India in any accepted spelling ('India', 'IN', 'india', 'Bharat' ...).
+        A blank country stays 'Indian' - legacy rows were created before country was required."""
+        country = (self.country or "").strip()
+        return "Indian" if not country or is_india(country) else "Overseas"
 
     @property
     def is_project_ready(self):
@@ -251,132 +275,23 @@ class Company(models.Model):
             return self.bank_account_number
         return "X" * (len(self.bank_account_number) - 4) + self.bank_account_number[-4:]
 
-    def _has_doc(self, *categories, exclude_rejected=True):
-        if not self.pk:
-            return False
-        qs = self.documents.filter(category__in=categories)
-        if exclude_rejected:
-            qs = qs.exclude(status="rejected")
-        return qs.exists()
+    def onboarding_state(self):
+        """Required documents, submission issues, approval blockers and per-step statuses,
+        evaluated together from one read of the client's documents (client/onboarding.py)."""
+        from .onboarding import evaluate
 
-    def _identity_kyc_required_ok(self):
-        if self.jurisdiction == "Indian":
-            if not (self.registration_no or self._has_doc("registration_certificate", "cin_llpin")):
-                return False
-            if not (self.gstin or self._has_doc("gst_certificate", "tax_certificate")):
-                return False
-            if not (self.pan or self._has_doc("pan_document")):
-                return False
-        else:
-            if not (self.registration_no or self._has_doc("registration_certificate")):
-                return False
-            if not (self.tax_id or self._has_doc("tax_certificate", "w8ben_e")):
-                return False
-        return bool(self.authorised_signatory_name)
+        return evaluate(self)
 
     def get_step_status(self, step):
         """Returns 'pending' | 'in_progress' | 'completed' | 'requires_review' for one of the 6
         ONBOARDING_STEP_CHOICES keys. Always derived from stored fields/documents, never itself
         stored, so the stepper can never drift from the data it summarizes."""
-        if step == "intake":
-            fields = [self.company_name, self.client_type, self.country, self.email]
-            if all(fields):
-                return "completed"
-            return "in_progress" if any(fields) else "pending"
-
-        if step == "identity_kyc":
-            if self._identity_kyc_required_ok():
-                return "completed"
-            return "in_progress" if self._has_doc() else "pending"
-
-        if step == "compliance":
-            if self.sanctions_screening_status == "failed":
-                return "requires_review"
-            edd_ok = self.risk_rating != "high" or self.enhanced_due_diligence_status == "completed"
-            if (
-                self.sanctions_screening_status == "passed"
-                and self.beneficial_ownership_status == "verified"
-                and self.tax_residency_status == "verified"
-                and edd_ok
-            ):
-                return "completed"
-            touched = (
-                self.sanctions_screening_status != "not_checked"
-                or self.beneficial_ownership_status != "not_verified"
-                or self.tax_residency_status != "pending"
-            )
-            return "in_progress" if touched else "pending"
-
-        if step == "banking":
-            if self.banking_verification_status == "rejected":
-                return "requires_review"
-            required_ok = bool(self.bank_name and self.bank_account_number and self.bank_code)
-            if self.jurisdiction == "Overseas":
-                required_ok = required_ok and bool(self.bank_country)
-            if required_ok and self.banking_verification_status == "verified" and self._has_doc("bank_proof"):
-                return "completed"
-            return "in_progress" if (self.bank_name or self.bank_account_number) else "pending"
-
-        if step == "commercials":
-            required_ok = bool(self.currency and self.payment_terms and self.billing_contact and self.billing_email)
-            if self.payment_terms == "custom" and not self.custom_payment_terms:
-                required_ok = False
-            if self.withholding_tax_applicable and self.withholding_tax_percentage is None:
-                required_ok = False
-            if required_ok:
-                return "completed"
-            return "in_progress" if (self.billing_contact or self.billing_email) else "pending"
-
-        if step == "approved":
-            return "completed" if self.is_project_ready else "pending"
-
-        return "pending"
+        return self.onboarding_state().step_statuses.get(step, "pending")
 
     def get_approval_blockers(self):
-        """Human-readable list of everything blocking Final Approval right now.
-        Empty list means the client is ready to be approved (used by
-        ClientApprovalReadinessSerializer / ClientSubmitForApprovalView)."""
-        blockers = []
-
-        if self.get_step_status("intake") != "completed":
-            blockers.append("Intake information (legal name / client type / country / billing email)")
-        if self.get_step_status("identity_kyc") != "completed":
-            blockers.append("Identity & KYC verification")
-
-        if self.sanctions_screening_status == "failed":
-            blockers.append("Sanctions Screening (failed - cannot approve)")
-        elif self.sanctions_screening_status != "passed":
-            blockers.append("Sanctions Screening")
-        if self.beneficial_ownership_status != "verified":
-            blockers.append("Beneficial Ownership Verification")
-        if self.tax_residency_status != "verified":
-            blockers.append("Tax Residency Verification")
-        if self.risk_rating == "high" and self.enhanced_due_diligence_status != "completed":
-            blockers.append("Enhanced Due Diligence")
-        if self.jurisdiction == "Overseas" and not self._has_doc("sanctions_screening"):
-            # Kept in sync with save()'s auto-enhanced-review rule below - without this,
-            # approval could set kyc_status='verified' only for save() to immediately
-            # downgrade it back to 'enhanced_review' on the very same write.
-            blockers.append("Sanctions Screening Document")
-
-        if self.banking_verification_status != "verified":
-            blockers.append("Bank Verification")
-        if not self._has_doc("bank_proof"):
-            blockers.append("Bank Letter")
-
-        if not self.billing_contact:
-            blockers.append("Billing Contact")
-        if not self.billing_email:
-            blockers.append("Billing Email")
-        if self.payment_terms == "custom" and not self.custom_payment_terms:
-            blockers.append("Custom Payment Terms")
-        if self.withholding_tax_applicable and self.withholding_tax_percentage is None:
-            blockers.append("Withholding Tax Percentage")
-
-        if self.pk and self.change_requests.filter(status="open").exists():
-            blockers.append("Open change requests must be resolved")
-
-        return blockers
+        """Human-readable list of everything blocking Final Approval right now. Empty list means
+        the client is ready to be approved (POST /client/<id>/approve/ re-checks it)."""
+        return self.onboarding_state().approval_blockers
 
     def clean(self):
         if self.onboarding_step == "approved" and self.kyc_status != "verified":
@@ -388,22 +303,16 @@ class Company(models.Model):
         # Automatic enhanced-review rule: high risk (unless Enhanced Due Diligence has already
         # been completed for it - spec section 9's "High Risk -> EDD Required" rule implies EDD
         # satisfies the risk, it doesn't block forever), failed sanctions screening, or an
-        # overseas client with no sanctions-screening document on file, must go through enhanced
-        # review rather than resting in whatever status was last set manually. Kept in sync with
-        # get_approval_blockers(), which uses these same conditions to decide if approval is even
-        # reachable - otherwise approval could set kyc_status='verified' only for this method to
-        # immediately downgrade it back on the very same write.
-        needs_enhanced_review = (
-            (self.risk_rating == "high" and self.enhanced_due_diligence_status != "completed")
-            or self.sanctions_screening_status == "failed"
-            or (
-                self.jurisdiction == "Overseas"
-                and self.pk
-                and not self.documents.filter(category="sanctions_screening").exists()
-            )
-        )
-        if needs_enhanced_review and self.kyc_status == "verified":
-            self.kyc_status = "enhanced_review"
+        # overseas client with no current sanctions-screening document on file, must go through
+        # enhanced review rather than resting in whatever status was last set manually. Kept in
+        # sync with the approval blockers (client/onboarding.py), which use these same conditions
+        # to decide if approval is even reachable - otherwise approval could set
+        # kyc_status='verified' only for this method to downgrade it back on the very same write.
+        if self.kyc_status == "verified":
+            from .onboarding import needs_enhanced_review
+
+            if needs_enhanced_review(self):
+                self.kyc_status = "enhanced_review"
 
         super().save(*args, **kwargs)
 
@@ -460,6 +369,7 @@ class ClientDocument(models.Model):
         ("w8ben_e", "W-8BEN-E"),
         ("beneficial_ownership_proof", "Beneficial Ownership Document"),
         ("tax_residency_certificate", "Tax Residency Document"),
+        ("government_id", "Government Photo ID"),
         ("other", "Other Document"),
     ]
 
@@ -486,7 +396,11 @@ class ClientDocument(models.Model):
 
     category = models.CharField(max_length=40, choices=CATEGORY_CHOICES)
     is_required = models.BooleanField(default=False)
+    # Stored status never becomes "expired" by itself - effective_document_status() derives it
+    # from expiry_date on read (core/document_security.py).
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='uploaded')
+    expiry_date = models.DateField(null=True, blank=True)
+    document_number = models.CharField(max_length=100, blank=True)
 
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -531,10 +445,18 @@ class ClientAuditLog(models.Model):
         ("banking_verified", "Banking Verified"),
         ("banking_rejected", "Banking Rejected"),
         ("commercials_completed", "Commercials Completed"),
+        # Legacy: logged by the old approve endpoint before it validated anything.
         ("kyc_submitted", "KYC Submitted for Approval"),
         ("change_requested", "Changes Requested"),
         ("change_resolved", "Change Request Resolved"),
         ("project_ready_marked", "Marked Project Ready"),
+        ("submitted_for_approval", "Submitted for Approval"),
+        ("document_verified", "Document Verified"),
+        ("document_rejected", "Document Rejected"),
+        ("document_under_review", "Document Marked Under Review"),
+        ("document_deleted", "Document Deleted"),
+        ("document_replaced", "Document Replaced"),
+        ("bank_account_viewed", "Bank Account Number Viewed"),
     ]
 
     company = models.ForeignKey(
@@ -574,6 +496,7 @@ class ClientChangeRequest(models.Model):
     SECTION_CHOICES = [
         ("intake", "Intake"),
         ("identity_kyc", "Identity & KYC"),
+        ("address", "Address"),
         ("compliance", "Compliance"),
         ("banking", "Banking"),
         ("commercials", "Commercials"),

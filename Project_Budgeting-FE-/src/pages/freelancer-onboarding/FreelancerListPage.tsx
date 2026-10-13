@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, UserPlus, Users, Mail, Archive, Clock, CheckCircle2 } from 'lucide-react';
+import { Search, UserPlus, Users, Mail, Archive, Clock, CheckCircle2, ClipboardCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Layout } from '../../components/Layout';
 import { StatCard } from '../../components/StatCard';
@@ -12,17 +12,21 @@ import { FreelancerOnboardDrawer } from './FreelancerOnboardDrawer';
 import { FreelancerOnboardingPanel } from './components/FreelancerOnboardingPanel';
 import { FreelancerCard } from './components/FreelancerCard';
 import type { FreelancerStepKey } from './components/freelancerDisplay';
+import { parseApiErrors } from '../../utils/parseApiErrors';
 
-// Status groups behind the tabs and summary cards (statuses themselves are unchanged).
-const ONBOARDING_STATUSES = ['draft', 'invited', 'onboarding'];
-const ACTIVE_STATUSES = ['completed', 'active', 'available', 'assigned'];
+// Status groups behind the tabs and summary cards. 'completed' means submitted and waiting
+// for a reviewer ("Pending review"); 'changes_requested' is back with the freelancer.
+const ONBOARDING_STATUSES = ['draft', 'invited', 'onboarding', 'changes_requested'];
+const REVIEW_STATUSES = ['completed'];
+const ACTIVE_STATUSES = ['active', 'available', 'assigned'];
 // Archived is a visibility flag, not a status - fetched separately.
 const ARCHIVED_TAB = '__archived__';
-type TabKey = '' | 'onboarding' | 'active' | typeof ARCHIVED_TAB;
+type TabKey = '' | 'onboarding' | 'review' | 'active' | typeof ARCHIVED_TAB;
 
 const STATUS_TABS: TabItem[] = [
     { key: '', label: 'All' },
     { key: 'onboarding', label: 'Onboarding' },
+    { key: 'review', label: 'Pending review' },
     { key: 'active', label: 'Active' },
     { key: ARCHIVED_TAB, label: 'Archived' },
 ];
@@ -55,7 +59,8 @@ export function FreelancerListContent() {
         api.getChoices().then(setChoices).catch(() => { });
     }, []);
 
-    const statusLabel = (status: string) => choices?.statuses.find((s) => s.value === status)?.label || status;
+    const statusLabel = (status: string) =>
+        choices?.statuses.find((s) => s.value === status)?.label || freelancers.find((f) => f.status === status)?.status_display || status;
     const availabilityLabel = (value: string) => choices?.availabilities.find((a) => a.value === value)?.label || value;
 
     const fetchFreelancers = async () => {
@@ -69,7 +74,7 @@ export function FreelancerListContent() {
             if (showArchived) setArchivedCount(data.length);
             else if (archived) setArchivedCount(archived.length);
         } catch (err) {
-            console.error(err);
+            console.error('Freelancer list failed', (err as { response?: { status?: number } })?.response?.status);
             toast.error('Failed to load freelancers');
         } finally {
             setLoading(false);
@@ -84,11 +89,12 @@ export function FreelancerListContent() {
 
     const counts = useMemo(() => {
         const inGroup = (group: string[]) => freelancers.filter((f) => group.includes(f.status)).length;
-        return { total: freelancers.length, onboarding: inGroup(ONBOARDING_STATUSES), active: inGroup(ACTIVE_STATUSES) };
+        return { total: freelancers.length, onboarding: inGroup(ONBOARDING_STATUSES), review: inGroup(REVIEW_STATUSES), active: inGroup(ACTIVE_STATUSES) };
     }, [freelancers]);
 
     const visible = useMemo(() => {
         if (tab === 'onboarding') return freelancers.filter((f) => ONBOARDING_STATUSES.includes(f.status));
+        if (tab === 'review') return freelancers.filter((f) => REVIEW_STATUSES.includes(f.status));
         if (tab === 'active') return freelancers.filter((f) => ACTIVE_STATUSES.includes(f.status));
         return freelancers;
     }, [freelancers, tab]);
@@ -112,10 +118,11 @@ export function FreelancerListContent() {
     const handleResendInvite = async (freelancer: Freelancer) => {
         setResendingId(freelancer.id);
         try {
-            await api.resendInvite(freelancer.id);
-            toast.success(`Invitation resent to ${freelancer.email}`);
-        } catch {
-            toast.error('Failed to resend invitation');
+            const res = await api.resendInvite(freelancer.id);
+            upsert(res.freelancer);
+            toast.success(res.detail || `Onboarding link sent to ${freelancer.email}`);
+        } catch (err) {
+            toast.error(parseApiErrors(err).general || 'Failed to send the onboarding link');
         } finally {
             setResendingId(null);
         }
@@ -173,9 +180,10 @@ export function FreelancerListContent() {
             </div>
 
             {/* Summary cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
                 <StatCard label="Total Freelancers" value={showArchived ? '-' : statValue(counts.total)} icon={<Users className="w-4 h-4" />} loading={loading} onClick={() => setTab('')} />
                 <StatCard label="Onboarding" value={showArchived ? '-' : statValue(counts.onboarding)} icon={<Clock className="w-4 h-4" />} loading={loading} onClick={() => setTab('onboarding')} />
+                <StatCard label="Pending review" value={showArchived ? '-' : statValue(counts.review)} icon={<ClipboardCheck className="w-4 h-4" />} loading={loading} onClick={() => setTab('review')} />
                 <StatCard label="Active" value={showArchived ? '-' : statValue(counts.active)} icon={<CheckCircle2 className="w-4 h-4" />} loading={loading} onClick={() => setTab('active')} />
                 <StatCard label="Archived" value={statValue(archivedCount)} icon={<Archive className="w-4 h-4" />} loading={archivedCount === null} onClick={() => setTab(ARCHIVED_TAB)} />
             </div>

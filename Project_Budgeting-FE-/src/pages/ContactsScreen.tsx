@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import type { Client, POC, OnboardingStep } from "../pages/ClientListPage";
-import { ClientListPage, kycStatusLabel } from "../pages/ClientListPage";
+import type { Client, POC, OnboardingStep, WizardStepKey } from "./client-onboarding/clientTypes";
+import { wizardStepForOnboardingStep } from "./client-onboarding/clientTypes";
+import { ClientListPage } from "../pages/ClientListPage";
 import { ClientDetailsPage } from "../pages/ClientDetailsPage";
 import { Layout } from "../components/Layout";
-import { Drawer } from "../components/Drawer";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { ClientKycDrawerContent } from "../components/ClientKycDrawerContent";
+import { ClientKycDrawer } from "../components/ClientKycDrawerContent";
 import axiosInstance from "../utils/axiosInstance";
 import { parseApiErrors } from "../utils/parseApiErrors";
 import { useAppSelector } from "../hooks/useAppSelector";
@@ -46,66 +46,55 @@ export default function ContactsScreen() {
   // Create/edit drawer state
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | undefined>(undefined);
-  // Drawer section to scroll to on open (set when opened from an onboarding step card).
-  const [editingSection, setEditingSection] = useState<OnboardingStep | undefined>(undefined);
+  // Wizard step to open on (set when opened from an onboarding step card).
+  const [editingStep, setEditingStep] = useState<WizardStepKey | undefined>(undefined);
 
   // Delete confirmation state
   const [deletingClient, setDeletingClient] = useState<Client | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const fetchClients = async (search?: string) => {
+  const loadClients = (search?: string) => {
+    const params: Record<string, string> = {};
+    if (search) params.search = search;
+    return axiosInstance
+      .get<Client[]>("/client/", { params })
+      .then((response) => {
+        setClients(response.data);
+        setClientsError(null);
+      })
+      .catch((error) => {
+        console.error("Failed to fetch clients", error?.response?.status);
+        setClientsError("Failed to load clients.");
+      })
+      .finally(() => setIsLoadingClients(false));
+  };
+
+  const fetchClients = (search?: string) => {
     setIsLoadingClients(true);
     setClientsError(null);
-    try {
-      const params: Record<string, string> = {};
-      if (search) params.search = search;
-      const response = await axiosInstance.get("/client/", { params });
-      setClients(response.data);
-    } catch (error) {
-      console.error("Failed to fetch clients:", error);
-      setClientsError("Failed to load clients.");
-    } finally {
-      setIsLoadingClients(false);
-    }
+    return loadClients(search);
   };
 
-  const fetchPocs = async () => {
-    try {
-      const response = await axiosInstance.get("/client/pocs/");
-      const clientsData = response.data;
-
-      // Extract and flatten all POCs from all clients
-      type RawPoc = { id: number; salutation: string; first_name: string; middle_name?: string; last_name: string; poc_name: string; designation: string; poc_mobile: string; poc_email: string };
-      const allPocs: POC[] = [];
-      clientsData.forEach((client: { id: number; company_name: string; pocs?: RawPoc[] }) => {
-        if (client.pocs && Array.isArray(client.pocs)) {
-          client.pocs.forEach((poc: RawPoc) => {
-            allPocs.push({
-              id: poc.id,
-              company: client.id,
-              company_name: client.company_name,
-              salutation: poc.salutation,
-              first_name: poc.first_name,
-              middle_name: poc.middle_name,
-              last_name: poc.last_name,
-              poc_name: poc.poc_name,
-              designation: poc.designation,
-              poc_mobile: poc.poc_mobile,
-              poc_email: poc.poc_email
-            });
+  const fetchPocs = () =>
+    axiosInstance
+      .get("/client/pocs/")
+      .then((response) => {
+        // Extract and flatten all POCs from all clients
+        type RawPoc = { id: number; salutation: string; first_name: string; middle_name?: string; last_name: string; poc_name: string; designation: string; poc_mobile: string; poc_email: string };
+        const allPocs: POC[] = [];
+        response.data.forEach((client: { id: number; company_name: string; pocs?: RawPoc[] }) => {
+          (client.pocs ?? []).forEach((poc: RawPoc) => {
+            allPocs.push({ ...poc, company: client.id, company_name: client.company_name });
           });
-        }
-      });
-      setPocs(allPocs);
-    } catch (error) {
-      console.error("Failed to fetch POCs:", error);
-    }
-  };
+        });
+        setPocs(allPocs);
+      })
+      .catch((error) => console.error("Failed to fetch POCs", error?.response?.status));
 
   useEffect(() => {
-    fetchClients();
+    // Initial load (isLoadingClients starts true); setState happens in the promise callbacks.
+    loadClients();
     fetchPocs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Reset view when switching tabs — skipped on the very first render so a
@@ -133,50 +122,27 @@ export default function ContactsScreen() {
 
   const openCreateDrawer = () => {
     setEditingClient(undefined);
-    setEditingSection(undefined);
+    setEditingStep(undefined);
     setIsDrawerOpen(true);
   };
 
   const openEditDrawer = (client: Client, section?: OnboardingStep) => {
     setEditingClient(client);
-    setEditingSection(section);
+    setEditingStep(section ? wizardStepForOnboardingStep(section) : undefined);
     setIsDrawerOpen(true);
   };
 
   const closeDrawer = () => setIsDrawerOpen(false);
 
-  const handleClientSaved = (saved: Client, meta: { kycAutoChanged: boolean; keepOpen?: boolean }) => {
-    const wasCreate = !editingClient;
-    setClients((prev) => {
-      const exists = prev.some((c) => c.id === saved.id);
-      return exists ? prev.map((c) => (c.id === saved.id ? saved : c)) : [...prev, saved];
-    });
-    toast.success(wasCreate ? 'Client onboarded successfully' : 'Client updated successfully');
-    if (meta.kycAutoChanged) {
-      toast(
-        `KYC status was automatically set to ${kycStatusLabel(saved.kyc_status)} because this is a high-risk / undocumented overseas client.`,
-        { duration: 7000, icon: '⚠️' }
-      );
-    }
-    if (meta.keepOpen) {
-      // Just-created client (or a save with failed document uploads): keep the drawer open,
-      // switched into edit mode for the saved record, so KYC can continue in place.
-      setEditingClient(saved);
-      if (wasCreate) toast('Continue the remaining KYC steps below.', { duration: 6000, icon: '📎' });
-    } else {
-      setIsDrawerOpen(false);
-    }
-  };
-
-  // Document upload/delete/verify inside the drawer can move server-computed step_statuses:
-  // sync the list (and the drawer's own client prop) without closing it or toasting a save.
-  const handleClientRefreshed = (fresh: Client) => {
-    setClients((prev) => prev.map((c) => (c.id === fresh.id ? fresh : c)));
-    setEditingClient((prev) => (prev?.id === fresh.id ? fresh : prev));
+  // Every save inside the onboarding drawer (create, draft, submit, approval, review) and the
+  // details page's actions: upsert the client into the list - the drawer shows its own toasts.
+  const handleClientChanged = (saved: Client) => {
+    setClients((prev) => (prev.some((c) => c.id === saved.id) ? prev.map((c) => (c.id === saved.id ? saved : c)) : [...prev, saved]));
   };
 
   const handlePOCCreated = (newPOC: POC) => {
-    setPocs(prev => [...prev, newPOC]);
+    // Upsert: the POC modal is also used to edit an existing contact.
+    setPocs((prev) => (prev.some((p) => p.id === newPOC.id) ? prev.map((p) => (p.id === newPOC.id ? { ...p, ...newPOC } : p)) : [...prev, newPOC]));
   };
 
   const confirmDeleteClient = async () => {
@@ -276,7 +242,7 @@ export default function ContactsScreen() {
                     onAddPOC={handlePOCCreated}
                     onEdit={() => openEditDrawer(selectedClient)}
                     onBack={() => setCurrentView('list')}
-                    onClientUpdated={(updated) => handleClientSaved(updated, { kycAutoChanged: false })}
+                    onClientUpdated={handleClientChanged}
                   />
                 ) : (
                   <p className="p-6 text-sm text-gray-500 dark:text-gray-400">Loading client…</p>
@@ -293,21 +259,14 @@ export default function ContactsScreen() {
         </div>
       </div>
 
-      <Drawer
+      <ClientKycDrawer
         isOpen={isDrawerOpen}
+        client={editingClient}
+        userRole={userRole}
+        initialStep={editingStep}
         onClose={closeDrawer}
-        title={editingClient ? `Edit ${editingClient.company_name}` : 'Onboard Client'}
-        size="xl"
-      >
-        <ClientKycDrawerContent
-          client={editingClient}
-          userRole={userRole}
-          onSaved={handleClientSaved}
-          onCancel={closeDrawer}
-          onClientRefreshed={handleClientRefreshed}
-          initialSection={editingSection}
-        />
-      </Drawer>
+        onClientChanged={handleClientChanged}
+      />
 
       <ConfirmDialog
         isOpen={!!deletingClient}

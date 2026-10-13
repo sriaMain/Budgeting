@@ -3,22 +3,12 @@ import { OnboardingStepCards, markCurrentStep, type StepCardItem } from '../../.
 import { StatusBadge } from '../../../components/StatusBadge';
 import { StarRating } from './StarRating';
 import { vendorOnboarding, vendorStatusLabel } from './vendorDisplay';
+import { EDITABLE_VENDOR_STATUSES, VENDOR_ONBOARDING_STEPS } from './vendorSteps';
 import type { VendorOnboardingDetail, VendorOnboardingStepKey } from '../../../types/vendorOnboarding.types';
 
-/** The 5 vendor onboarding steps, in the same order as the backend's VENDOR_ONBOARDING_STEPS. */
-export const VENDOR_ONBOARDING_STEPS: { key: VendorOnboardingStepKey; title: string; description: string; wizardStep?: number }[] = [
-  { key: 'intake', title: 'Intake', description: 'Legal entity, services and contacts', wizardStep: 1 },
-  { key: 'tax_kyc', title: 'Tax & KYC', description: 'Tax ID, ownership, compliance and documents', wizardStep: 2 },
-  { key: 'banking', title: 'Banking', description: 'Account and routing verification', wizardStep: 3 },
-  { key: 'contract', title: 'Contract', description: 'Payment terms, currency and procurement', wizardStep: 4 },
-  { key: 'approved', title: 'Approved', description: 'Ready for projects, POs and invoices' },
-];
+const isVendorEditable = (vendor: VendorOnboardingDetail) => EDITABLE_VENDOR_STATUSES.includes(vendor.status);
 
-/** Statuses in which the backend still accepts admin edits (views._is_editable). */
-export const isVendorEditable = (vendor: VendorOnboardingDetail) =>
-  vendor.status === 'invited' || vendor.status === 'draft' || vendor.status === 'action_required';
-
-export const resolveVendorSteps = (vendor: VendorOnboardingDetail): StepCardItem[] =>
+const resolveVendorSteps = (vendor: VendorOnboardingDetail): StepCardItem[] =>
   markCurrentStep(
     VENDOR_ONBOARDING_STEPS.map((s) => ({
       key: s.key,
@@ -57,12 +47,12 @@ export const VendorOnboardingPanel: React.FC<VendorOnboardingPanelProps> = ({ ve
                 {' '}&middot; {current ? `Pending at ${current.title}` : 'All steps complete'} &middot; {vendorOnboarding(vendor).percent}% complete
               </>
             ) : (
-              <>Intake &rarr; tax and KYC &rarr; banking &rarr; contract &rarr; approved</>
+              <>Basic information &rarr; identity &amp; KYC &rarr; address &rarr; banking &rarr; commercial &rarr; documents &rarr; approved</>
             )}
           </p>
         </div>
         <p className="text-sm text-gray-500 sm:whitespace-nowrap dark:text-gray-400">
-          {VENDOR_ONBOARDING_STEPS.length} steps &middot; intake to approved
+          {VENDOR_ONBOARDING_STEPS.length} steps &middot; basic information to approved
         </p>
       </div>
 

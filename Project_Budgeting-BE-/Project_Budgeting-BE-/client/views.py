@@ -1,77 +1,157 @@
 import logging
-import os
 import time
 
 import cloudinary.utils
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
+import phonenumbers
+import pycountry
+from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from django.db import DatabaseError
-from django.core.exceptions import ValidationError
+from django.utils import timezone
 from django.utils.timezone import now
+from rest_framework import status
 from rest_framework.exceptions import ValidationError as DRFValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
+
+from core.document_security import check_document_upload, effective_document_status, parse_expiry_date
+from finances.models import Invoice, VendorBill
+from product_group.models import Quote
+from Project.models import Project
 from roles.permission import HasPermissionCode
-from .models import ClientAuditLog, ClientChangeRequest, ClientDocument, Company, CompanyTag
+
+from . import onboarding
+from .models import POC, ClientAuditLog, ClientChangeRequest, ClientDocument, Company, CompanyTag
+from .permissions import has_perm, is_maker_locked, user_permissions
 from .serializers import (
-    ClientApprovalReadinessSerializer,
+    BANK_IDENTITY_FIELDS,
+    ClientApprovalSerializer,
     ClientAuditLogSerializer,
     ClientChangeRequestSerializer,
     ClientDocumentSerializer,
     CompanySerializer,
     CompanyTagSerializer,
+    PointOfContactSerializer,
+    _comparable,
 )
-from rest_framework.permissions import AllowAny as All
-from .models import POC
-from .serializers import PointOfContactSerializer
 
-from product_group.models import Quote
-from product_group.serializers import QuoteSerializer
-from Project.models import Project
-from Project.serializers import ProjectListSerializer
-from finances.models import Invoice, VendorBill
-from finances.serializers import InvoiceListSerializer, VendorBillSerializer
-import pycountry
-import phonenumbers
+logger = logging.getLogger(__name__)
 
-# Field groups used by CompanyDetailAPIView.patch() to decide which extra
-# permission code a PATCH touching that section requires.
+# Field groups whose CHANGE needs an extra permission code on top of client.company.edit
+# (checked on create, PUT and PATCH alike - only for values that actually change).
 COMPLIANCE_FIELDS = {
     "sanctions_screening_status", "beneficial_ownership_status", "tax_residency_status",
-    "enhanced_due_diligence_status", "compliance_remarks", "compliance_reviewed_by",
-    "compliance_reviewed_at",
+    "enhanced_due_diligence_status", "compliance_remarks", "risk_rating",
 }
 BANKING_FIELDS = {
-    "bank_name", "bank_account_number", "bank_code", "bank_branch", "bank_country",
-    "bank_address", "banking_verification_status",
+    "bank_account_holder_name", "bank_name", "bank_account_number", "bank_ifsc_code", "bank_routing_code",
+    "bank_swift_code", "bank_iban", "bank_account_type", "bank_branch", "bank_country", "bank_address",
 }
 COMMERCIAL_FIELDS = {
     "payment_terms", "custom_payment_terms", "withholding_tax_applicable",
     "withholding_tax_percentage", "invoice_requirements", "po_required",
     "billing_frequency", "billing_contact", "billing_email", "commercial_remarks",
 }
+SECTION_PERMISSIONS = (
+    (COMPLIANCE_FIELDS, "client.compliance.edit", "the compliance review"),
+    (BANKING_FIELDS, "client.banking.edit", "the bank details"),
+    (COMMERCIAL_FIELDS, "client.commercial.edit", "the commercial terms"),
+    # Marking the bank account verified / rejected is a reviewer's decision.
+    ({"banking_verification_status"}, "client.document.verify", "the bank verification status"),
+    # Only enhanced_review / review_due get this far (CompanySerializer rejects the rest).
+    ({"kyc_status"}, "client.company.approve", "the KYC status"),
+)
+
+LOCKED_MESSAGE = (
+    "This client has been submitted for approval and is locked for editing. "
+    "A reviewer must approve it or request changes first."
+)
+CONFLICT_MESSAGE = (
+    "This client conflicts with an existing record - the legal name, email or phone number is already registered."
+)
+
+
+def _context(request):
+    return {"request": request, "user_permissions": user_permissions(request.user)}
 
 
 def _log_client_audit(company, action, request, field_name="", old_value="", new_value=""):
-    """Client audit trail (Clients & KYC redesign) - scoped to Client alone,
-    mirrors _log_freelancer_audit's shape. Never pass a raw sensitive value in
-    old_value/new_value; callers must mask first."""
+    """Client audit trail. Never pass a raw sensitive value (bank / tax / identity data) in
+    old_value/new_value - callers log field names only for those."""
     user = getattr(request, "user", None)
     ClientAuditLog.objects.create(
         company=company,
         company_name=company.company_name,
         action=action,
-        field_name=field_name,
-        old_value=str(old_value) if old_value is not None else "",
-        new_value=str(new_value) if new_value is not None else "",
+        field_name=str(field_name or "")[:100],
+        old_value=("" if old_value is None else str(old_value))[:255],
+        new_value=("" if new_value is None else str(new_value))[:255],
         performed_by=user if user and user.is_authenticated else None,
     )
 
+
+def _changed_fields(instance, validated_data):
+    """Names of the validated fields whose value differs from the stored one (or, on create, from
+    the model default). A full-payload PUT therefore only touches - and needs permission for -
+    what the user actually changed."""
+    changed = set()
+    for name, value in validated_data.items():
+        if name == "tags":
+            new = {tag.pk for tag in value}
+            old = set(instance.tags.values_list("pk", flat=True)) if instance is not None else set()
+            if new != old:
+                changed.add(name)
+            continue
+        current = getattr(instance, name) if instance is not None else Company._meta.get_field(name).get_default()
+        if _comparable(current) != _comparable(value):
+            changed.add(name)
+    return changed
+
+
+def _section_denial(user, changed):
+    for fields, code, label in SECTION_PERMISSIONS:
+        if changed & fields and not has_perm(user, code):
+            return Response(
+                {"error": f"You do not have permission to change {label} of this client."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+    return None
+
+
+def _field_list(fields):
+    return ", ".join(sorted(fields))[:100]
+
+
+def _audit_update(company, request, changed, previous, commercials_before):
+    general = set(changed)
+    if company.kyc_status != previous["kyc_status"]:
+        _log_client_audit(company, "kyc_status_changed", request, field_name="kyc_status",
+                          old_value=previous["kyc_status"], new_value=company.kyc_status)
+    general.discard("kyc_status")
+    if "risk_rating" in changed:
+        _log_client_audit(company, "risk_rating_changed", request, field_name="risk_rating",
+                          old_value=previous["risk_rating"], new_value=company.risk_rating)
+        general.discard("risk_rating")
+    compliance = changed & (COMPLIANCE_FIELDS - {"risk_rating"})
+    if compliance:
+        _log_client_audit(company, "compliance_updated", request, field_name=_field_list(compliance))
+        general -= compliance
+    if company.banking_verification_status != previous["banking_verification_status"]:
+        action = {"verified": "banking_verified", "rejected": "banking_rejected"}.get(company.banking_verification_status, "updated")
+        _log_client_audit(company, action, request, field_name="banking_verification_status",
+                          old_value=previous["banking_verification_status"], new_value=company.banking_verification_status)
+    general.discard("banking_verification_status")
+    if commercials_before is not None and commercials_before != "completed" and company.get_step_status("commercials") == "completed":
+        _log_client_audit(company, "commercials_completed", request)
+    if general:
+        # Field names only - bank / tax values are never written to the audit trail.
+        _log_client_audit(company, "updated", request, field_name=_field_list(general))
+
+
 class CountryCodeAPIView(APIView):
-    permission_classes = [All]
+    permission_classes = [AllowAny]
 
     def get(self, request):
 
@@ -101,6 +181,17 @@ class CountryCodeAPIView(APIView):
             status=status.HTTP_200_OK
         )
 
+
+class ClientPermissionsView(APIView):
+    """GET -> the requesting user's Clients & KYC permissions ({flag: bool}). Lets the UI decide
+    what to offer before a client exists; the endpoints enforce the same codes."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        return Response({"permissions": user_permissions(request.user)})
+
+
 class CompanyListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated, HasPermissionCode]
     authentication_classes = [JWTAuthentication]
@@ -108,7 +199,7 @@ class CompanyListCreateAPIView(APIView):
 
     def get(self, request):
         try:
-            companies = Company.objects.all().order_by("company_name")
+            companies = Company.objects.all().prefetch_related("tags", "documents", "change_requests").order_by("company_name")
 
             search = request.query_params.get("search")
             if search:
@@ -130,48 +221,39 @@ class CompanyListCreateAPIView(APIView):
             if is_active is not None:
                 companies = companies.filter(is_active=is_active.lower() in ("true", "1"))
 
-            serializer = CompanySerializer(companies, many=True)
+            serializer = CompanySerializer(companies, many=True, context=_context(request))
             return Response(serializer.data, status=status.HTTP_200_OK)
         except DatabaseError:
+            logger.exception("Client list query failed")
             return Response(
                 {"error": "Database error while fetching companies."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     def post(self, request):
-        serializer = CompanySerializer(data=request.data)
+        """Creates a draft client. Only the Basic Information minimum is required (legal name,
+        email, phone, country); everything else can follow step by step."""
+        serializer = CompanySerializer(data=request.data, context=_context(request))
+        serializer.is_valid(raise_exception=True)
+        changed = _changed_fields(None, serializer.validated_data)
+        denied = _section_denial(request.user, changed)
+        if denied:
+            return denied
+        extra = {}
+        if changed & COMPLIANCE_FIELDS:
+            extra.update(compliance_reviewed_by=request.user, compliance_reviewed_at=now())
         try:
-            serializer.is_valid(raise_exception=True)
-            company = serializer.save()
-            _log_client_audit(company, "created", request)
-            read_serializer = CompanySerializer(company)
-            return Response(read_serializer.data, status=status.HTTP_201_CREATED)
+            with transaction.atomic():
+                company = serializer.save(**extra)
+        except IntegrityError:
+            return Response({"error": CONFLICT_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
+        _log_client_audit(company, "created", request)
+        return Response(CompanySerializer(company, context=_context(request)).data, status=status.HTTP_201_CREATED)
 
-        except DRFValidationError as e:
-            formatted_errors = {}
-            errors = e.detail
-            for field, messages in errors.items():
-                if isinstance(messages, list) and messages:
-                    message = messages[0]
-                    field_name = field.replace('_', ' ')
-                    if "This field is required." in message:
-                        formatted_errors[field] = f"{field_name.lower()} is required"
-                    else:
-                        formatted_errors[field] = message
-            return Response({"errors": formatted_errors}, status=status.HTTP_400_BAD_REQUEST)
 
-        except ValidationError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response(
-                {"error": f"Unexpected error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-from rest_framework.permissions import AllowAny 
 class ClientDropdownAPIView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
 
     def get(self, request):
         companies = Company.objects.all().order_by("company_name")
@@ -182,6 +264,7 @@ class ClientDropdownAPIView(APIView):
             companies = [c for c in companies if c.is_project_ready]
 
         return Response([{"id": c.id, "company_name": c.company_name} for c in companies])
+
 
 class CompanyDetailAPIView(APIView):
     permission_classes = [IsAuthenticated, HasPermissionCode]
@@ -197,126 +280,73 @@ class CompanyDetailAPIView(APIView):
         return get_object_or_404(Company, pk=pk)
 
     def get(self, request, pk):
-        try:
-            company = self.get_object(pk)
-            serializer = CompanySerializer(company)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Exception:
-            return Response(
-                {"error": "Company not found."}, status=status.HTTP_404_NOT_FOUND
-            )
+        company = self.get_object(pk)
+        return Response(CompanySerializer(company, context=_context(request)).data, status=status.HTTP_200_OK)
 
     def put(self, request, pk):
-        try:
-            company = self.get_object(pk)
-            serializer = CompanySerializer(company, data=request.data)
-
-            if serializer.is_valid():
-                company = serializer.save()
-                return Response(CompanySerializer(company).data, status=status.HTTP_200_OK)
-
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        except ValidationError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # Same path as PATCH: older screens send the whole form, so only fields whose values
+        # actually change are saved, permission-checked and audited.
+        return self._update(request, pk)
 
     def patch(self, request, pk):
+        return self._update(request, pk)
+
+    def _update(self, request, pk):
+        company = self.get_object(pk)
+        if is_maker_locked(company, request.user):
+            return Response({"error": LOCKED_MESSAGE}, status=status.HTTP_409_CONFLICT)
+
+        serializer = CompanySerializer(company, data=request.data, partial=True, context=_context(request))
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        changed = _changed_fields(company, validated)
+        denied = _section_denial(request.user, changed)
+        if denied:
+            return denied
+        for name in list(validated):
+            if name not in changed:
+                validated.pop(name)
+        if not changed:
+            return Response(CompanySerializer(company, context=_context(request)).data, status=status.HTTP_200_OK)
+
+        previous = {
+            "kyc_status": company.kyc_status,
+            "risk_rating": company.risk_rating,
+            "banking_verification_status": company.banking_verification_status,
+        }
+        commercials_before = company.get_step_status("commercials") if changed & COMMERCIAL_FIELDS else None
+        extra = {}
+        if (
+            changed & BANK_IDENTITY_FIELDS
+            and "banking_verification_status" not in changed
+            and company.banking_verification_status != "not_verified"
+        ):
+            # The account a reviewer verified is not the one on file any more.
+            extra["banking_verification_status"] = "not_verified"
+        if changed & COMPLIANCE_FIELDS:
+            extra.update(compliance_reviewed_by=request.user, compliance_reviewed_at=now())
+
         try:
-            company = self.get_object(pk)
-            touched = set(request.data.keys())
+            with transaction.atomic():
+                updated = serializer.save(**extra)
+        except IntegrityError:
+            return Response({"error": CONFLICT_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
 
-            if request.data.get("onboarding_step") == "approved" and not request.user.has_role_permission(
-                "client.company.approve"
-            ):
-                return Response(
-                    {"error": "You do not have permission to approve this client."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
-            for fields, code in (
-                (COMPLIANCE_FIELDS, "client.compliance.edit"),
-                (BANKING_FIELDS, "client.banking.edit"),
-                (COMMERCIAL_FIELDS, "client.commercial.edit"),
-            ):
-                if touched & fields and not request.user.has_role_permission(code):
-                    return Response(
-                        {"error": "You do not have permission to edit this section."},
-                        status=status.HTTP_403_FORBIDDEN,
-                    )
-
-            previous_kyc_status = company.kyc_status
-            previous_risk_rating = company.risk_rating
-            previous_banking_status = company.banking_verification_status
-
-            serializer = CompanySerializer(company, data=request.data, partial=True)
-
-            if serializer.is_valid():
-                updated_company = serializer.save()
-                logged_specific = False
-
-                if updated_company.kyc_status != previous_kyc_status:
-                    _log_client_audit(
-                        updated_company, "kyc_status_changed", request,
-                        field_name="kyc_status",
-                        old_value=previous_kyc_status,
-                        new_value=updated_company.kyc_status,
-                    )
-                    logged_specific = True
-                if updated_company.risk_rating != previous_risk_rating:
-                    _log_client_audit(
-                        updated_company, "risk_rating_changed", request,
-                        field_name="risk_rating",
-                        old_value=previous_risk_rating,
-                        new_value=updated_company.risk_rating,
-                    )
-                    logged_specific = True
-                if touched & COMPLIANCE_FIELDS:
-                    _log_client_audit(updated_company, "compliance_updated", request)
-                    logged_specific = True
-                if updated_company.banking_verification_status != previous_banking_status:
-                    action = (
-                        "banking_verified"
-                        if updated_company.banking_verification_status == "verified"
-                        else "banking_rejected" if updated_company.banking_verification_status == "rejected"
-                        else None
-                    )
-                    if action:
-                        _log_client_audit(
-                            updated_company, action, request,
-                            field_name="banking_verification_status",
-                            old_value=previous_banking_status,
-                            new_value=updated_company.banking_verification_status,
-                        )
-                        logged_specific = True
-                if touched & COMMERCIAL_FIELDS and updated_company.get_step_status("commercials") == "completed":
-                    _log_client_audit(updated_company, "commercials_completed", request)
-                    logged_specific = True
-
-                if not logged_specific:
-                    _log_client_audit(updated_company, "updated", request)
-
-                return Response(CompanySerializer(updated_company).data, status=status.HTTP_200_OK)
-
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        updated = Company.objects.get(pk=updated.pk)
+        _audit_update(updated, request, changed, previous, commercials_before)
+        return Response(CompanySerializer(updated, context=_context(request)).data, status=status.HTTP_200_OK)
 
     def delete(self, request, pk):
-        try:
-            company = self.get_object(pk)
-            _log_client_audit(company, "deleted", request, field_name="company_name", old_value=company.company_name)
-            company.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+        company = self.get_object(pk)
+        _log_client_audit(company, "deleted", request, field_name="company_name", old_value=company.company_name)
+        company.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class CompanyTagListCreateAPIView(APIView):
-    permission_classes = [All]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
     def get(self, request):
         try:
             tags = CompanyTag.objects.all().order_by("name")
@@ -330,213 +360,91 @@ class CompanyTagListCreateAPIView(APIView):
             )
 
     def post(self, request):
-        try:
-            serializer = CompanyTagSerializer(data=request.data)
+        serializer = CompanyTagSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        tag = serializer.save()
+        return Response(CompanyTagSerializer(tag).data, status=status.HTTP_201_CREATED)
 
-            if serializer.is_valid():
-                tag = serializer.save()
-                return Response(
-                    CompanyTagSerializer(tag).data,
-                    status=status.HTTP_201_CREATED,
-                )
 
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response(
-                {"error": f"Unexpected error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-            
 class CompanyTagDetailAPIView(APIView):
-    permission_classes = [All]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
     def get_object(self, pk):
         return get_object_or_404(CompanyTag, pk=pk)
 
     def get(self, request, pk):
-        try:
-            tag = self.get_object(pk)
-            serializer = CompanyTagSerializer(tag)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Exception:
-            return Response(
-                {"error": "Tag not found."}, status=status.HTTP_404_NOT_FOUND
-            )
+        return Response(CompanyTagSerializer(self.get_object(pk)).data, status=status.HTTP_200_OK)
 
     def put(self, request, pk):
-        try:
-            tag = self.get_object(pk)
-            serializer = CompanyTagSerializer(tag, data=request.data)
-
-            if serializer.is_valid():
-                updated_tag = serializer.save()
-                return Response(CompanyTagSerializer(updated_tag).data, status=status.HTTP_200_OK)
-
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response(
-                {"error": f"Unexpected error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        serializer = CompanyTagSerializer(self.get_object(pk), data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(CompanyTagSerializer(serializer.save()).data, status=status.HTTP_200_OK)
 
     def patch(self, request, pk):
-        try:
-            tag = self.get_object(pk)
-            serializer = CompanyTagSerializer(tag, data=request.data, partial=True)
-
-            if serializer.is_valid():
-                updated_tag = serializer.save()
-                return Response(CompanyTagSerializer(updated_tag).data, status=status.HTTP_200_OK)
-
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        serializer = CompanyTagSerializer(self.get_object(pk), data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        return Response(CompanyTagSerializer(serializer.save()).data, status=status.HTTP_200_OK)
 
     def delete(self, request, pk):
-        try:
-            tag = self.get_object(pk)
-            tag.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+        self.get_object(pk).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class PointOfContactListCreateAPIView(APIView):
-    permission_classes = [All]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
     def get(self, request):
-        try:
-            pocs = POC.objects.all()
-            serializer = PointOfContactSerializer(pocs, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Exception:
-            return Response(
-                {"error": "Failed to fetch POCs."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        pocs = POC.objects.select_related("company").all()
+        return Response(PointOfContactSerializer(pocs, many=True).data, status=status.HTTP_200_OK)
 
     def post(self, request):
         serializer = PointOfContactSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         try:
-            serializer.is_valid(raise_exception=True)
-            poc = serializer.save()
+            with transaction.atomic():
+                poc = serializer.save()
+        except IntegrityError:
             return Response(
-                PointOfContactSerializer(poc).data,
-                status=status.HTTP_201_CREATED,
+                {"error": "This contact already exists for the client (same name, phone and email)."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        except DRFValidationError as e:
-            formatted_errors = {}
-            errors = e.detail
-            for field, messages in errors.items():
-                if isinstance(messages, list) and messages:
-                    message = messages[0]
-                    field_name = field.replace('_', ' ')
-                    if "This field is required." in message:
-                        formatted_errors[field] = f"{field_name.lower()} is required"
-                    else:
-                        formatted_errors[field] = message
-            return Response({"errors": formatted_errors}, status=status.HTTP_400_BAD_REQUEST)
-
-        except DatabaseError:
-            return Response(
-                {"error": "Database error while creating POC."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        except Exception as e:
-            return Response(
-                {"error": f"Unexpected error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        return Response(PointOfContactSerializer(poc).data, status=status.HTTP_201_CREATED)
 
 
 class PointOfContactDetailAPIView(APIView):
-    permission_classes = [All]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
     def get_object(self, pk):
         return get_object_or_404(POC, pk=pk)
 
     def get(self, request, pk):
+        return Response(PointOfContactSerializer(self.get_object(pk)).data, status=status.HTTP_200_OK)
+
+    def _update(self, request, pk):
+        serializer = PointOfContactSerializer(self.get_object(pk), data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
         try:
-            poc = self.get_object(pk)
-            serializer = PointOfContactSerializer(poc)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Exception:
+            with transaction.atomic():
+                poc = serializer.save()
+        except IntegrityError:
             return Response(
-                {"error": "POC not found."},
-                status=status.HTTP_404_NOT_FOUND,
+                {"error": "This contact already exists for the client (same name, phone and email)."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
+        return Response(PointOfContactSerializer(poc).data, status=status.HTTP_200_OK)
 
     def put(self, request, pk):
-        poc = self.get_object(pk)
-        serializer = PointOfContactSerializer(poc, data=request.data, partial=True)
-        try:
-            serializer.is_valid(raise_exception=True)
-            updated_poc = serializer.save()
-            return Response(
-                PointOfContactSerializer(updated_poc).data,
-                status=status.HTTP_200_OK,
-            )
-        except DRFValidationError as e:
-            formatted_errors = {}
-            errors = e.detail
-            for field, messages in errors.items():
-                if isinstance(messages, list) and messages:
-                    message = messages[0]
-                    field_name = field.replace('_', ' ')
-                    if "This field is required." in message:
-                        formatted_errors[field] = f"{field_name.lower()} is required"
-                    else:
-                        formatted_errors[field] = message
-            return Response({"errors": formatted_errors}, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response(
-                {"error": f"Unexpected error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        return self._update(request, pk)
 
     def patch(self, request, pk):
-        poc = self.get_object(pk)
-        serializer = PointOfContactSerializer(poc, data=request.data, partial=True)
-        try:
-            serializer.is_valid(raise_exception=True)
-            updated_poc = serializer.save()
-            return Response(
-                PointOfContactSerializer(updated_poc).data,
-                status=status.HTTP_200_OK,
-            )
-        except DRFValidationError as e:
-            formatted_errors = {}
-            errors = e.detail
-            for field, messages in errors.items():
-                if isinstance(messages, list) and messages:
-                    message = messages[0]
-                    field_name = field.replace('_', ' ')
-                    if "This field is required." in message:
-                        formatted_errors[field] = f"{field_name.lower()} is required"
-                    else:
-                        formatted_errors[field] = message
-            return Response({"errors": formatted_errors}, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        return self._update(request, pk)
 
     def delete(self, request, pk):
-        try:
-            poc = self.get_object(pk)
-            poc.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except Exception as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        self.get_object(pk).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class CompanyPOCListView(APIView):
@@ -546,43 +454,6 @@ class CompanyPOCListView(APIView):
     permission_classes = [IsAuthenticated, HasPermissionCode]
     authentication_classes = [JWTAuthentication]
     permission_code = "client.company.view"
-
-    # def get(self, request, company_id=None):
-    #     if company_id is not None:
-    #         company = get_object_or_404(Company, pk=company_id)
-    #         pocs = POC.objects.filter(company=company)
-    #         poc_list = []
-    #         for poc in pocs:
-    #             poc_list.append({
-    #                 "id": poc.id,
-    #                 "company_name": company.company_name,
-    #                 "poc_name": getattr(poc, 'name', getattr(poc, 'poc_name', None)),
-    #                 "designation": poc.designation,
-    #                 "poc_mobile": str(getattr(poc, 'mobile', getattr(poc, 'poc_mobile', ""))) if getattr(poc, 'mobile', getattr(poc, 'poc_mobile', None)) else None,
-    #                 "poc_email": getattr(poc, 'email', getattr(poc, 'poc_email', None)),
-    #             })
-    #         company_data = CompanySerializer(company).data
-    #         company_data["pocs"] = poc_list
-    #         return Response(company_data, status=status.HTTP_200_OK)
-    #     else:
-    #         companies = Company.objects.all()
-    #         result = []
-    #         for company in companies:
-    #             company_data = CompanySerializer(company).data
-    #             pocs = POC.objects.filter(company=company)
-    #             poc_list = []
-    #             for poc in pocs:
-    #                 poc_list.append({
-    #                     "id": poc.id,
-    #                     "company_name": company.company_name,
-    #                     "poc_name": getattr(poc, 'name', getattr(poc, 'poc_name', None)),
-    #                     "designation": poc.designation,
-    #                     "poc_mobile": str(getattr(poc, 'mobile', getattr(poc, 'poc_mobile', ""))) if getattr(poc, 'mobile', getattr(poc, 'poc_mobile', None)) else None,
-    #                     "poc_email": getattr(poc, 'email', getattr(poc, 'poc_email', None)),
-    #                 })
-    #             company_data["pocs"] = poc_list
-    #             result.append(company_data)
-    #         return Response(result, status=status.HTTP_200_OK)
 
     def get(self, request, company_id=None):
         if company_id is not None:
@@ -669,7 +540,7 @@ class CompanyPOCListView(APIView):
                     "balance_amount": bill.balance_amount,
                 })
 
-            company_data = CompanySerializer(company).data
+            company_data = CompanySerializer(company, context=_context(request)).data
 
             company_data.update({
                 "pocs": poc_list,
@@ -684,11 +555,12 @@ class CompanyPOCListView(APIView):
         # ==========================
         # ALL COMPANIES (FULL DATA)
         # ==========================
-        companies = Company.objects.all()
+        companies = Company.objects.all().prefetch_related("tags", "documents", "change_requests")
+        context = _context(request)
         result = []
 
         for company in companies:
-            company_data = CompanySerializer(company).data
+            company_data = CompanySerializer(company, context=context).data
 
             # POCs
             pocs = POC.objects.filter(company=company)
@@ -743,16 +615,11 @@ class CompanyPOCListView(APIView):
         return Response(result, status=status.HTTP_200_OK)
 
 
-logger = logging.getLogger(__name__)
+# --------------------------------------------------------------------------- #
+# KYC documents                                                                #
+# --------------------------------------------------------------------------- #
 
 MAX_CLIENT_DOCUMENTS = 8
-MAX_CLIENT_DOCUMENT_SIZE = 10 * 1024 * 1024  # 10 MB, same limit the frontend enforces
-ALLOWED_CLIENT_DOCUMENT_TYPES = {
-    ".pdf": {"application/pdf"},
-    ".jpg": {"image/jpeg", "image/pjpeg"},
-    ".jpeg": {"image/jpeg", "image/pjpeg"},
-    ".png": {"image/png"},
-}
 
 
 def _document_error(message, http_status=400, error=None):
@@ -764,13 +631,16 @@ def _document_error(message, http_status=400, error=None):
 
 
 class ClientDocumentListCreateView(APIView):
+    """GET -> the client's documents. POST (multipart) -> upload one: `file`, `category`, and
+    optionally `replaces` (id of this client's document it replaces - swapped in one request),
+    `expiry_date` (YYYY-MM-DD, not in the past) and `document_number`. Uploading never verifies."""
     permission_classes = [IsAuthenticated, HasPermissionCode]
     authentication_classes = [JWTAuthentication]
     permission_map = {"GET": "client.document.view", "POST": "client.document.upload"}
 
     def get(self, request, pk):
         company = get_object_or_404(Company, pk=pk)
-        docs = company.documents.all()
+        docs = company.documents.select_related("uploaded_by", "verified_by")
         return Response(ClientDocumentSerializer(docs, many=True, context={"request": request}).data)
 
     def post(self, request, pk):
@@ -780,38 +650,68 @@ class ClientDocumentListCreateView(APIView):
         file = request.FILES.get("file")
         company = get_object_or_404(Company, pk=pk)
 
-        if not file:
-            return _document_error("Please choose a file to upload.", error="file_required")
-        if file.size == 0:
-            return _document_error("The selected file is empty.", error="file_empty")
-        if file.size > MAX_CLIENT_DOCUMENT_SIZE:
-            return _document_error("File is too large. Maximum size is 10 MB.", error="file_too_large")
+        if is_maker_locked(company, request.user):
+            return _document_error(LOCKED_MESSAGE, http_status=status.HTTP_409_CONFLICT, error="client_locked")
 
-        ext = os.path.splitext(file.name or "")[1].lower()
-        content_type = (file.content_type or "").lower()
-        allowed_types = ALLOWED_CLIENT_DOCUMENT_TYPES.get(ext)
-        # Some OSes send an empty or generic MIME type, so only an explicit mismatch is rejected.
-        if not allowed_types or (content_type and content_type != "application/octet-stream" and content_type not in allowed_types):
-            return _document_error("Only PDF, JPG, JPEG and PNG files are allowed.", error="unsupported_file_type")
+        problem = check_document_upload(file)
+        if problem:
+            code, message = problem
+            return _document_error(message, error=code)
 
-        if company.documents.count() >= MAX_CLIENT_DOCUMENTS:
+        category = str(request.data.get("category") or "").strip()
+        if category not in dict(ClientDocument.CATEGORY_CHOICES):
+            return _document_error("Please select a valid document type.", error="invalid_document_type")
+
+        replaced = None
+        replaces = request.data.get("replaces")
+        if replaces not in (None, "", "null", "undefined"):
+            try:
+                replaced = company.documents.get(pk=int(replaces))
+            except (TypeError, ValueError, ClientDocument.DoesNotExist):
+                return _document_error("The document being replaced was not found for this client.", error="invalid_replaces")
+            if replaced.status == "verified" and not has_perm(request.user, "client.document.verify"):
+                return _document_error(
+                    "This document has been verified - only a reviewer can replace it.",
+                    http_status=status.HTTP_403_FORBIDDEN, error="document_locked",
+                )
+
+        try:
+            expiry_date = parse_expiry_date(request.data.get("expiry_date"))
+        except ValueError:
+            return _document_error("Enter the expiry date as YYYY-MM-DD.", error="invalid_expiry_date")
+        if expiry_date and expiry_date < timezone.localdate():
+            return _document_error(
+                "The expiry date is in the past - upload a document that is still valid.", error="document_expired",
+            )
+        document_number = str(request.data.get("document_number") or "").strip()[:100]
+
+        others = company.documents.all()
+        if replaced is not None:
+            others = others.exclude(pk=replaced.pk)
+        if others.count() >= MAX_CLIENT_DOCUMENTS:
             return _document_error(
                 f"Maximum {MAX_CLIENT_DOCUMENTS} KYC documents are allowed. Delete a document to upload another.",
                 error="document_limit_reached",
             )
-        if company.documents.filter(file_name=file.name, file_size=file.size).exists():
+        if others.filter(file_name=file.name, file_size=file.size).exists():
             return _document_error("This document has already been uploaded for this client.", error="duplicate_document")
 
-        data = request.data.copy()
-        data["company"] = company.id
-        serializer = ClientDocumentSerializer(data=data, context={"request": request})
+        serializer = ClientDocumentSerializer(
+            data={"company": company.id, "category": category, "file": file}, context={"request": request},
+        )
         if not serializer.is_valid():
-            logger.warning("Client %s document upload rejected: %s", company.id, serializer.errors)
-            if "category" in serializer.errors:
-                return _document_error("Please select a valid document type.", error="invalid_document_type")
+            logger.warning("Client %s document upload rejected (fields: %s)", company.id, sorted(serializer.errors))
             return _document_error("Unable to upload document. Please check the file and try again.", error="invalid_document")
         try:
-            document = serializer.save()
+            with transaction.atomic():
+                document = serializer.save(
+                    is_required=category in onboarding.required_categories(company),
+                    expiry_date=expiry_date,
+                    document_number=document_number,
+                )
+                # Stored first, then the old one removed - a failed upload never loses the file on record.
+                if replaced is not None:
+                    replaced.delete()
         except Exception:
             logger.exception("Client %s document upload failed while storing the file", company.id)
             return _document_error(
@@ -820,7 +720,7 @@ class ClientDocumentListCreateView(APIView):
                 error="storage_failed",
             )
         _log_client_audit(
-            company, "document_uploaded", request,
+            company, "document_replaced" if replaced is not None else "document_uploaded", request,
             field_name="category", new_value=document.get_category_display(),
         )
         return Response(ClientDocumentSerializer(document, context={"request": request}).data, status=201)
@@ -834,7 +734,16 @@ class ClientDocumentDetailView(APIView):
     def delete(self, request, pk, doc_id):
         company = get_object_or_404(Company, pk=pk)
         document = get_object_or_404(ClientDocument, pk=doc_id, company=company)
+        if is_maker_locked(company, request.user):
+            return _document_error(LOCKED_MESSAGE, http_status=status.HTTP_409_CONFLICT, error="client_locked")
+        if document.status == "verified" and not has_perm(request.user, "client.document.verify"):
+            return _document_error(
+                "This document has been verified - only a reviewer can remove it.",
+                http_status=status.HTTP_403_FORBIDDEN, error="document_locked",
+            )
+        label = document.get_category_display()
         document.delete()
+        _log_client_audit(company, "document_deleted", request, field_name="category", old_value=label)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -863,11 +772,19 @@ class ClientAuditLogListView(APIView):
 
     def get(self, request, pk):
         company = get_object_or_404(Company, pk=pk)
-        logs = company.audit_logs.all()
+        logs = company.audit_logs.select_related("performed_by")
         return Response(ClientAuditLogSerializer(logs, many=True).data)
 
 
+DOCUMENT_REVIEW_ACTIONS = {
+    "verified": "document_verified",
+    "rejected": "document_rejected",
+    "under_review": "document_under_review",
+}
+
+
 class ClientDocumentVerifyView(APIView):
+    """POST {status: verified | rejected | under_review, remarks} - remarks are required to reject."""
     permission_classes = [IsAuthenticated, HasPermissionCode]
     authentication_classes = [JWTAuthentication]
     permission_code = "client.document.verify"
@@ -877,25 +794,48 @@ class ClientDocumentVerifyView(APIView):
         document = get_object_or_404(ClientDocument, pk=doc_id, company=company)
 
         new_status = request.data.get("status")
-        if new_status not in ("verified", "rejected"):
-            return Response({"status": ["Must be 'verified' or 'rejected'."]}, status=400)
-        remarks = (request.data.get("remarks") or "").strip()
+        if new_status not in DOCUMENT_REVIEW_ACTIONS:
+            raise DRFValidationError({"status": ["Must be 'verified', 'rejected' or 'under_review'."]})
+        remarks = str(request.data.get("remarks") or "").strip()
         if new_status == "rejected" and not remarks:
             return _document_error("A rejection reason is required.", error="rejection_reason_required")
+        if new_status == "verified" and effective_document_status(document.status, document.expiry_date) == "expired":
+            return _document_error(
+                "This document has expired - ask for a current one instead of verifying it.", error="document_expired",
+            )
 
         document.status = new_status
         document.verified_by = request.user
         document.verified_at = now()
         document.remarks = remarks
-        document.save()
+        document.save(update_fields=["status", "verified_by", "verified_at", "remarks"])
 
         _log_client_audit(
-            company, "document_uploaded", request,
+            company, DOCUMENT_REVIEW_ACTIONS[new_status], request,
             field_name=f"document:{document.get_category_display()}",
             new_value=document.get_status_display(),
         )
         return Response(ClientDocumentSerializer(document, context={"request": request}).data)
 
+
+class ClientBankAccountUnmaskedView(APIView):
+    """GET -> the full bank account number, for reviewers comparing it with the bank proof.
+    Every reveal is audit-logged (without the number)."""
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    authentication_classes = [JWTAuthentication]
+    permission_code = "client.bank.view_unmasked"
+
+    def get(self, request, pk):
+        company = get_object_or_404(Company, pk=pk)
+        _log_client_audit(company, "bank_account_viewed", request, field_name="bank_account_number")
+        response = Response({"account_number": company.bank_account_number or ""})
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+# --------------------------------------------------------------------------- #
+# Workflow: submit (maker) -> request changes / approve (checker)              #
+# --------------------------------------------------------------------------- #
 
 class ClientChangeRequestListCreateView(APIView):
     permission_classes = [IsAuthenticated, HasPermissionCode]
@@ -904,23 +844,39 @@ class ClientChangeRequestListCreateView(APIView):
 
     def get(self, request, pk):
         company = get_object_or_404(Company, pk=pk)
-        return Response(ClientChangeRequestSerializer(company.change_requests.all(), many=True).data)
+        requests_qs = company.change_requests.select_related("requested_by")
+        return Response(ClientChangeRequestSerializer(requests_qs, many=True).data)
 
     def post(self, request, pk):
+        """Files a change request and moves the client to changes_requested."""
         company = get_object_or_404(Company, pk=pk)
-        data = request.data.copy()
-        data["company"] = company.id
+        data = {
+            "company": company.id,
+            "section": request.data.get("section"),
+            "required_changes": request.data.get("required_changes") or "",
+            "comments": request.data.get("comments") or "",
+        }
         serializer = ClientChangeRequestSerializer(data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        change_request = serializer.save()
+        previous = company.kyc_status
+        with transaction.atomic():
+            change_request = serializer.save()
+            if previous != "changes_requested":
+                company.kyc_status = "changes_requested"
+                company.save(update_fields=["kyc_status", "updated_at"])
         _log_client_audit(
             company, "change_requested", request,
             field_name="section", new_value=change_request.get_section_display(),
         )
+        if previous != company.kyc_status:
+            _log_client_audit(company, "kyc_status_changed", request, field_name="kyc_status",
+                              old_value=previous, new_value=company.kyc_status)
         return Response(ClientChangeRequestSerializer(change_request).data, status=201)
 
 
 class ClientChangeRequestResolveView(APIView):
+    """Marks a change request resolved; resolving the last open one returns a client in
+    changes_requested to draft so it can be resubmitted."""
     permission_classes = [IsAuthenticated, HasPermissionCode]
     authentication_classes = [JWTAuthentication]
     permission_code = "client.request_changes"
@@ -928,45 +884,94 @@ class ClientChangeRequestResolveView(APIView):
     def post(self, request, pk, cr_id):
         company = get_object_or_404(Company, pk=pk)
         change_request = get_object_or_404(ClientChangeRequest, pk=cr_id, company=company)
-        change_request.status = "resolved"
-        change_request.resolved_at = now()
-        change_request.save()
+        if change_request.status == "resolved":
+            return Response(ClientChangeRequestSerializer(change_request).data)
+        previous = company.kyc_status
+        with transaction.atomic():
+            change_request.status = "resolved"
+            change_request.resolved_at = now()
+            change_request.save(update_fields=["status", "resolved_at"])
+            if previous == "changes_requested" and not company.change_requests.filter(status="open").exists():
+                company.kyc_status = "draft"
+                company.save(update_fields=["kyc_status", "updated_at"])
         _log_client_audit(
             company, "change_resolved", request,
             field_name="section", new_value=change_request.get_section_display(),
         )
+        if previous != company.kyc_status:
+            _log_client_audit(company, "kyc_status_changed", request, field_name="kyc_status",
+                              old_value=previous, new_value=company.kyc_status)
         return Response(ClientChangeRequestSerializer(change_request).data)
 
 
+class ClientSubmitView(APIView):
+    """Maker: POST -> submits the client for approval (kyc_status 'submitted').
+
+    Every required field and required document must be in place; missing, rejected or expired
+    required documents block it. 400 body: {"error", "errors": {"missing": [...], "issues":
+    [{step, field, message}]}}."""
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    authentication_classes = [JWTAuthentication]
+    permission_code = "client.company.edit"
+
+    def post(self, request, pk):
+        company = get_object_or_404(Company, pk=pk)
+        if company.kyc_status not in onboarding.SUBMITTABLE_STATUSES:
+            message = {
+                "submitted": "This client is already awaiting approval.",
+                "verified": "This client is already approved.",
+            }.get(company.kyc_status, "This client can't be submitted in its current status.")
+            return Response({"error": message}, status=status.HTTP_400_BAD_REQUEST)
+
+        issues = onboarding.submission_issues(company)
+        if issues:
+            raise DRFValidationError({"missing": [issue["message"] for issue in issues], "issues": issues})
+
+        previous = company.kyc_status
+        company.kyc_status = "submitted"
+        company.save(update_fields=["kyc_status", "updated_at"])
+        _log_client_audit(company, "submitted_for_approval", request, field_name="kyc_status",
+                          old_value=previous, new_value=company.kyc_status)
+        return Response(CompanySerializer(company, context=_context(request)).data, status=status.HTTP_200_OK)
+
+
 class ClientSubmitForApprovalView(APIView):
-    """Final Approval endpoint - mirrors VendorSubmitForApprovalView. Runs every rule from
-    Company.get_approval_blockers() (a pure read of the company's current state) and, only if
-    nothing is missing, marks the client Verified/Approved."""
+    """Approver: POST {approval_remarks?} -> marks the client Verified / Approved (project-ready).
+
+    Served at both /approve/ and the legacy /submit-for-approval/ path. The client must be
+    submitted (or a legacy draft), every required document verified and every blocker from
+    client/onboarding.py cleared; nothing is logged unless approval actually happens."""
     permission_classes = [IsAuthenticated, HasPermissionCode]
     authentication_classes = [JWTAuthentication]
     permission_code = "client.company.approve"
 
     def post(self, request, pk):
         company = get_object_or_404(Company, pk=pk)
-        _log_client_audit(company, "kyc_submitted", request)
+        if company.is_project_ready:
+            return Response({"error": "This client is already approved."}, status=status.HTTP_400_BAD_REQUEST)
+        legacy_verified = company.kyc_status == "verified"  # verified by hand before approvals existed
+        if company.kyc_status not in onboarding.APPROVABLE_STATUSES and not legacy_verified and company.kyc_status != "changes_requested":
+            return Response({"error": "This client can't be approved in its current status."}, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = ClientApprovalReadinessSerializer(data=request.data, company=company)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        body = ClientApprovalSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
 
+        blockers = company.get_approval_blockers()
+        if blockers:
+            raise DRFValidationError({"missing": blockers})
+
+        previous = company.kyc_status
         company.kyc_status = "verified"
         company.onboarding_step = "approved"
         company.kyc_verified_by = request.user
         company.kyc_verified_at = now()
-        company.approval_remarks = serializer.validated_data.get("approval_remarks", "")
+        company.approval_remarks = (body.validated_data.get("approval_remarks") or "").strip()
         company.save()
-
-        company.change_requests.filter(status="open").update(status="resolved", resolved_at=now())
 
         _log_client_audit(
             company, "kyc_status_changed", request,
-            field_name="kyc_status", old_value="draft", new_value=company.kyc_status,
+            field_name="kyc_status", old_value=previous, new_value=company.kyc_status,
         )
         _log_client_audit(company, "project_ready_marked", request)
 
-        return Response(CompanySerializer(company).data, status=status.HTTP_200_OK)
+        return Response(CompanySerializer(company, context=_context(request)).data, status=status.HTTP_200_OK)

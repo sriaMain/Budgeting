@@ -3,19 +3,19 @@ import { StatusBadge } from '../../../components/StatusBadge';
 import type { VendorOnboardingDetail } from '../../../types/vendorOnboarding.types';
 import { StarRating } from './StarRating';
 import { vendorOnboarding, vendorStatusLabel } from './vendorDisplay';
-import { VENDOR_ONBOARDING_STEPS } from './VendorOnboardingPanel';
+import { EDITABLE_VENDOR_STATUSES, VENDOR_ONBOARDING_STEPS } from './vendorSteps';
 
 /** While onboarding is still being filled in, the stage is the first unfinished of the 5 steps;
  * once submitted, it's the backend's approval stage (e.g. "Approval Level 1: Finance"). */
 const stageLabel = (vendor: VendorOnboardingDetail) => {
-  if (!['invited', 'draft', 'action_required'].includes(vendor.status)) return vendor.current_stage;
+  if (!EDITABLE_VENDOR_STATUSES.includes(vendor.status)) return vendor.current_stage;
   const index = VENDOR_ONBOARDING_STEPS.findIndex((s) => s.key === vendorOnboarding(vendor).current_step);
   return index < 0 ? vendor.current_stage : `Step ${index + 1} of ${VENDOR_ONBOARDING_STEPS.length} · ${VENDOR_ONBOARDING_STEPS[index].title}`;
 };
 
 const LABEL = 'text-[11px] font-semibold text-gray-500 uppercase tracking-wide dark:text-gray-400';
 
-/** Top-of-view summary for an existing vendor: current workflow status and rating. */
+/** Top-of-view summary for an existing vendor: workflow status, onboarding progress and rating. */
 export const VendorStatusHeader: React.FC<{ vendor: VendorOnboardingDetail }> = ({ vendor }) => {
   const rating = vendor.onboarding_profile?.rating ?? null;
   return (
@@ -30,6 +30,10 @@ export const VendorStatusHeader: React.FC<{ vendor: VendorOnboardingDetail }> = 
           <StarRating value={rating} />
           <span className="text-sm text-gray-600 dark:text-gray-300">{rating ? `${rating}/5` : 'Not rated'}</span>
         </div>
+      </div>
+      <div>
+        <p className={LABEL}>Onboarding</p>
+        <p className="text-sm font-medium text-gray-900 mt-1 dark:text-white">{vendorOnboarding(vendor).percent}% complete</p>
       </div>
       <div className="min-w-0">
         <p className={LABEL}>Stage</p>

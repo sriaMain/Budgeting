@@ -5,7 +5,7 @@ Centralized email-sending entry point for new code.
         -> EMAIL_BACKEND (SMTP, or console in local DEBUG) -> Recipient
 
 Existing call sites (accounts, product_group, Project, finances,
-employee_onboarding, vendor_onboarding, freelancer_onboarding) already build
+vendor_onboarding, freelancer_onboarding) already build
 their own EmailMultiAlternatives/send_mail() calls and don't need to change -
 they transport through whatever EMAIL_BACKEND is configured automatically.
 This module just gives new code one obvious, minimal function to call

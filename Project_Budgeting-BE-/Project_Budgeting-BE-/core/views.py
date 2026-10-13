@@ -180,3 +180,70 @@ class NotificationMarkAllReadAPIView(APIView):
     def post(self, request):
         Notification.objects.filter(recipient=request.user, is_read=False).update(is_read=True)
         return Response({"message": "All notifications marked as read."})
+
+
+# --------------------------------------------------------------------------- #
+# Country configuration & lookups (shared by client / vendor / freelancer      #
+# onboarding, including the public vendor and freelancer portals - so these    #
+# are AllowAny and rate-limited per IP instead of per user).                   #
+# --------------------------------------------------------------------------- #
+
+from rest_framework.permissions import AllowAny  # noqa: E402
+from rest_framework.throttling import ScopedRateThrottle  # noqa: E402
+
+from . import countries as country_rules  # noqa: E402
+from .lookups import lookup_ifsc, lookup_postal_code  # noqa: E402
+
+
+class _PublicLookupView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "onboarding_lookup"
+
+    def get_throttles(self):
+        # The throttle keeps its history in Redis; a cache outage must not take the forms down.
+        try:
+            from django.core.cache import cache
+            cache.get("throttle-healthcheck")
+        except Exception:  # noqa: BLE001
+            return []
+        return super().get_throttles()
+
+
+class CountryListAPIView(_PublicLookupView):
+    """GET /api/countries/ -> every ISO country with dial code and local currency."""
+    throttle_classes = []
+
+    def get(self, request):
+        return Response(country_rules.all_country_summaries())
+
+
+class CountryConfigAPIView(_PublicLookupView):
+    """GET /api/countries/<code>/ -> address, phone, tax, bank and currency rules for one country.
+    `code` may be an ISO code or a country name."""
+    throttle_classes = []
+
+    def get(self, request, code):
+        iso = country_rules.resolve_country(code)
+        config = country_rules.country_config(iso) if iso else None
+        if not config:
+            return Response({"detail": "Unknown country."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(config)
+
+
+class IfscLookupAPIView(_PublicLookupView):
+    """GET /api/lookups/ifsc/<code>/ -> bank, branch and address for an Indian IFSC code."""
+
+    def get(self, request, code):
+        # A miss or an invalid code is a normal outcome for the form - always 200 with `found`.
+        return Response(lookup_ifsc(code).as_dict())
+
+
+class PostalCodeLookupAPIView(_PublicLookupView):
+    """GET /api/lookups/postal-code/?country=<name|code>&code=<postal code>"""
+
+    def get(self, request):
+        result = lookup_postal_code(request.query_params.get("country", ""), request.query_params.get("code", ""))
+        # A miss is a normal outcome for the form (keep manual entry) - always 200.
+        return Response(result.as_dict())

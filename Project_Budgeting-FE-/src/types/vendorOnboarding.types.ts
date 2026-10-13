@@ -3,7 +3,16 @@ export interface Choice {
   label: string;
 }
 
-export interface VendorOnboardingChoices {
+/** Rule inputs shared by the admin and public choices payloads (vendor_onboarding/progress.py is the authority). */
+interface VendorRuleChoices {
+  individual_vendor_types?: string[];
+  incorporated_vendor_types?: string[];
+  max_kyc_documents?: number;
+  non_kyc_document_categories?: string[];
+  expiry_tracked_document_categories?: string[];
+}
+
+export interface VendorOnboardingChoices extends VendorRuleChoices {
   vendor_types: Choice[];
   vendor_statuses: Choice[];
   msme_categories: Choice[];
@@ -20,7 +29,7 @@ export interface VendorOnboardingChoices {
   bank_verification_statuses: Choice[];
 }
 
-export interface VendorPublicChoices {
+export interface VendorPublicChoices extends VendorRuleChoices {
   vendor_types: Choice[];
   msme_categories: Choice[];
   document_categories: Choice[];
@@ -50,18 +59,10 @@ export const CHANGE_REQUEST_SECTIONS = [
 
 export type ChangeRequestSection = (typeof CHANGE_REQUEST_SECTIONS)[number];
 
-/** Maps a change-request section to the wizard step index it corresponds to. */
-export const SECTION_TO_STEP: Record<string, number> = {
-  vendor_details: 1,
-  kyv_compliance: 2,
-  bank_details: 3,
-  business_procurement: 4,
-  documents: 5,
-};
-
 export interface VendorOnboardingProfile {
-  company_code: string;
-  plant: string;
+  /** Internal (admin payload only - the portal never returns them). */
+  company_code?: string;
+  plant?: string;
   contact_person_name: string;
   contact_person_designation: string;
   gst_registered: boolean;
@@ -74,12 +75,14 @@ export interface VendorOnboardingProfile {
   city: string;
   district: string;
   state: string;
+  /** Canonical country name ("India", "United States"). */
   country: string;
   pin_code: string;
   landmark: string;
   vendor_introduction: string;
   finance_manager_name: string;
   finance_manager_email: string;
+  /** E.164 ("+919876543210"); older records may hold a bare national number. */
   finance_manager_mobile: string;
   service_category: string;
   registration_number: string;
@@ -94,6 +97,7 @@ export interface VendorOnboardingProfile {
 export interface VendorKYC {
   country_of_tax_residence: string;
   pan: string;
+  /** CIN for a company, LLPIN (e.g. AAB-1234) for an LLP. */
   cin: string;
   incorporation_date: string | null;
   tan: string;
@@ -101,42 +105,50 @@ export interface VendorKYC {
   epf_number: string;
   esic_number: string;
   esic_district: string;
+  /** Non-Indian tax identifier, validated per country of tax residence. */
   tax_id: string;
   beneficial_ownership_details: string;
 }
 
 export interface VendorBankDetail {
   account_number_masked?: string;
+  /** Only ever returned by the unmasked (reveal) endpoint. */
   account_number?: string;
   bank_name: string;
   account_holder_name: string;
   ifsc_code: string;
-  bank_id: string;
-  bank_country_key: string;
-  bank_control_key: string;
+  /** Local routing code outside India (ABA, sort code, BSB, transit ...). */
+  routing_code?: string;
+  account_type?: string;
+  /** Branch name. */
   branch: string;
-  region: string;
-  street: string;
-  city: string;
   swift_code: string;
   iban: string;
   bank_country: string;
   bank_address: string;
+  /** Legacy ERP bank keys - kept on older records, no longer collected. */
+  bank_id?: string;
+  bank_country_key?: string;
+  bank_control_key?: string;
+  region?: string;
+  street?: string;
+  city?: string;
 }
 
 export interface VendorProcurementDetail {
-  account_group: string;
-  purchasing_org: string;
+  /** ERP / procurement settings - internal (admin payload only). */
+  account_group?: string;
+  purchasing_org?: string;
+  grouping_key?: string;
+  partner_category?: string;
+  incoterms_1?: string;
+  incoterms_2?: string;
+  reconciliation_account?: string;
+  schema_group?: string;
+  gr_based_invoice_verification?: boolean;
+  check_double_invoice?: boolean;
   payment_terms: string;
   order_currency: string;
-  grouping_key: string;
-  partner_category: string;
-  incoterms_1: string;
-  incoterms_2: string;
-  reconciliation_account: string;
-  schema_group: string;
-  gr_based_invoice_verification: boolean;
-  check_double_invoice: boolean;
   contract_number: string;
   po_number: string;
   contract_start_date: string | null;
@@ -152,16 +164,19 @@ export interface VendorProcurementDetail {
 
 export interface VendorDocument {
   id: number;
-  vendor: number;
-  /** Write-only upload field - never returned; files open via the signed download endpoint. */
-  file?: string;
+  vendor?: number;
   file_name: string;
   file_size: number;
   file_type: string;
   category: string;
+  category_display?: string;
   is_required: boolean;
   status: string;
-  uploaded_by: number | null;
+  /** 'expired' once past expiry_date (rejected stays rejected). */
+  effective_status?: string;
+  expiry_date?: string | null;
+  document_number?: string;
+  uploaded_by?: number | null;
   uploaded_by_role: 'admin' | 'vendor';
   uploaded_at: string;
   /** Set only by the verify endpoint - uploading never verifies a document. */
@@ -204,11 +219,19 @@ export interface VendorPermissions {
 }
 
 export interface VendorRequirementIssue {
+  /** The form field the issue belongs to, or document_<category>. */
   key: string;
   step: VendorOnboardingStepKey;
   stage: 'submission' | 'approval';
   kind: 'missing' | 'invalid';
   message: string;
+}
+
+export interface VendorRequiredDocument {
+  key: string;
+  label: string;
+  categories: string[];
+  group: 'kyc' | 'banking';
 }
 
 export interface VendorAuditLogEntry {
@@ -235,7 +258,7 @@ export interface VendorChangeRequest {
   section_display: string;
   required_changes: string;
   comments: string;
-  requested_by: number | null;
+  requested_by?: number | null;
   requested_by_name: string | null;
   requested_at: string;
   status: 'open' | 'resolved';
@@ -270,10 +293,16 @@ export interface VendorRequestSummary {
  */
 export interface VendorOnboardingDetail {
   id: number;
+  /** "First Middle Last" - built by the backend from the name parts. */
   name: string;
+  /** Blank on vendors created before the name was split. */
+  first_name?: string;
+  middle_name?: string;
+  last_name?: string;
   vendor_type: string;
   vendor_type_display: string;
   email: string;
+  /** E.164 ("+919876543210"); older records may hold a bare national number. */
   phone: string;
   vendor_reference_no: string | null;
   contact_person_name: string;
@@ -284,6 +313,7 @@ export interface VendorOnboardingDetail {
   status: VendorRequestStatus;
   status_display: string;
   current_stage: string;
+  /** Same figure as onboarding.percent. */
   progress_percentage: number;
   last_saved_step: number;
   created_at: string;
@@ -299,7 +329,7 @@ export interface VendorOnboardingDetail {
   current_approval_stage: VendorApprovalStage | null;
   is_current_approver: boolean;
   is_archived: boolean;
-  /** Data-driven 5-step onboarding summary, computed server-side from the vendor's records. */
+  /** Data-driven onboarding summary, computed server-side from the vendor's records. */
   onboarding: VendorOnboardingSummary;
   /** Committed POs / vendor bills (internal only - never returned by the public portal). */
   financials: VendorFinancials | null;
@@ -309,7 +339,8 @@ export interface VendorOnboardingDetail {
   permissions: VendorPermissions;
 }
 
-export type VendorOnboardingStepKey = 'intake' | 'tax_kyc' | 'banking' | 'contract' | 'approved';
+/** The onboarding steps, in the backend's order (vendor_onboarding/progress.py VENDOR_ONBOARDING_STEPS). */
+export type VendorOnboardingStepKey = 'basic' | 'kyc' | 'address' | 'banking' | 'commercial' | 'documents' | 'approved';
 export type VendorStepStatus = 'pending' | 'in_progress' | 'completed' | 'requires_review' | 'failed';
 
 export interface VendorOnboardingSummary {
@@ -317,12 +348,17 @@ export interface VendorOnboardingSummary {
   current_step: VendorOnboardingStepKey | null;
   completed_steps: number;
   total_steps: number;
+  /** THE onboarding percentage - every view shows this one figure. */
   percent: number;
   jurisdiction: 'Indian' | 'Overseas';
+  country_code?: string | null;
+  entity?: 'business' | 'individual';
   /** Must be filled in / uploaded before submitting for review. */
   submission_issues: VendorRequirementIssue[];
-  /** Must be verified internally before final approval. */
+  /** Must be verified internally before final approval (empty on the vendor portal). */
   approval_issues: VendorRequirementIssue[];
+  required_documents?: VendorRequiredDocument[];
+  kyc_documents?: { count: number; limit: number };
 }
 
 /** Decimal amounts arrive as strings to avoid float rounding. */
@@ -407,6 +443,9 @@ export const ACTION_REQUIRED_STATUS_GROUP = 'action_required,submitted,resubmitt
 
 export interface RaiseVendorRequestPayload {
   name: string;
+  first_name: string;
+  middle_name: string;
+  last_name: string;
   email: string;
   phone: string;
   vendor_type: string;
@@ -421,4 +460,22 @@ export interface RequestChangesPayload {
   section: ChangeRequestSection;
   required_changes: string;
   comments?: string;
+}
+
+/** One wizard save - every section is optional (only changed sections are sent). */
+export interface VendorSectionsPayload {
+  identity?: Record<string, unknown>;
+  profile?: Record<string, unknown>;
+  kyc?: Record<string, unknown>;
+  bank_detail?: Record<string, unknown>;
+  procurement_detail?: Record<string, unknown>;
+  last_saved_step?: number;
+}
+
+/** Upload options passed to the document endpoints (see DocumentList's UploadOptions). */
+export interface VendorDocumentUploadOptions {
+  onProgress?: (percent: number) => void;
+  replaces?: number;
+  expiryDate?: string;
+  documentNumber?: string;
 }

@@ -433,15 +433,21 @@ class CurrencyListAPIView(APIView):
 
 # vendor/views.py
 class VendorListCreateView(APIView):
+    """Legacy vendor endpoint. GET lists APPROVED vendors only (the PO / bill / expense pickers
+    read it). POST / PUT are kept for older callers but can no longer create or modify an
+    approved vendor: POST creates an onboarding DRAFT (vendor.create permission) and PUT edits
+    basic fields only while the vendor is still editable (vendor.edit_own / vendor.edit_any)."""
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
-    def get(self, request, vendor_id=None):
 
-    # Decide queryset - only approved vendors are real/selectable here; an
-    # in-progress onboarding request (invited/draft/submitted/etc.) must not
-    # show up as a usable vendor for POs/Bills/Expenses until it's approved.
-        if vendor_id:
-            vendors = Vendor.objects.filter(id=vendor_id, status="approved")
+    def get(self, request, pk=None):
+        # Decide queryset - only approved vendors are real/selectable here; an
+        # in-progress onboarding request (invited/draft/submitted/etc.) must not
+        # show up as a usable vendor for POs/Bills/Expenses until it's approved.
+        if pk is not None:
+            vendors = Vendor.objects.filter(id=pk, status="approved")
+            if not vendors.exists():
+                return Response({"error": "Vendor not found."}, status=status.HTTP_404_NOT_FOUND)
         else:
             vendors = Vendor.objects.filter(status="approved")
 
@@ -543,20 +549,48 @@ class VendorListCreateView(APIView):
 
 
 
-    def post(self, request):
+    def post(self, request, pk=None):
+        """Creates an onboarding DRAFT - never an approved vendor (status is read-only)."""
+        if pk is not None:
+            return Response({"error": "Use PUT to update a vendor."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+        if not (request.user.is_superuser or request.user.has_role_permission("vendor.create")):
+            return Response({"error": "You do not have required permission: vendor.create"}, status=status.HTTP_403_FORBIDDEN)
+        from django.db import transaction
+        from vendor_onboarding.audit import log_vendor_audit
+
         serializer = VendorSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=201)
-        return Response(serializer.errors, status=400)
-    
-    def put(self, request, pk):
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+        try:
+            with transaction.atomic():
+                vendor = serializer.save(created_by=request.user, status="draft")
+                vendor.assign_reference_number()
+                vendor.save(update_fields=["vendor_reference_no"])
+        except IntegrityError:
+            return Response({"name": ["A vendor with this name already exists."]}, status=400)
+        log_vendor_audit(vendor, "created", request.user, remarks="Created through the legacy vendor API - onboarding draft")
+        return Response(VendorSerializer(vendor).data, status=201)
+
+    def put(self, request, pk=None):
+        """Basic fields only, and only while the vendor's onboarding is still editable."""
+        if pk is None:
+            return Response({"error": "A vendor id is required."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+        from vendor_onboarding.access import can_edit
+
         vendor = get_object_or_404(Vendor, pk=pk)
+        if not can_edit(vendor, request.user):
+            return Response(
+                {"error": "This vendor can't be changed here - edit it through vendor onboarding while it is in draft."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = VendorSerializer(vendor, data=request.data, partial=True)
-        if serializer.is_valid():
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+        try:
             serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=400)  
+        except IntegrityError:
+            return Response({"name": ["A vendor with this name already exists."]}, status=400)
+        return Response(serializer.data)
 
 
 

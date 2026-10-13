@@ -5,7 +5,7 @@ import type {
   VendorStepStatus,
 } from '../../../types/vendorOnboarding.types';
 
-const STEP_KEYS: VendorOnboardingStepKey[] = ['intake', 'tax_kyc', 'banking', 'contract', 'approved'];
+const STEP_KEYS: VendorOnboardingStepKey[] = ['basic', 'kyc', 'address', 'banking', 'commercial', 'documents', 'approved'];
 
 /** The vendor's 5-step onboarding summary. Uses the backend's data-driven `onboarding` when the
  * API sends it; a backend without it (no vendor_onboarding/progress.py) would otherwise leave every
@@ -21,20 +21,20 @@ export const vendorOnboarding = (
   let nextStatus: VendorStepStatus = 'pending';
   switch (vendor.status) {
     case 'approved':
-      done = 5;
+      done = STEP_KEYS.length;
       break;
     case 'submitted':
     case 'resubmitted':
     case 'approval_in_progress':
-      done = 4;
+      done = STEP_KEYS.length - 1;
       nextStatus = 'in_progress';
       break;
     case 'action_required':
-      done = 4;
+      done = STEP_KEYS.length - 1;
       nextStatus = 'requires_review';
       break;
     default:
-      done = Math.min(4, Math.max(0, (vendor.last_saved_step ?? 1) - 1));
+      done = Math.min(STEP_KEYS.length - 1, Math.max(0, (vendor.last_saved_step ?? 1) - 1));
       if (done > 0) nextStatus = 'in_progress';
   }
 

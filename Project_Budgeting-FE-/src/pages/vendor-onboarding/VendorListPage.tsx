@@ -85,29 +85,26 @@ export function VendorListContent() {
   };
 
   const fetchVendors = async () => {
-    setLoading(true);
     try {
       const data = await api.listVendors({ ...appliedFilters, search: searchTerm || undefined });
       setVendors(data);
     } catch (err) {
-      console.error(err);
+      console.error('Loading vendors failed', (err as { response?: { status?: number } })?.response?.status);
       toast.error('Failed to load vendor requests');
     } finally {
       setLoading(false);
     }
   };
 
+  // Filters apply at once; typing in the search box waits 300 ms. Both reload the list.
   useEffect(() => {
-    fetchVendors();
-    fetchSummary();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appliedFilters]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => fetchVendors(), 300);
+    const timer = setTimeout(() => {
+      void fetchVendors();
+      void fetchSummary();
+    }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm]);
+  }, [appliedFilters, searchTerm]);
 
   const handleApplyFilters = () => setAppliedFilters(filters);
   const handleClearFilters = () => {
@@ -131,7 +128,7 @@ export function VendorListContent() {
 
   const openStep = (vendor: VendorOnboardingDetail, step: VendorOnboardingStepKey) => {
     setActiveVendorId(vendor.id);
-    // The Approved step has no form section - an approved vendor's record lives on its details page.
+    // An approved vendor's record lives on its details page.
     if (step === 'approved' && vendor.status === 'approved') {
       navigate(`/vendors/${vendor.id}`);
       return;

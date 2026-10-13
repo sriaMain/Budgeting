@@ -465,8 +465,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         user.save(update_fields=["is_staff"])
 
         # Send Email - professional HTML welcome email with the production
-        # login URL (never localhost) built from EMPLOYEE_PORTAL_URL, the
-        # same env var already used for Employee Onboarding invite links.
+        # login URL (never localhost) built from EMPLOYEE_PORTAL_URL.
         context = {
             "company_name": settings.COMPANY_NAME,
             "company_logo": settings.COMPANY_LOGO_URL,
@@ -505,10 +504,43 @@ class UserCreateSerializer(serializers.ModelSerializer):
 from rest_framework import serializers
 from .models import Vendor
 
+
 class VendorSerializer(serializers.ModelSerializer):
+    """Legacy /api/accounts/vendors/ create / update. Only basic contact fields are writable:
+    the workflow status, reference number and approval fields are read-only, so this endpoint
+    can't create (or flip a vendor into) an APPROVED vendor - new vendors start as onboarding
+    drafts and go through submission and approval like every other vendor."""
+
     class Meta:
         model = Vendor
-        fields = '__all__'
+        fields = (
+            "id", "name", "first_name", "middle_name", "last_name", "vendor_type", "email", "phone",
+            "contact_person_name", "is_active", "status", "vendor_reference_no", "submitted_at", "approved_at",
+            "created_at", "updated_at",
+        )
+        read_only_fields = ("status", "vendor_reference_no", "submitted_at", "approved_at", "created_at", "updated_at")
+        # Uniqueness is checked in validate() (also when the name is built from the name parts).
+        extra_kwargs = {"name": {"required": False, "validators": []}}
+
+    def validate(self, attrs):
+        from core.onboarding_validation import clean_phone
+
+        errors = {}
+        parts = ("first_name", "middle_name", "last_name")
+        if any(p in attrs for p in parts):
+            values = {p: (attrs.get(p, getattr(self.instance, p, "")) or "").strip() for p in parts}
+            attrs.update(values)
+            attrs["name"] = Vendor.build_name(values["first_name"], values["middle_name"], values["last_name"])
+        if self.instance is None or "name" in attrs:
+            name = (attrs.get("name", getattr(self.instance, "name", "")) or "").strip()
+            if not name:
+                errors["name"] = "A vendor name is required."
+            elif Vendor.objects.filter(name=name).exclude(pk=getattr(self.instance, "pk", None)).exists():
+                errors["name"] = f'A vendor named "{name}" already exists.'
+        clean_phone(attrs, "phone", errors, country="IN")
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
 
 
 

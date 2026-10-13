@@ -1,384 +1,183 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { CheckCircle2 } from 'lucide-react';
-import { Button } from '../../../components/Button';
-import { InputField } from '../../../components/InputField';
-import { SelectField } from '../../../components/SelectField';
-import { DocumentList } from '../../../components/DocumentList';
-import { SkillsInput } from '../../../components/SkillsInput';
-import { VendorStepper, type StepConfig } from '../../vendor-onboarding/components/VendorStepper';
+import { AlertTriangle, CheckCircle2, Clock, Loader2, Lock } from 'lucide-react';
+import { WizardFooter, WizardProgress } from '../../../components/onboarding/OnboardingWizard';
 import * as api from '../../../services/freelancerOnboardingPublic';
 import { parseApiErrors } from '../../../utils/parseApiErrors';
-import type { Freelancer, FreelancerDocument, FreelancerManualPayload, FreelancerPublicChoices, FreelancerBankDetailPayload } from '../../../types/freelancerOnboarding.types';
+import type {
+  FreelancerBankDetail, FreelancerDocument, FreelancerPortalClosed, FreelancerPublic, FreelancerPublicChoices,
+} from '../../../types/freelancerOnboarding.types';
+import { useFreelancerWizard, type FreelancerWizardAdapter } from '../wizard/useFreelancerWizard';
+import { FreelancerWizardBody, WizardStatusLine } from '../wizard/FreelancerWizardSteps';
+import { STEP_TITLES, type FreelancerRecord, type WizardStepKey } from '../wizard/freelancerWizardModel';
 
-const STEPS: StepConfig[] = [
-    { index: 1, label: 'Basic Details' },
-    { index: 2, label: 'Professional Details' },
-    { index: 3, label: 'Availability' },
-    { index: 4, label: 'Bank & KYC' },
-    { index: 5, label: 'Documents' },
-];
+type PageState =
+  | { kind: 'loading' }
+  | { kind: 'error'; message: string }
+  | { kind: 'closed'; status: FreelancerPortalClosed['portal_status'] }
+  | { kind: 'ready'; record: FreelancerPublic; bank: FreelancerBankDetail | null; documents: FreelancerDocument[]; choices: FreelancerPublicChoices | null };
 
-const BANK_PAYMENT_METHODS = [
-    { value: 'bank_transfer', label: 'Bank Transfer' },
-    { value: 'upi', label: 'UPI' },
-    { value: 'paypal', label: 'PayPal' },
-    { value: 'wise', label: 'Wise' },
-    { value: 'other', label: 'Other' },
-];
+const isClosed = (data: FreelancerPublic | FreelancerPortalClosed): data is FreelancerPortalClosed => 'link_active' in data;
 
-const EMPTY_BANK_VALUES: FreelancerBankDetailPayload = {
-    payment_method: '', payment_terms: '', tax_number: '',
-    account_holder_name: '', bank_name: '', account_number: '', ifsc_code: '',
+const CARD = 'bg-white rounded-xl border border-gray-200 shadow-sm dark:bg-gray-900 dark:border-gray-800';
+
+const Centered: React.FC<{ icon: React.ReactNode; title: string; children: React.ReactNode }> = ({ icon, title, children }) => (
+  <div className="max-w-xl mx-auto py-16 px-4">
+    <div className={`${CARD} p-8 text-center`}>
+      <div className="flex justify-center mb-3">{icon}</div>
+      <h1 className="text-lg font-bold text-gray-900 mb-1 dark:text-white">{title}</h1>
+      <div className="text-sm text-gray-600 dark:text-gray-300">{children}</div>
+    </div>
+  </div>
+);
+
+/** Secure-link freelancer onboarding: the 7-step wizard, editable until submission. */
+const FreelancerOnboardingPortalPage: React.FC = () => {
+  const { token } = useParams<{ token: string }>();
+  const [state, setState] = useState<PageState>({ kind: 'loading' });
+
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    (async () => {
+      try {
+        const data = await api.getFreelancerByToken(token);
+        if (isClosed(data)) {
+          if (alive) setState({ kind: 'closed', status: data.portal_status });
+          return;
+        }
+        const [bank, documents, choices] = await Promise.all([
+          api.getBankDetailByToken(token).catch(() => null),
+          api.listDocumentsByToken(token).catch(() => [] as FreelancerDocument[]),
+          api.getPublicChoices().catch(() => null),
+        ]);
+        if (alive) setState({ kind: 'ready', record: data, bank, documents, choices });
+      } catch (err) {
+        if (alive) setState({ kind: 'error', message: parseApiErrors(err).general || 'Invalid or unavailable freelancer onboarding link.' });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  if (!token || state.kind === 'error') {
+    return (
+      <Centered icon={<Lock className="w-10 h-10 text-gray-400" />} title="Link not available">
+        {state.kind === 'error' ? state.message : 'Invalid onboarding link.'}
+      </Centered>
+    );
+  }
+  if (state.kind === 'loading') {
+    return <p className="flex items-center justify-center gap-2 py-24 text-sm text-gray-500 dark:text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Loading your onboarding…</p>;
+  }
+  if (state.kind === 'closed') {
+    return state.status === 'approved' ? (
+      <Centered icon={<CheckCircle2 className="w-10 h-10 text-green-500" />} title="You're all set!">
+        Your freelancer onboarding has been approved. We'll be in touch about next steps.
+      </Centered>
+    ) : (
+      <Centered icon={<Lock className="w-10 h-10 text-gray-400" />} title="Onboarding closed">
+        This onboarding is no longer open. Please contact the person or team who invited you.
+      </Centered>
+    );
+  }
+  return <PortalWizard token={token} initial={state} />;
 };
 
-const DOCUMENT_SLOTS = [
-    { key: 'resume', label: 'Resume', required: false },
-    { key: 'pan', label: 'PAN Card', required: true },
-    { key: 'other', label: 'Other Document', required: false },
-];
+const PortalWizard: React.FC<{ token: string; initial: Extract<PageState, { kind: 'ready' }> }> = ({ token, initial }) => {
+  const [current, setCurrent] = useState<FreelancerPublic>(initial.record);
 
-function freelancerToValues(f: Freelancer): FreelancerManualPayload {
-    return {
-        full_name: f.full_name, email: f.email, phone: f.phone, location: f.location,
-        professional_title: f.professional_title, skills: f.skills,
-        years_of_experience: f.years_of_experience, portfolio_url: f.portfolio_url, linkedin_url: f.linkedin_url,
-        availability: f.availability, preferred_start_date: f.preferred_start_date || '',
-        available_until: f.available_until || '',
-        hours_per_day: f.hours_per_day ?? '', hours_per_week: f.hours_per_week ?? '',
-        notice_period_days: f.notice_period_days ?? '', timezone: f.timezone || '',
-        payment_method: f.payment_method, currency: f.currency, rate: f.rate ?? '',
-    };
-}
+  const reload = async () => {
+    const [data, documents] = await Promise.all([api.getFreelancerByToken(token), api.listDocumentsByToken(token)]);
+    if (isClosed(data)) throw new Error('This onboarding link is no longer active.');
+    return { record: data as FreelancerRecord, documents };
+  };
 
-const FreelancerOnboardingPortalPage: React.FC = () => {
-    const { token } = useParams<{ token: string }>();
+  const adapter: FreelancerWizardAdapter = {
+    saveProfile: (payload) => api.updateByToken(token, payload),
+    saveBank: (payload) => api.updateBankDetailByToken(token, payload),
+    submit: () => api.submitByToken(token),
+    reload,
+    uploadDocument: (_record, category, file, opts) =>
+      api.uploadDocumentByToken(token, category, file, { replaces: opts.replaces, expiryDate: opts.expiryDate, onProgress: opts.onProgress }),
+    deleteDocument: (_record, docId) => api.deleteDocumentByToken(token, docId),
+    downloadDocument: async (_record, docId) => {
+      const { download_url } = await api.downloadDocumentByToken(token, docId);
+      window.open(download_url, '_blank', 'noopener');
+    },
+    uploadPhoto: (_record, file) => api.uploadProfilePhotoByToken(token, file),
+    removePhoto: () => api.removeProfilePhotoByToken(token),
+  };
 
-    const [choices, setChoices] = useState<FreelancerPublicChoices | null>(null);
-    const [freelancer, setFreelancer] = useState<Freelancer | null>(null);
-    const [documents, setDocuments] = useState<FreelancerDocument[]>([]);
-    const [values, setValues] = useState<FreelancerManualPayload | null>(null);
-    const [bankValues, setBankValues] = useState<FreelancerBankDetailPayload>(EMPTY_BANK_VALUES);
-    const [accountNumberMasked, setAccountNumberMasked] = useState<string | null>(null);
-    const [panMasked, setPanMasked] = useState<string | null>(null);
-    const [currentStep, setCurrentStep] = useState(1);
-    const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
-    const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState<string | null>(null);
-    const [isSaving, setIsSaving] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const w = useFreelancerWizard({
+    mode: 'portal',
+    adapter,
+    initialRecord: initial.record,
+    initialBank: initial.bank,
+    initialDocuments: initial.documents,
+    readOnly: !current.can_edit,
+    bankEditable: current.can_edit,
+    canSubmit: current.can_edit,
+    submitLabel: 'Submit onboarding',
+    onRecordChange: (record) => setCurrent(record as FreelancerPublic),
+    onSubmitted: () => {
+      toast.success('Thank you! Your onboarding has been submitted for review.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    onNavigate: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+  });
 
-    const load = async () => {
-        if (!token) return;
-        setLoading(true);
-        try {
-            const [choicesData, freelancerData, docs] = await Promise.all([
-                api.getPublicChoices(),
-                api.getFreelancerByToken(token),
-                api.listDocumentsByToken(token),
-            ]);
-            setChoices(choicesData);
-            setFreelancer(freelancerData);
-            setDocuments(docs);
-            setValues(freelancerToValues(freelancerData));
+  const sections = (current.changes_requested_sections || []) as WizardStepKey[];
 
-            const step = Math.min(Math.max(freelancerData.last_saved_step || 1, 1), 5);
-            setCurrentStep(step);
-            setCompletedSteps(new Set(Array.from({ length: step - 1 }, (_, i) => i + 1)));
+  return (
+    <div className="max-w-4xl mx-auto py-6 sm:py-8 px-4 space-y-5">
+      <div className={`${CARD} p-5 sm:p-6`}>
+        <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1 dark:text-blue-400">Freelancer Onboarding</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white break-words">{current.full_name || 'Complete your profile'}</h1>
+        {current.freelancer_code && <p className="text-xs font-mono text-gray-500 mt-1 dark:text-gray-400">Reference {current.freelancer_code}</p>}
+      </div>
 
-            try {
-                const bankDetail = await api.getBankDetailByToken(token);
-                if (bankDetail) {
-                    setBankValues({
-                        payment_method: bankDetail.payment_method, payment_terms: bankDetail.payment_terms,
-                        tax_number: '',
-                        account_holder_name: bankDetail.account_holder_name, bank_name: bankDetail.bank_name,
-                        account_number: '', ifsc_code: bankDetail.ifsc_code,
-                    });
-                    setAccountNumberMasked(bankDetail.account_number_masked || null);
-                    setPanMasked(bankDetail.tax_number_masked || null);
-                }
-            } catch {
-                // Bank detail is optional to preload - don't block the rest of the onboarding page.
-            }
-        } catch (err) {
-            const errors = parseApiErrors(err);
-            setLoadError(errors.general || 'Invalid or unavailable freelancer onboarding link.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        load();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
-
-    useEffect(() => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, [currentStep]);
-
-    const set = <K extends keyof FreelancerManualPayload>(field: K) => (
-        e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-    ) => {
-        setValues((v) => (v ? { ...v, [field]: e.target.value } : v));
-    };
-
-    const setBankField = <K extends keyof FreelancerBankDetailPayload>(field: K) => (
-        e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-    ) => {
-        setBankValues((v) => ({ ...v, [field]: e.target.value as never }));
-    };
-
-    const persist = async (advanceTo?: number) => {
-        if (!token || !values) return false;
-        setFieldErrors({});
-        if (currentStep === 1 && (!values.full_name || !values.email)) {
-            setFieldErrors({
-                full_name: !values.full_name ? 'Full name is required' : '',
-                email: !values.email ? 'Email is required' : '',
-            });
-            toast.error('Full name and email are required');
-            return false;
-        }
-        setIsSaving(true);
-        try {
-            if (currentStep === 4) {
-                const bankErrors: Record<string, string> = {};
-                // PAN/account number are only re-required when there's nothing
-                // on file yet - once saved both are write-only, so they always
-                // reload blank and a blank resubmission means "keep the
-                // existing value".
-                if (!bankValues.tax_number && !panMasked) bankErrors.tax_number = 'PAN is required';
-                if (!bankValues.account_holder_name) bankErrors.account_holder_name = 'Account holder name is required';
-                if (!bankValues.bank_name) bankErrors.bank_name = 'Bank name is required';
-                if (!bankValues.ifsc_code) bankErrors.ifsc_code = 'IFSC code is required';
-                if (!bankValues.account_number && !accountNumberMasked) bankErrors.account_number = 'Account number is required';
-
-                if (Object.keys(bankErrors).length > 0) {
-                    setFieldErrors(bankErrors);
-                    toast.error('Please fill in all mandatory bank/KYC fields');
-                    return false;
-                }
-
-                const bankPayload: FreelancerBankDetailPayload = { ...bankValues };
-                if (!bankPayload.account_number) delete bankPayload.account_number;
-                if (!bankPayload.tax_number) delete bankPayload.tax_number;
-                await api.updateBankDetailByToken(token, bankPayload);
-                if (advanceTo) {
-                    const updated = await api.updateByToken(token, { last_saved_step: advanceTo });
-                    setFreelancer(updated);
-                }
-                return true;
-            }
-            // DRF's IntegerField/DateField (unlike DecimalField/CharField)
-            // reject "" outright instead of treating it as "not provided" -
-            // strip these before sending or clearing them errors out the save.
-            const payload: Partial<FreelancerManualPayload> & { last_saved_step?: number } = { ...values };
-            (['years_of_experience', 'notice_period_days', 'preferred_start_date', 'available_until'] as const).forEach((key) => {
-                if (payload[key] === '') delete payload[key];
-            });
-            if (advanceTo) payload.last_saved_step = advanceTo;
-            const updated = await api.updateByToken(token, payload);
-            setFreelancer(updated);
-            return true;
-        } catch (err) {
-            const errors = parseApiErrors(err);
-            toast.error(errors.general || 'Failed to save. Please try again.');
-            return false;
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const handleSaveDraft = async () => {
-        const ok = await persist();
-        if (ok) toast.success('Progress saved');
-    };
-
-    const handleNext = async () => {
-        const ok = await persist(currentStep + 1);
-        if (ok) {
-            setCompletedSteps((prev) => new Set(prev).add(currentStep));
-            setCurrentStep((s) => Math.min(s + 1, STEPS.length));
-        }
-    };
-
-    const handleBack = () => setCurrentStep((s) => Math.max(s - 1, 1));
-
-    const handleStepClick = (index: number) => {
-        if (completedSteps.has(index) || index === currentStep) setCurrentStep(index);
-    };
-
-    const handleSubmit = async () => {
-        if (!token) return;
-        setIsSubmitting(true);
-        try {
-            const updated = await api.submitByToken(token);
-            setFreelancer(updated);
-            toast.success('Thank you! Your onboarding has been submitted.');
-        } catch (err) {
-            const errors = parseApiErrors(err);
-            toast.error(errors.general || 'Submission failed - please check your details.');
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
-    if (loading) {
-        return <div className="max-w-3xl mx-auto py-16 text-center text-gray-500 dark:text-gray-400">Loading...</div>;
-    }
-
-    if (loadError || !freelancer || !values) {
-        return (
-            <div className="max-w-lg mx-auto py-16 text-center">
-                <p className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Link not available</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">{loadError}</p>
-            </div>
-        );
-    }
-
-    if (freelancer.status === 'completed' || freelancer.status === 'active') {
-        return (
-            <div className="max-w-2xl mx-auto py-16 px-4">
-                <div className="bg-white rounded-lg border border-gray-200 p-8 text-center shadow-sm dark:bg-gray-900 dark:border-gray-800">
-                    <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-3 dark:text-green-400" />
-                    <h2 className="text-lg font-bold text-gray-900 mb-1 dark:text-white">You're all set!</h2>
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
-                        Thank you for completing your freelancer onboarding, {freelancer.full_name}. We'll be in touch.
-                    </p>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
-            <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm dark:bg-gray-900 dark:border-gray-800">
-                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1 dark:text-blue-400">Freelancer Onboarding</p>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{freelancer.full_name || 'Complete your profile'}</h1>
-            </div>
-
-            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
-                <VendorStepper steps={STEPS} currentStep={currentStep} completedSteps={completedSteps} onStepClick={handleStepClick} />
-            </div>
-
-            <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm dark:bg-gray-900 dark:border-gray-800">
-                {currentStep === 1 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-                        <InputField label="Full Name *" placeholder="Enter your full name" value={values.full_name} onChange={set('full_name')} error={fieldErrors.full_name} />
-                        <InputField label="Email *" type="email" placeholder="Enter your email" value={values.email} onChange={set('email')} error={fieldErrors.email} />
-                        <InputField label="Phone Number" value={values.phone} onChange={set('phone')} />
-                        <InputField label="Location" value={values.location} onChange={set('location')} />
-                    </div>
-                )}
-                {currentStep === 2 && (
-                    <>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-                            <InputField label="Professional Title / Role" value={values.professional_title} onChange={set('professional_title')} />
-                            <InputField label="Years of Experience" type="number" min={0} value={values.years_of_experience ?? ''} onChange={set('years_of_experience')} />
-                            <InputField label="Portfolio / Website" value={values.portfolio_url} onChange={set('portfolio_url')} />
-                            <InputField label="LinkedIn Profile" value={values.linkedin_url} onChange={set('linkedin_url')} />
-                        </div>
-                        <SkillsInput
-                            label="Skills"
-                            value={values.skills ?? ''}
-                            onChange={(skills) => setValues((v) => (v ? { ...v, skills } : v))}
-                        />
-                    </>
-                )}
-                {currentStep === 3 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-                        <SelectField
-                            label="Availability"
-                            placeholder="Select availability"
-                            options={choices?.availabilities || []}
-                            value={values.availability}
-                            onChange={set('availability')}
-                        />
-                        <InputField label="Preferred Start Date" type="date" value={values.preferred_start_date || ''} onChange={set('preferred_start_date')} />
-                        <InputField label="Available Until" type="date" value={values.available_until || ''} onChange={set('available_until')} />
-                        <InputField label="Time Zone" placeholder="e.g. Asia/Kolkata" value={values.timezone || ''} onChange={set('timezone')} />
-                        <InputField label="Hours Per Day" type="number" min={0} value={values.hours_per_day ?? ''} onChange={set('hours_per_day')} />
-                        <InputField label="Hours Per Week" type="number" min={0} value={values.hours_per_week ?? ''} onChange={set('hours_per_week')} />
-                    </div>
-                )}
-                {currentStep === 4 && (
-                    <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4">
-                            <SelectField
-                                label="Payment Method"
-                                placeholder="Select method"
-                                options={BANK_PAYMENT_METHODS}
-                                value={bankValues.payment_method ?? ''}
-                                onChange={setBankField('payment_method')}
-                            />
-                            <InputField label="Payment Terms" placeholder="e.g. Net 15" value={bankValues.payment_terms} onChange={setBankField('payment_terms')} />
-                            <InputField
-                                label={panMasked ? `PAN * (on file: ${panMasked})` : 'PAN *'}
-                                placeholder={panMasked ? 'Leave blank to keep the PAN on file' : 'e.g. ABCDE1234F'}
-                                value={bankValues.tax_number}
-                                onChange={setBankField('tax_number')}
-                                error={fieldErrors.tax_number}
-                            />
-                            <InputField label="Account Holder Name *" value={bankValues.account_holder_name} onChange={setBankField('account_holder_name')} error={fieldErrors.account_holder_name} />
-                            <InputField label="Bank Name *" value={bankValues.bank_name} onChange={setBankField('bank_name')} error={fieldErrors.bank_name} />
-                            <InputField
-                                label={accountNumberMasked ? `Account Number * (on file: ${accountNumberMasked})` : 'Account Number *'}
-                                placeholder="Leave blank to keep the number on file"
-                                value={bankValues.account_number}
-                                onChange={setBankField('account_number')}
-                                error={fieldErrors.account_number}
-                            />
-                            <InputField label="IFSC Code *" value={bankValues.ifsc_code} onChange={setBankField('ifsc_code')} error={fieldErrors.ifsc_code} />
-                        </div>
-                    </div>
-                )}
-                {currentStep === 5 && (
-                    <DocumentList
-                        slots={DOCUMENT_SLOTS}
-                        documents={documents}
-                        onUpload={async (category, file) => {
-                            if (!token) return;
-                            await api.uploadDocumentByToken(token, category, file);
-                            setDocuments(await api.listDocumentsByToken(token));
-                        }}
-                        onDelete={async (docId) => {
-                            if (!token) return;
-                            await api.deleteDocumentByToken(token, docId);
-                            setDocuments(await api.listDocumentsByToken(token));
-                        }}
-                        onDownload={async (docId) => {
-                            if (!token) return;
-                            const { download_url } = await api.downloadDocumentByToken(token, docId);
-                            window.open(download_url, '_blank');
-                        }}
-                    />
-                )}
-            </div>
-
-            <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800">
-                {currentStep > 1 ? (
-                    <Button variant="secondary" className="!w-auto px-6" onClick={handleBack}>Back</Button>
-                ) : <div />}
-                <div className="flex items-center gap-3">
-                    <Button variant="secondary" className="!w-auto px-6" onClick={handleSaveDraft} isLoading={isSaving}>
-                        Save & Continue
-                    </Button>
-                    {currentStep < STEPS.length && (
-                        <Button className="!w-auto px-6" onClick={handleNext} isLoading={isSaving}>Next</Button>
-                    )}
-                    {currentStep === STEPS.length && (
-                        <Button className="!w-auto px-6" onClick={handleSubmit} isLoading={isSubmitting}>
-                            Submit Onboarding
-                        </Button>
-                    )}
-                </div>
-            </div>
+      {current.portal_status === 'submitted' && (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4 sm:p-5 dark:border-green-500/30 dark:bg-green-500/10">
+          <p className="flex items-center gap-2 font-semibold text-green-800 dark:text-green-300"><CheckCircle2 className="w-5 h-5" /> Thank you - your onboarding has been submitted</p>
+          <p className="mt-1 text-sm text-green-800/90 dark:text-green-300/90 flex items-center gap-1.5">
+            <Clock className="w-4 h-4" /> It is being reviewed{current.submitted_at ? ` (submitted ${new Date(current.submitted_at).toLocaleString()})` : ''}. You can look through what you sent below; contact us if something needs correcting.
+          </p>
         </div>
-    );
+      )}
+
+      {current.portal_status === 'changes_requested' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-5 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <p className="flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-300"><AlertTriangle className="w-5 h-5" /> Changes requested</p>
+          {current.review_remarks && <p className="mt-1 text-sm text-amber-900 whitespace-pre-line dark:text-amber-200">{current.review_remarks}</p>}
+          {sections.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {sections.map((key) => (
+                <button key={key} type="button" onClick={() => w.goTo(key)} className="px-2.5 py-1 text-xs font-semibold rounded-full border border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/20">
+                  {STEP_TITLES[key] || key}
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="mt-2 text-xs text-amber-800/80 dark:text-amber-300/80">Update the details, then submit again from Review &amp; Submit.</p>
+        </div>
+      )}
+
+      <div className={`${CARD} p-4 sm:p-5`}>
+        <WizardProgress steps={w.steps} currentKey={w.step} onStepChange={(key) => w.goTo(key as WizardStepKey)} statusText={<WizardStatusLine w={w} />} />
+      </div>
+
+      <div className={`${CARD} p-4 sm:p-6`}>
+        <FreelancerWizardBody w={w} choices={initial.choices} />
+      </div>
+
+      <div className={`${CARD} sticky bottom-2 z-20 p-3 sm:p-4`}>
+        <WizardFooter {...w.footer} />
+      </div>
+    </div>
+  );
 };
 
 export default FreelancerOnboardingPortalPage;

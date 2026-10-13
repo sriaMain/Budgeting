@@ -145,6 +145,12 @@ class Vendor(models.Model):
     ]
 
     name = models.CharField(max_length=255, unique=True)
+    # Entered separately on the forms; name is kept as "First Middle Last"
+    # (see save()) because the rest of the app shows and searches by it.
+    # Blank on records created before these fields existed.
+    first_name = models.CharField(max_length=100, blank=True, default="")
+    middle_name = models.CharField(max_length=100, blank=True, default="")
+    last_name = models.CharField(max_length=100, blank=True, default="")
     vendor_type = models.CharField(max_length=20, choices=VENDOR_TYPE_CHOICES)
 
     product_groups = models.ManyToManyField(
@@ -193,6 +199,17 @@ class Vendor(models.Model):
 
     def __str__(self):
         return self.name
+
+    @staticmethod
+    def build_name(first_name, middle_name, last_name):
+        return " ".join(
+            part for part in ((first_name or "").strip(), (middle_name or "").strip(), (last_name or "").strip()) if part
+        )
+
+    def save(self, *args, **kwargs):
+        if (self.first_name or "").strip():
+            self.name = self.build_name(self.first_name, self.middle_name, self.last_name)
+        super().save(*args, **kwargs)
 
     def assign_reference_number(self):
         """Atomically assigns VR-<year>-<seq> the first time a vendor is saved."""

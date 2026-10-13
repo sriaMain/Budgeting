@@ -9,8 +9,12 @@ from core.app_constants import CURRENCY_CHOICES
 
 class Freelancer(models.Model):
     """A lightweight freelancer record - intentionally NOT a Vendor. Vendor
-    onboarding carries KYC/GST/bank-detail fields and a multi-level approval
-    workflow that doesn't fit a simple, no-approval freelancer profile.
+    onboarding carries GST/company KYC and a multi-level approval workflow;
+    a freelancer is an individual with a single-step review: invite ->
+    onboarding (secure link) -> completed (submitted, pending review) ->
+    approve (active) or request changes (changes_requested -> resubmit).
+    The KYC rules (required documents, PAN for India residents, ...) live in
+    freelancer_onboarding/kyc.py.
 
     This is also this codebase's closest thing to a "Business Partner"
     record for a freelancer - there is no unifying BusinessPartner table
@@ -25,7 +29,11 @@ class Freelancer(models.Model):
         ('draft', 'Draft'),
         ('invited', 'Invited'),
         ('onboarding', 'Onboarding'),
-        ('completed', 'Completed'),
+        # The reviewer sent the onboarding back to the freelancer (see review_remarks).
+        ('changes_requested', 'Changes Requested'),
+        # Stored value kept as 'completed' for existing rows/integrations; it means the
+        # freelancer has submitted and the record is waiting for a reviewer.
+        ('completed', 'Submitted - Pending Review'),
         ('active', 'Active'),
         ('inactive', 'Inactive'),
         ('blocked', 'Blocked'),
@@ -38,10 +46,46 @@ class Freelancer(models.Model):
         ('offboarded', 'Offboarded'),
     ]
 
+    # The secure link may change data only in these statuses.
+    PORTAL_EDITABLE_STATUSES = ('invited', 'onboarding', 'changes_requested')
+    # Onboarding not yet approved - only submit / approve / request-changes move it on.
+    WORKFLOW_STATUSES = ('draft', 'invited', 'onboarding', 'changes_requested', 'completed')
+    # Statuses an approved (or legacy, pre-approval-workflow) freelancer moves between.
+    APPROVED_STATUSES = ('active', 'available', 'assigned', 'on_hold', 'inactive')
+    CLOSED_STATUSES = ('offboarded', 'blocked')
+    SUBMITTABLE_STATUSES = ('draft', 'invited', 'onboarding', 'changes_requested')
+
+    KYC_STATUS_CHOICES = [
+        ('not_started', 'Not Started'),
+        ('submitted', 'Submitted'),
+        ('under_review', 'Under Review'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+        ('changes_requested', 'Changes Requested'),
+    ]
+
+    ID_DOCUMENT_TYPE_CHOICES = [
+        ('passport', 'Passport'),
+        ('national_id', 'National ID Card'),
+        ('driving_licence', 'Driving Licence'),
+        ('aadhaar_masked', 'Aadhaar (masked)'),
+        ('other', 'Other Government Photo ID'),
+    ]
+
     AVAILABILITY_CHOICES = [
         ('available', 'Available'),
         ('partially_available', 'Partially Available'),
         ('not_available', 'Not Available'),
+    ]
+
+    # Validated by the serializers (not a DB constraint): rows created before this list
+    # existed hold free text such as "Male".
+    GENDER_CHOICES = [
+        ('male', 'Male'),
+        ('female', 'Female'),
+        ('non_binary', 'Non-binary'),
+        ('other', 'Other'),
+        ('prefer_not_to_say', 'Prefer not to say'),
     ]
 
     # Human-readable identifier (FRL-0001, FRL-0002, ...) - assigned once,
@@ -54,6 +98,12 @@ class Freelancer(models.Model):
 
     # Basic Details
     full_name = models.CharField(max_length=150)
+    # Entered separately on the forms; full_name is kept as "First Middle Last"
+    # (see save()) because the rest of the app shows and searches by it.
+    # Blank on records created before these fields existed.
+    first_name = models.CharField(max_length=100, blank=True, default="")
+    middle_name = models.CharField(max_length=100, blank=True, default="")
+    last_name = models.CharField(max_length=100, blank=True, default="")
     email = models.EmailField()
     phone = models.CharField(max_length=20, blank=True)
     alternate_phone = models.CharField(max_length=20, blank=True)
@@ -64,6 +114,34 @@ class Freelancer(models.Model):
         resource_type="image", type="upload", null=True, blank=True,
     )
     location = models.CharField(max_length=150, blank=True)
+    # Country display names (core.countries.normalize_country_value), like every other
+    # country column in the onboarding modules.
+    nationality = models.CharField(max_length=100, blank=True)
+
+    # Identity & KYC
+    # Where the freelancer lives: drives the PAN rule, the required documents, the phone
+    # dialling default and the W-8BEN / W-9 choice. Kept separate from permanent_country
+    # (a permanent address can be a family home in another country) and backfilled from it
+    # by migration 0021; when blank, permanent_country is used (see residence_country).
+    country_of_residence = models.CharField(max_length=100, blank=True)
+    id_document_type = models.CharField(max_length=20, choices=ID_DOCUMENT_TYPE_CHOICES, blank=True)
+    # Never returned in full by the default serializers - masked, with a separately
+    # permissioned reveal endpoint. A masked Aadhaar is stored as "XXXXXXXX1234".
+    id_document_number = models.CharField(max_length=50, blank=True)
+    tax_residency_country = models.CharField(max_length=100, blank=True)
+
+    # Review workflow
+    kyc_status = models.CharField(max_length=20, choices=KYC_STATUS_CHOICES, default='not_started')
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='freelancers_reviewed',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    # Shown to the freelancer while status is 'changes_requested'.
+    review_remarks = models.TextField(blank=True)
+    # Wizard step keys the reviewer asked the freelancer to revisit.
+    changes_requested_sections = models.JSONField(default=list, blank=True)
 
     # Permanent Address
     permanent_address_line1 = models.CharField(max_length=255, blank=True)
@@ -140,7 +218,30 @@ class Freelancer(models.Model):
     def __str__(self):
         return f"{self.full_name} ({self.get_status_display()})"
 
+    @property
+    def residence_country(self):
+        """Country of residence, falling back to the permanent address country."""
+        return self.country_of_residence or self.permanent_country
+
+    def mask_id_document_number(self):
+        value = self.id_document_number or ""
+        if not value:
+            return ""
+        if self.id_document_type == "aadhaar_masked":
+            return f"XXXX XXXX {value[-4:]}"
+        if len(value) <= 4:
+            return "X" * len(value)
+        return "X" * (len(value) - 4) + value[-4:]
+
+    @staticmethod
+    def build_name(first_name, middle_name, last_name):
+        return " ".join(
+            part for part in ((first_name or "").strip(), (middle_name or "").strip(), (last_name or "").strip()) if part
+        )
+
     def save(self, *args, **kwargs):
+        if (self.first_name or "").strip():
+            self.full_name = self.build_name(self.first_name, self.middle_name, self.last_name)
         is_new = self._state.adding
         super().save(*args, **kwargs)
         if is_new and not self.freelancer_code:
@@ -150,8 +251,7 @@ class Freelancer(models.Model):
     def assign_freelancer_code(self):
         """Atomically assigns FRL-0001, FRL-0002, ... the first time a
         freelancer is saved - same convention as accounts.Vendor
-        .assign_reference_number() / employee_onboarding's
-        assign_employee_code(), but sequential (no year segment), per the
+        .assign_reference_number(), but sequential (no year segment), per the
         business requirement's own examples. Called from save() itself
         (rather than from each creation call site, as the Vendor/Employee
         precedents do) so every creation path - manual add, invite, or any
@@ -181,11 +281,20 @@ class FreelancerAccessToken(models.Model):
     because the invite email needs to rebuild the same link on resend.
     Security comes from entropy + expiry + revocation + rate limiting."""
 
+    REVOKE_REASON_CHOICES = [
+        ('reissued', 'Replaced by a newer link'),
+        ('approved', 'Onboarding approved'),
+        ('closed', 'Freelancer offboarded or blocked'),
+        ('manual', 'Revoked by an administrator'),
+    ]
+
     freelancer = models.ForeignKey(Freelancer, on_delete=models.CASCADE, related_name='access_tokens')
     token = models.CharField(max_length=64, unique=True, db_index=True)
     is_active = models.BooleanField(default=True)
     expires_at = models.DateTimeField()
     last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoke_reason = models.CharField(max_length=20, choices=REVOKE_REASON_CHOICES, blank=True)
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -220,8 +329,22 @@ class FreelancerAccessLog(models.Model):
 class FreelancerDocument(models.Model):
     CATEGORY_CHOICES = [
         ('resume', 'Resume'),
-        ('pan', 'PAN Document'),
+        ('pan', 'PAN Card'),
+        ('government_id', 'Government Photo ID'),
+        ('address_proof', 'Address Proof'),
+        ('bank_proof', 'Bank Proof'),
+        ('tax_form', 'Tax Form (W-8BEN / W-9)'),
+        ('tax_residency_certificate', 'Tax Residency Certificate'),
         ('other', 'Other Document'),
+    ]
+
+    # Uploading never verifies a document - only a reviewer (document verify endpoint) does.
+    # "expired" is derived from expiry_date on read (core.document_security).
+    STATUS_CHOICES = [
+        ('uploaded', 'Uploaded'),
+        ('under_review', 'Under Review'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
     ]
 
     freelancer = models.ForeignKey(Freelancer, on_delete=models.CASCADE, related_name='documents')
@@ -236,13 +359,26 @@ class FreelancerDocument(models.Model):
     file_name = models.CharField(max_length=255)
     file_size = models.PositiveIntegerField()
     file_type = models.CharField(max_length=100)
-    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    category = models.CharField(max_length=30, choices=CATEGORY_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='uploaded')
+    expiry_date = models.DateField(null=True, blank=True)
+    document_number = models.CharField(max_length=100, blank=True)
 
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='freelancer_documents_uploaded',
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='freelancer_documents_verified',
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    # Reviewer's note - required when rejecting; shown to the freelancer.
+    remarks = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-uploaded_at', '-id']
 
     def __str__(self):
         return f"{self.file_name} ({self.freelancer.full_name})"
@@ -558,9 +694,13 @@ class FreelancerBankDetail(models.Model):
         ('other', 'Other'),
     ]
 
+    # payment_status is the reviewer's verification of the payout details (bank account or
+    # UPI / PayPal / Wise identifier). It is set only through the bank-detail verify
+    # endpoint and drops back to 'pending' whenever those details change.
     PAYMENT_STATUS_CHOICES = [
         ('pending', 'Pending Verification'),
         ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
         ('on_hold', 'On Hold'),
     ]
 
@@ -575,10 +715,17 @@ class FreelancerBankDetail(models.Model):
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, blank=True)
     payment_terms = models.CharField(max_length=100, blank=True)
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
+    verification_remarks = models.TextField(blank=True)
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='freelancer_bank_details_verified',
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
 
     # Tax identity - "tax_number" stays a generic label (not "pan") since a
     # freelancer isn't necessarily India-based; the PAN Document upload
     # (FreelancerDocument category='pan') is the India-specific piece.
+    # tax_type is set by the serializers from the tax country ("PAN", "SSN / ITIN", ...).
     tax_type = models.CharField(max_length=50, blank=True)
     tax_number = models.CharField(max_length=50, blank=True)
     # Distinct from payment_status (which covers the whole bank/KYC record) -
@@ -586,11 +733,27 @@ class FreelancerBankDetail(models.Model):
     pan_verification_status = models.CharField(
         max_length=20, choices=PAN_VERIFICATION_STATUS_CHOICES, default='pending'
     )
+    pan_verification_remarks = models.TextField(blank=True)
 
+    # Bank account (payment_method='bank_transfer'). Identifiers follow the bank country's
+    # rules in core.countries: India uses ifsc_code, other countries routing_code
+    # (ABA / sort code / BSB / transit ...), SWIFT and IBAN where applicable.
+    bank_country = models.CharField(max_length=100, blank=True)
     account_holder_name = models.CharField(max_length=150, blank=True)
     bank_name = models.CharField(max_length=150, blank=True)
     account_number = models.CharField(max_length=34, blank=True)
     ifsc_code = models.CharField(max_length=11, blank=True)
+    routing_code = models.CharField(max_length=30, blank=True)
+    swift_code = models.CharField(max_length=11, blank=True)
+    iban = models.CharField(max_length=34, blank=True)
+    branch_name = models.CharField(max_length=150, blank=True)
+    bank_address = models.CharField(max_length=255, blank=True)
+    account_type = models.CharField(max_length=20, blank=True)
+
+    # Non-bank payout identifiers (payment_method upi / paypal / wise).
+    upi_id = models.CharField(max_length=100, blank=True)
+    paypal_email = models.EmailField(blank=True)
+    wise_email = models.EmailField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -675,6 +838,18 @@ class FreelancerAuditLog(models.Model):
         ('status_changed', 'Status Changed'),
         ('project_assigned', 'Project Assigned'),
         ('project_removed', 'Project Removed'),
+        ('submitted', 'Onboarding Submitted'),
+        ('approved', 'Onboarding Approved'),
+        ('changes_requested', 'Changes Requested'),
+        ('document_uploaded', 'Document Uploaded'),
+        ('document_replaced', 'Document Replaced'),
+        ('document_deleted', 'Document Deleted'),
+        ('document_verified', 'Document Verified'),
+        ('document_rejected', 'Document Rejected'),
+        ('document_under_review', 'Document Marked Under Review'),
+        ('kyc_status_changed', 'KYC Status Changed'),
+        ('token_revoked', 'Onboarding Link Revoked'),
+        ('invite_resent', 'Invitation Sent'),
     ]
 
     freelancer = models.ForeignKey(Freelancer, on_delete=models.CASCADE, related_name='audit_logs')
@@ -682,11 +857,15 @@ class FreelancerAuditLog(models.Model):
     field_name = models.CharField(max_length=100, blank=True)
     old_value = models.CharField(max_length=255, blank=True)
     new_value = models.CharField(max_length=255, blank=True)
+    # Free-text reason (rejection reason, requested changes) - never a sensitive value.
+    remarks = models.TextField(blank=True)
 
     performed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='freelancer_audit_logs',
     )
+    # Who acted when there is no user - e.g. "Freelancer (portal)" for the secure link.
+    actor_label = models.CharField(max_length=50, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

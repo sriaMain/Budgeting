@@ -33,23 +33,29 @@ const VendorApprovalQueuePage: React.FC = () => {
   const [activeHistory, setActiveHistory] = useState<VendorApprovalHistoryEvent[]>([]);
   const [requestTarget, setRequestTarget] = useState<VendorOnboardingDetail | null>(null);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
+  const fetchQueue = async () => {
     try {
       const data = await api.listApprovalQueue();
       setVendors(data);
+      setError(null);
     } catch (err) {
-      console.error(err);
+      console.error('Loading the approval queue failed', (err as { response?: { status?: number } })?.response?.status);
       setError('Could not load the approval queue.');
     } finally {
       setLoading(false);
     }
   };
 
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    await fetchQueue();
+  };
+
   useEffect(() => {
-    load();
+    void fetchQueue();
     api.getChoices().then(setChoices).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openDrawer = async (vendor: VendorOnboardingDetail) => {

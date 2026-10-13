@@ -13,6 +13,8 @@ urlpatterns = [
     path("vendors/<int:pk>/archive/", views.VendorArchiveView.as_view(), name="vendor-onboarding-archive"),
     path("vendors/<int:pk>/unarchive/", views.VendorUnarchiveView.as_view(), name="vendor-onboarding-unarchive"),
 
+    # The onboarding wizard's save: {identity, profile, kyc, bank_detail, procurement_detail} in one request.
+    path("vendors/<int:pk>/sections/", views.VendorSectionsView.as_view(), name="vendor-onboarding-sections"),
     path("vendors/<int:pk>/profile/", views.VendorProfileStepView.as_view(), name="vendor-onboarding-profile"),
     path("vendors/<int:pk>/kyc/", views.VendorKYCStepView.as_view(), name="vendor-onboarding-kyc"),
     path("vendors/<int:pk>/bank-detail/", views.VendorBankDetailStepView.as_view(), name="vendor-onboarding-bank-detail"),
@@ -47,6 +49,7 @@ urlpatterns = [
     # --- Public, token-authenticated self-service portal (no login) ---
     path("public/choices/", views.VendorPublicChoicesView.as_view(), name="vendor-onboarding-public-choices"),
     path("public/<str:token>/", views.VendorPublicDetailView.as_view(), name="vendor-onboarding-public-detail"),
+    path("public/<str:token>/sections/", views.VendorPublicSectionsView.as_view(), name="vendor-onboarding-public-sections"),
     path("public/<str:token>/identity/", views.VendorPublicIdentityView.as_view(), name="vendor-onboarding-public-identity"),
     path("public/<str:token>/profile/", views.VendorPublicProfileStepView.as_view(), name="vendor-onboarding-public-profile"),
     path("public/<str:token>/kyc/", views.VendorPublicKYCStepView.as_view(), name="vendor-onboarding-public-kyc"),

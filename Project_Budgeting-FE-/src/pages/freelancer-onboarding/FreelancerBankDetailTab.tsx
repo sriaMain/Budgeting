@@ -1,221 +1,245 @@
-import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Eye, EyeOff } from 'lucide-react';
-import { Button } from '../../components/Button';
-import { InputField } from '../../components/InputField';
-import { SelectField } from '../../components/SelectField';
+import { Loader2, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { BankDetailsFields } from '../../components/onboarding/BankDetailsFields';
+import { FieldShell } from '../../components/onboarding/FieldShell';
+import { INPUT_CLASS, INPUT_ERROR_CLASS } from '../../components/onboarding/fieldStyles';
+import type { BankFormValue } from '../../components/onboarding/bankForm';
+import { useCountryConfig } from '../../hooks/useCountries';
 import * as api from '../../services/freelancerOnboarding';
 import { parseApiErrors } from '../../utils/parseApiErrors';
-import type { FreelancerBankDetailPayload } from '../../types/freelancerOnboarding.types';
-import type { EmbeddedSectionHandle } from './FreelancerEquipmentTab';
+import type { ChoiceOption, FreelancerBankDetail } from '../../types/freelancerOnboarding.types';
+import {
+  bankDetailPayload, bankErrorsFor, bankSliceFrom, formErrorsFromServer, validateStep, EMPTY_FORM,
+  type FormErrors, type FreelancerFormState,
+} from './wizard/freelancerWizardModel';
 
-interface Props {
-    freelancerId: number;
-    paymentMethods: { value: string; label: string }[];
-    panVerificationStatuses: { value: string; label: string }[];
-    /** Inside the onboarding drawer: no own Save button - the drawer's Save calls save() via ref. */
-    embedded?: boolean;
-}
+type IdentifierField = 'upi_id' | 'paypal_email' | 'wise_email';
 
-const EMPTY: FreelancerBankDetailPayload = {
-    payment_method: '',
-    payment_terms: '',
-    tax_number: '',
-    pan_verification_status: 'pending',
-    account_holder_name: '',
-    bank_name: '',
-    account_number: '',
-    ifsc_code: '',
+const IDENTIFIERS: Record<string, { field: IdentifierField; label: string; placeholder: string; hint: string; type: string }> = {
+  upi: { field: 'upi_id', label: 'UPI ID', placeholder: 'name@okhdfcbank', hint: 'The UPI ID (VPA) payments should be sent to.', type: 'text' },
+  paypal: { field: 'paypal_email', label: 'PayPal email', placeholder: 'you@example.com', hint: 'The email address of your PayPal account.', type: 'email' },
+  wise: { field: 'wise_email', label: 'Wise account email', placeholder: 'you@example.com', hint: 'The email address registered with Wise.', type: 'email' },
 };
 
-export const FreelancerBankDetailTab = forwardRef<EmbeddedSectionHandle, Props>(({ freelancerId, paymentMethods, panVerificationStatuses, embedded = false }, ref) => {
-    const [values, setValues] = useState<FreelancerBankDetailPayload>(EMPTY);
-    const [dirty, setDirty] = useState(false);
-    const [accountNumberMasked, setAccountNumberMasked] = useState<string | null>(null);
-    const [revealedAccountNumber, setRevealedAccountNumber] = useState<string | null>(null);
-    const [panMasked, setPanMasked] = useState<string | null>(null);
-    const [revealedPan, setRevealedPan] = useState<string | null>(null);
-    const [errors, setErrors] = useState<Record<string, string>>({});
-    const [loading, setLoading] = useState(true);
-    const [isSaving, setIsSaving] = useState(false);
-    const [isRevealing, setIsRevealing] = useState(false);
-    const [isRevealingPan, setIsRevealingPan] = useState(false);
+const STATUS_TEXT: Record<string, string> = {
+  verified: 'Verified by a reviewer',
+  rejected: 'Rejected by a reviewer',
+  on_hold: 'On hold',
+  pending: 'Not verified yet',
+};
 
-    const load = async () => {
-        setLoading(true);
-        try {
-            const detail = await api.getBankDetail(freelancerId);
-            if (detail) {
-                setValues({
-                    payment_method: detail.payment_method, payment_terms: detail.payment_terms,
-                    tax_number: '', pan_verification_status: detail.pan_verification_status,
-                    account_holder_name: detail.account_holder_name,
-                    bank_name: detail.bank_name, account_number: '', ifsc_code: detail.ifsc_code,
-                });
-                setAccountNumberMasked(detail.account_number_masked || null);
-                setPanMasked(detail.tax_number_masked || null);
-            } else {
-                setValues(EMPTY);
-                setAccountNumberMasked(null);
-                setPanMasked(null);
-            }
-            setRevealedAccountNumber(null);
-            setRevealedPan(null);
-            setDirty(false);
-        } catch {
-            toast.error('Failed to load bank details');
-        } finally {
-            setLoading(false);
-        }
-    };
+interface PaymentFieldsProps {
+  idPrefix: string;
+  paymentMethods: ChoiceOption[];
+  method: string;
+  onMethodChange: (method: string) => void;
+  bank: BankFormValue;
+  onBankChange: (patch: Partial<BankFormValue>) => void;
+  identifiers: Record<IdentifierField, string>;
+  onIdentifierChange: (field: IdentifierField, value: string) => void;
+  /** Wizard error keys: payment_method, upi_id, paypal_email, wise_email, bank.* */
+  errors: FormErrors;
+  disabled?: boolean;
+  maskedAccountNumber?: string;
+  onRevealAccountNumber?: () => Promise<string | null>;
+  /** Reviewer status of the payout details (payment_status) and the reason when rejected. */
+  verificationStatus?: string;
+  verificationRemarks?: string;
+  /** Admin only. */
+  paymentTerms?: string;
+  onPaymentTermsChange?: (value: string) => void;
+}
 
-    useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [freelancerId]);
+/** Payment method + the identifiers that method needs: full country-aware bank details for a
+ * bank transfer (BankDetailsFields), or a UPI ID / PayPal / Wise email. Controlled. */
+export const FreelancerPaymentFields: React.FC<PaymentFieldsProps> = ({
+  idPrefix, paymentMethods, method, onMethodChange, bank, onBankChange, identifiers, onIdentifierChange, errors, disabled,
+  maskedAccountNumber, onRevealAccountNumber, verificationStatus, verificationRemarks, paymentTerms, onPaymentTermsChange,
+}) => {
+  const identifier = IDENTIFIERS[method];
+  const showStatus = !!method && !!verificationStatus && method !== 'bank_transfer';
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+        <FieldShell label="Payment method" htmlFor={`${idPrefix}-payment_method`} required error={errors.payment_method}>
+          <select
+            id={`${idPrefix}-payment_method`}
+            value={method}
+            disabled={disabled}
+            onChange={(e) => onMethodChange(e.target.value)}
+            aria-invalid={!!errors.payment_method}
+            className={`${INPUT_CLASS} ${errors.payment_method ? INPUT_ERROR_CLASS : ''}`}
+          >
+            <option value="">Select how you want to be paid</option>
+            {paymentMethods.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        </FieldShell>
+        {onPaymentTermsChange && (
+          <FieldShell label="Payment terms" htmlFor={`${idPrefix}-payment_terms`} optional hint="Internal - e.g. Net 15. Not shown to the freelancer.">
+            <input
+              id={`${idPrefix}-payment_terms`}
+              value={paymentTerms ?? ''}
+              disabled={disabled}
+              onChange={(e) => onPaymentTermsChange(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </FieldShell>
+        )}
+      </div>
 
-    const set = <K extends keyof FreelancerBankDetailPayload>(field: K) => (
-        e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-    ) => {
-        setValues((v) => ({ ...v, [field]: e.target.value as never }));
-        setDirty(true);
-    };
+      {method === 'bank_transfer' && (
+        <BankDetailsFields
+          idPrefix={`${idPrefix}-bank`}
+          value={bank}
+          onChange={onBankChange}
+          errors={bankErrorsFor(errors)}
+          disabled={disabled}
+          maskedAccountNumber={maskedAccountNumber || undefined}
+          onRevealAccountNumber={onRevealAccountNumber}
+          verificationStatus={verificationStatus}
+        />
+      )}
+      {method === 'bank_transfer' && verificationStatus === 'rejected' && verificationRemarks && (
+        <p className="text-xs text-red-700 dark:text-red-300">Reviewer note: {verificationRemarks}</p>
+      )}
 
-    const handleSave = async (): Promise<boolean> => {
-        setErrors({});
-        const nextErrors: Record<string, string> = {};
-        // PAN/account number are only re-required when nothing is on file yet -
-        // once saved, leaving them blank means "keep the existing value" (both
-        // are write-only, so they always reload blank on an existing record).
-        if (!values.tax_number && !panMasked) nextErrors.tax_number = 'PAN is required';
-        if (!values.account_holder_name) nextErrors.account_holder_name = 'Account holder name is required';
-        if (!values.bank_name) nextErrors.bank_name = 'Bank name is required';
-        if (!values.ifsc_code) nextErrors.ifsc_code = 'IFSC code is required';
-        if (!values.account_number && !accountNumberMasked) nextErrors.account_number = 'Account number is required';
-
-        if (Object.keys(nextErrors).length > 0) {
-            setErrors(nextErrors);
-            toast.error(embedded ? 'Bank & KYC: please fill in all mandatory fields' : 'Please fill in all mandatory fields');
-            return false;
-        }
-
-        setIsSaving(true);
-        try {
-            const payload = { ...values };
-            if (!payload.account_number) delete payload.account_number;
-            if (!payload.tax_number) delete payload.tax_number;
-            await api.updateBankDetail(freelancerId, payload);
-            if (!embedded) toast.success('Bank details saved');
-            load();
-            return true;
-        } catch (err) {
-            toast.error(parseApiErrors(err).general || 'Failed to save bank details');
-            return false;
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    // Untouched bank details are left alone, so saving the rest of the form never trips their validation.
-    useImperativeHandle(ref, () => ({ save: async () => (dirty ? handleSave() : true) }));
-
-    const handleToggleReveal = async () => {
-        if (revealedAccountNumber) { setRevealedAccountNumber(null); return; }
-        setIsRevealing(true);
-        try {
-            const unmasked = await api.getBankDetailUnmasked(freelancerId);
-            setRevealedAccountNumber(unmasked.account_number || '(not set)');
-        } catch (err) {
-            toast.error(parseApiErrors(err).general || 'You are not authorized to view the full account number');
-        } finally {
-            setIsRevealing(false);
-        }
-    };
-
-    const handleTogglePanReveal = async () => {
-        if (revealedPan) { setRevealedPan(null); return; }
-        setIsRevealingPan(true);
-        try {
-            const unmasked = await api.getPANUnmasked(freelancerId);
-            setRevealedPan(unmasked.tax_number || '(not set)');
-        } catch (err) {
-            toast.error(parseApiErrors(err).general || 'You are not authorized to view the full PAN');
-        } finally {
-            setIsRevealingPan(false);
-        }
-    };
-
-    if (loading) {
-        return <div className="text-center p-8 text-gray-500 dark:text-gray-400">Loading bank details...</div>;
-    }
-
-    return (
-        <div className="space-y-6">
-            <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-1 dark:text-white">Payment &amp; Tax (KYC)</h3>
-                <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
-                    Banking and PAN information is sensitive - both are masked everywhere except to explicitly authorized users.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4">
-                    <SelectField label="Payment Method" placeholder="Select method" options={paymentMethods} value={values.payment_method ?? ''} onChange={set('payment_method')} />
-                    <InputField label="Payment Terms" placeholder="e.g. Net 15" value={values.payment_terms} onChange={set('payment_terms')} />
-                    <SelectField label="PAN Verification Status" options={panVerificationStatuses} value={values.pan_verification_status ?? 'pending'} onChange={set('pan_verification_status')} />
-                    <div className="md:col-span-2">
-                        <InputField
-                            label={panMasked ? `PAN * (on file: ${panMasked})` : 'PAN *'}
-                            placeholder="Leave blank to keep the PAN on file, e.g. ABCDE1234F"
-                            value={values.tax_number}
-                            onChange={set('tax_number')}
-                            error={errors.tax_number}
-                        />
-                        {panMasked && (
-                            <button
-                                type="button"
-                                onClick={handleTogglePanReveal}
-                                disabled={isRevealingPan}
-                                className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 -mt-3 mb-3 dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                                {revealedPan ? <EyeOff size={14} /> : <Eye size={14} />}
-                                {revealedPan ? `Hide (${revealedPan})` : 'Reveal full PAN'}
-                            </button>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-3 dark:text-white">Bank Details</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-                    <InputField label="Account Holder Name *" value={values.account_holder_name} onChange={set('account_holder_name')} error={errors.account_holder_name} />
-                    <InputField label="Bank Name *" value={values.bank_name} onChange={set('bank_name')} error={errors.bank_name} />
-                    <div>
-                        <InputField
-                            label={accountNumberMasked ? `Account Number * (on file: ${accountNumberMasked})` : 'Account Number *'}
-                            placeholder="Leave blank to keep the number on file"
-                            value={values.account_number}
-                            onChange={set('account_number')}
-                            error={errors.account_number}
-                        />
-                        {accountNumberMasked && (
-                            <button
-                                type="button"
-                                onClick={handleToggleReveal}
-                                disabled={isRevealing}
-                                className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 -mt-3 mb-3 dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                                {revealedAccountNumber ? <EyeOff size={14} /> : <Eye size={14} />}
-                                {revealedAccountNumber ? `Hide (${revealedAccountNumber})` : 'Reveal full number'}
-                            </button>
-                        )}
-                    </div>
-                    <InputField label="IFSC Code *" value={values.ifsc_code} onChange={set('ifsc_code')} error={errors.ifsc_code} />
-                </div>
-            </div>
-
-            {!embedded && (
-                <div className="flex justify-end">
-                    <Button className="!w-auto px-8" onClick={handleSave} isLoading={isSaving}>Save Bank Details</Button>
-                </div>
-            )}
+      {identifier && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+          <FieldShell label={identifier.label} htmlFor={`${idPrefix}-${identifier.field}`} required error={errors[identifier.field]} hint={identifier.hint}>
+            <input
+              id={`${idPrefix}-${identifier.field}`}
+              type={identifier.type}
+              value={identifiers[identifier.field]}
+              disabled={disabled}
+              placeholder={identifier.placeholder}
+              autoComplete="off"
+              onChange={(e) => onIdentifierChange(identifier.field, e.target.value)}
+              aria-invalid={!!errors[identifier.field]}
+              className={`${INPUT_CLASS} ${errors[identifier.field] ? INPUT_ERROR_CLASS : ''}`}
+            />
+          </FieldShell>
         </div>
-    );
-});
+      )}
+      {method === 'other' && (
+        <p className="text-sm text-gray-600 dark:text-gray-300">Our team will contact you to agree how payments are made.</p>
+      )}
 
-FreelancerBankDetailTab.displayName = 'FreelancerBankDetailTab';
+      {showStatus && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+          {verificationStatus === 'verified' ? <ShieldCheck className="w-4 h-4 text-green-600" /> : <ShieldAlert className={`w-4 h-4 ${verificationStatus === 'rejected' ? 'text-red-500' : 'text-amber-500'}`} />}
+          <span>Payout details: <strong className="font-semibold">{STATUS_TEXT[verificationStatus!] ?? verificationStatus}</strong></span>
+          {verificationStatus === 'rejected' && verificationRemarks && <span className="text-red-700 dark:text-red-300">- {verificationRemarks}</span>}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface TabProps {
+  freelancerId: number;
+  paymentMethods: ChoiceOption[];
+  /** Default bank country when none is saved yet. */
+  residenceCountry?: string;
+  canEdit?: boolean;
+  canReveal?: boolean;
+  onSaved?: (bank: FreelancerBankDetail) => void;
+}
+
+/** Standalone payout editor (loads and saves the bank-detail record itself). */
+export const FreelancerBankDetailTab: React.FC<TabProps> = ({ freelancerId, paymentMethods, residenceCountry = '', canEdit = true, canReveal, onSaved }) => {
+  const [detail, setDetail] = useState<FreelancerBankDetail | null>(null);
+  const [form, setForm] = useState<FreelancerFormState>(EMPTY_FORM);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const { config: bankConfig } = useCountryConfig(form.bank.bank_country || residenceCountry);
+
+  useEffect(() => {
+    let alive = true;
+    api.getBankDetail(freelancerId)
+      .then((d) => {
+        if (!alive) return;
+        setDetail(d);
+        setForm({ ...EMPTY_FORM, country_of_residence: residenceCountry, ...bankSliceFrom(d) });
+      })
+      .catch(() => alive && toast.error('Failed to load payment details'))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [freelancerId, residenceCountry]);
+
+  const save = async () => {
+    const found = validateStep('banking', form, {
+      mode: 'admin', countries: [], kycConfig: null, permanentConfig: null, tempConfig: null, bankConfig,
+      saved: { hasIdNumber: false, hasTaxNumber: !!detail?.has_tax_number, hasAccountNumber: !!detail?.has_account_number },
+      slots: [], documents: [], hasRecord: true,
+    }, false);
+    setErrors(found);
+    if (Object.keys(found).length) {
+      toast.error('Please complete the highlighted fields.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const saved = await api.updateBankDetail(freelancerId, bankDetailPayload(form, bankConfig, 'admin'));
+      setDetail(saved);
+      setForm((f) => ({ ...f, ...bankSliceFrom(saved) }));
+      onSaved?.(saved);
+      toast.success('Payment details saved');
+    } catch (err) {
+      const parsed = parseApiErrors(err);
+      setErrors(formErrorsFromServer(parsed));
+      toast.error(parsed.general || 'Failed to save payment details');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <p className="flex items-center gap-2 p-6 text-sm text-gray-500 dark:text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Loading payment details…</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <FreelancerPaymentFields
+        idPrefix={`fl-bank-${freelancerId}`}
+        paymentMethods={paymentMethods}
+        method={form.payment_method}
+        onMethodChange={(m) => setForm((f) => ({ ...f, payment_method: m, bank: m === 'bank_transfer' && !f.bank.bank_country ? { ...f.bank, bank_country: residenceCountry } : f.bank }))}
+        bank={form.bank}
+        onBankChange={(p) => setForm((f) => ({ ...f, bank: { ...f.bank, ...p } }))}
+        identifiers={{ upi_id: form.upi_id, paypal_email: form.paypal_email, wise_email: form.wise_email }}
+        onIdentifierChange={(field, value) => setForm((f) => ({ ...f, [field]: value }))}
+        errors={errors}
+        disabled={!canEdit || saving}
+        maskedAccountNumber={detail?.account_number_masked}
+        onRevealAccountNumber={canReveal ? async () => {
+          try {
+            return (await api.getBankDetailUnmasked(freelancerId)).account_number || null;
+          } catch {
+            toast.error('You are not allowed to view the full account number');
+            return null;
+          }
+        } : undefined}
+        verificationStatus={detail?.payment_status}
+        verificationRemarks={detail?.verification_remarks}
+        paymentTerms={form.payment_terms}
+        onPaymentTermsChange={(v) => setForm((f) => ({ ...f, payment_terms: v }))}
+      />
+      {canEdit && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving}
+            className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 dark:bg-violet-600 dark:hover:bg-violet-700"
+          >
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save payment details
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};

@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { OnboardingStepCards } from '../../../components/OnboardingStepCards';
 import { StatusBadge } from '../../../components/StatusBadge';
 import type { Freelancer } from '../../../types/freelancerOnboarding.types';
-import { FREELANCER_ONBOARDING_STEPS, freelancerPercent, resolveFreelancerSteps, type FreelancerStepKey } from './freelancerDisplay';
+import { FREELANCER_ONBOARDING_STEPS, freelancerPercent, resolveFreelancerSteps, statusVariant, type FreelancerStepKey } from './freelancerDisplay';
 
 interface Props {
   freelancer: Freelancer | null;
@@ -33,19 +33,19 @@ export const FreelancerOnboardingPanel: React.FC<Props> = ({ freelancer, statusL
                 {' '}&middot; {current ? `Pending at ${current.title}` : 'All steps complete'} &middot; {freelancerPercent(freelancer)}% complete
               </>
             ) : (
-              <>Profile &rarr; address &rarr; availability &rarr; bank and KYC &rarr; active</>
+              <>Basic information &rarr; identity &amp; KYC &rarr; address &rarr; banking &rarr; professional &rarr; documents &rarr; review</>
             )}
           </p>
         </div>
         <p className="text-sm text-gray-500 sm:whitespace-nowrap dark:text-gray-400">
-          {FREELANCER_ONBOARDING_STEPS.length} steps &middot; profile to active
+          {FREELANCER_ONBOARDING_STEPS.length} steps &middot; invite to approval
         </p>
       </div>
 
       <div className="px-4 sm:px-5 py-4 space-y-3">
         {freelancer ? (
           <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <StatusBadge status={freelancer.status} label={statusLabel(freelancer.status)} />
+            <StatusBadge status={freelancer.status} variant={statusVariant(freelancer.status)} label={statusLabel(freelancer.status)} />
             {freelancer.freelancer_code && <span className="font-mono">{freelancer.freelancer_code}</span>}
             {freelancer.professional_title && <span>{freelancer.professional_title}</span>}
           </div>

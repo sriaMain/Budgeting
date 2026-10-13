@@ -1,9 +1,13 @@
 import publicAxiosInstance from "../utils/publicAxiosInstance";
 import type {
-  Freelancer, FreelancerDocument, FreelancerPublicChoices, FreelancerManualPayload,
-  FreelancerBankDetail, FreelancerBankDetailPayload,
+  FreelancerDocument, FreelancerPublicChoices, FreelancerProfilePayload, FreelancerPublic, FreelancerPortalClosed,
+  FreelancerBankDetail, FreelancerBankDetailPayload, DocumentUploadOptions,
 } from "../types/freelancerOnboarding.types";
 
+/**
+ * Secure-link (no login) freelancer portal. Every call is authenticated only by the
+ * token in its URL - publicAxiosInstance never attaches the admin session.
+ */
 const BASE = "/freelancer-onboarding/public";
 
 export const getPublicChoices = async (): Promise<FreelancerPublicChoices> => {
@@ -11,13 +15,26 @@ export const getPublicChoices = async (): Promise<FreelancerPublicChoices> => {
   return res.data;
 };
 
-export const getFreelancerByToken = async (token: string): Promise<Freelancer> => {
+/** The onboarding, or - for a link closed after approval - only the outcome. */
+export const getFreelancerByToken = async (token: string): Promise<FreelancerPublic | FreelancerPortalClosed> => {
   const res = await publicAxiosInstance.get(`${BASE}/${token}/`);
   return res.data;
 };
 
-export const updateByToken = async (token: string, data: Partial<FreelancerManualPayload> & { last_saved_step?: number }): Promise<Freelancer> => {
+export const updateByToken = async (token: string, data: FreelancerProfilePayload): Promise<FreelancerPublic> => {
   const res = await publicAxiosInstance.patch(`${BASE}/${token}/update/`, data);
+  return res.data;
+};
+
+export const uploadProfilePhotoByToken = async (token: string, file: File): Promise<FreelancerPublic> => {
+  const formData = new FormData();
+  formData.append("photo", file);
+  const res = await publicAxiosInstance.post(`${BASE}/${token}/profile-photo/`, formData);
+  return res.data;
+};
+
+export const removeProfilePhotoByToken = async (token: string): Promise<FreelancerPublic> => {
+  const res = await publicAxiosInstance.delete(`${BASE}/${token}/profile-photo/`);
   return res.data;
 };
 
@@ -26,11 +43,18 @@ export const listDocumentsByToken = async (token: string): Promise<FreelancerDoc
   return res.data;
 };
 
-export const uploadDocumentByToken = async (token: string, category: string, file: File): Promise<FreelancerDocument> => {
+export const uploadDocumentByToken = async (
+  token: string, category: string, file: File, opts: DocumentUploadOptions = {},
+): Promise<FreelancerDocument> => {
   const formData = new FormData();
   formData.append("category", category);
   formData.append("file", file);
-  const res = await publicAxiosInstance.post(`${BASE}/${token}/documents/`, formData);
+  if (opts.replaces) formData.append("replaces", String(opts.replaces));
+  if (opts.expiryDate) formData.append("expiry_date", opts.expiryDate);
+  if (opts.documentNumber) formData.append("document_number", opts.documentNumber);
+  const res = await publicAxiosInstance.post(`${BASE}/${token}/documents/`, formData, {
+    onUploadProgress: (e) => opts.onProgress?.((e.loaded / (e.total || e.loaded || 1)) * 100),
+  });
   return res.data;
 };
 
@@ -43,7 +67,8 @@ export const downloadDocumentByToken = async (token: string, docId: number): Pro
   return res.data;
 };
 
-export const submitByToken = async (token: string): Promise<Freelancer> => {
+/** 400 with `missing` when requirements are unmet; afterwards the link is read-only. */
+export const submitByToken = async (token: string): Promise<FreelancerPublic> => {
   const res = await publicAxiosInstance.post(`${BASE}/${token}/submit/`);
   return res.data;
 };
@@ -53,7 +78,7 @@ export const getBankDetailByToken = async (token: string): Promise<FreelancerBan
   return res.data;
 };
 
-export const updateBankDetailByToken = async (token: string, payload: Partial<FreelancerBankDetailPayload>): Promise<FreelancerBankDetail> => {
+export const updateBankDetailByToken = async (token: string, payload: FreelancerBankDetailPayload): Promise<FreelancerBankDetail> => {
   const res = await publicAxiosInstance.patch(`${BASE}/${token}/bank-detail/`, payload);
   return res.data;
 };

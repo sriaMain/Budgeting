@@ -3,6 +3,7 @@ from .views import (
     CallCenterListCreateView, ProfitCenterListCreateView, GLAccountListCreateView,
     TestEmailAPIView, NotificationListAPIView, NotificationMarkReadAPIView,
     NotificationMarkAllReadAPIView,
+    CountryListAPIView, CountryConfigAPIView, IfscLookupAPIView, PostalCodeLookupAPIView,
 )
 
 urlpatterns = [
@@ -23,4 +24,10 @@ urlpatterns = [
     path("notifications/", NotificationListAPIView.as_view(), name="notification-list"),
     path("notifications/<int:pk>/read/", NotificationMarkReadAPIView.as_view(), name="notification-mark-read"),
     path("notifications/mark-all-read/", NotificationMarkAllReadAPIView.as_view(), name="notification-mark-all-read"),
+
+    # Onboarding: country rules + IFSC / postal-code lookups (public - used by the portals too)
+    path("countries/", CountryListAPIView.as_view(), name="country-list"),
+    path("countries/<str:code>/", CountryConfigAPIView.as_view(), name="country-config"),
+    path("lookups/ifsc/<str:code>/", IfscLookupAPIView.as_view(), name="lookup-ifsc"),
+    path("lookups/postal-code/", PostalCodeLookupAPIView.as_view(), name="lookup-postal-code"),
 ]

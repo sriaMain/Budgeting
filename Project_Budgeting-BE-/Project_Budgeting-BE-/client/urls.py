@@ -2,21 +2,23 @@ from django.urls import path
 from .views import (
     CompanyListCreateAPIView,
     ClientDropdownAPIView,
+    ClientPermissionsView,
     CompanyDetailAPIView,
     CompanyTagListCreateAPIView,
     CompanyTagDetailAPIView,
     PointOfContactListCreateAPIView,
     PointOfContactDetailAPIView,
     CompanyPOCListView,
-    # AllPOCsWithCompanyAPIView,
     CountryCodeAPIView,
     ClientDocumentListCreateView,
     ClientDocumentDetailView,
     ClientDocumentDownloadView,
     ClientDocumentVerifyView,
     ClientAuditLogListView,
+    ClientBankAccountUnmaskedView,
     ClientChangeRequestListCreateView,
     ClientChangeRequestResolveView,
+    ClientSubmitView,
     ClientSubmitForApprovalView,
 )
 
@@ -24,6 +26,8 @@ urlpatterns = [
     # companies
     path("client/", CompanyListCreateAPIView.as_view(), name="company-list-create"),
     path("client/dropdown/", ClientDropdownAPIView.as_view(), name="client-dropdown"),
+    # the requesting user's Clients & KYC permissions (drives what the UI offers)
+    path("client/permissions/", ClientPermissionsView.as_view(), name="client-permissions"),
     path("client/<int:pk>/", CompanyDetailAPIView.as_view(), name="company-detail"),
     path("country-codes/", CountryCodeAPIView.as_view(), name="country-codes"),
 
@@ -45,11 +49,17 @@ urlpatterns = [
     path("client/<int:pk>/documents/<int:doc_id>/download/", ClientDocumentDownloadView.as_view(), name="client-document-download"),
     path("client/<int:pk>/documents/<int:doc_id>/verify/", ClientDocumentVerifyView.as_view(), name="client-document-verify"),
 
+    # full bank account number for reviewers (audit-logged)
+    path("client/<int:pk>/bank-account/unmasked/", ClientBankAccountUnmaskedView.as_view(), name="client-bank-account-unmasked"),
+
     # audit trail
     path("client/<int:pk>/audit-logs/", ClientAuditLogListView.as_view(), name="client-audit-log-list"),
 
-    # change requests + final approval
+    # workflow: submit (maker) -> change requests / approve (checker)
+    path("client/<int:pk>/submit/", ClientSubmitView.as_view(), name="client-submit"),
     path("client/<int:pk>/change-requests/", ClientChangeRequestListCreateView.as_view(), name="client-change-request-list-create"),
     path("client/<int:pk>/change-requests/<int:cr_id>/resolve/", ClientChangeRequestResolveView.as_view(), name="client-change-request-resolve"),
+    path("client/<int:pk>/approve/", ClientSubmitForApprovalView.as_view(), name="client-approve"),
+    # legacy path of the approve action (kept for existing callers)
     path("client/<int:pk>/submit-for-approval/", ClientSubmitForApprovalView.as_view(), name="client-submit-for-approval"),
 ]

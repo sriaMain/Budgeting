@@ -6,8 +6,8 @@ from cloudinary.models import CloudinaryField
 
 from accounts.models import Vendor
 from .validators import (
-    pan_validator, cin_validator, tan_validator, udyam_validator,
-    ifsc_validator, mobile_validator, gstin_validator,
+    pan_validator, cin_or_llpin_validator, tan_validator, udyam_validator,
+    ifsc_validator, gstin_validator,
 )
 
 
@@ -90,7 +90,8 @@ class VendorOnboardingProfile(models.Model):
 
     finance_manager_name = models.CharField(max_length=150, blank=True)
     finance_manager_email = models.EmailField(blank=True)
-    finance_manager_mobile = models.CharField(max_length=15, blank=True)
+    # E.164 ("+919876543210") - normalised by the serializers.
+    finance_manager_mobile = models.CharField(max_length=20, blank=True)
 
     # Intake
     service_category = models.CharField(max_length=150, blank=True)
@@ -123,17 +124,20 @@ class VendorKYC(models.Model):
     country_of_tax_residence = models.CharField(max_length=100, blank=True)
     pan = models.CharField(max_length=10, blank=True, validators=[pan_validator])
 
-    cin = models.CharField(max_length=21, blank=True, validators=[cin_validator])
+    # CIN for a company, LLPIN (e.g. AAB-1234) for an LLP.
+    cin = models.CharField(max_length=21, blank=True, validators=[cin_or_llpin_validator])
     incorporation_date = models.DateField(null=True, blank=True)
 
     tan = models.CharField(max_length=10, blank=True, validators=[tan_validator])
-    tan_mobile = models.CharField(max_length=15, blank=True, validators=[mobile_validator])
+    # E.164 ("+919876543210") - normalised and validated by the serializers.
+    tan_mobile = models.CharField(max_length=20, blank=True)
 
     epf_number = models.CharField(max_length=30, blank=True)
     esic_number = models.CharField(max_length=30, blank=True)
     esic_district = models.CharField(max_length=100, blank=True)
 
-    # Overseas equivalent of PAN / GSTIN (VAT / EIN / Tax ID) - free text, no format validation.
+    # Non-Indian tax identifier (VAT / EIN / ABN / UEN ...) - validated per country of tax
+    # residence by the serializers (core.countries.validate_tax_id).
     tax_id = models.CharField(max_length=50, blank=True)
     beneficial_ownership_details = models.TextField(blank=True)
 
@@ -169,9 +173,17 @@ class VendorBankDetail(models.Model):
     account_number = models.CharField(max_length=34, blank=True)
     ifsc_code = models.CharField(max_length=11, blank=True, validators=[ifsc_validator])
 
+    # Generic local routing code for non-Indian banks: ABA routing number, sort code, BSB,
+    # transit/institution number ... (India keeps its own ifsc_code column).
+    routing_code = models.CharField(max_length=30, blank=True)
+    # Country-specific (savings / current / checking ...), see core.countries.bank_config.
+    account_type = models.CharField(max_length=20, blank=True)
+
+    # Legacy ERP bank keys - kept (existing rows hold values) but no longer collected by the forms.
     bank_id = models.CharField(max_length=50, blank=True)
     bank_country_key = models.CharField(max_length=10, blank=True)
     bank_control_key = models.CharField(max_length=10, blank=True)
+    # Branch name.
     branch = models.CharField(max_length=150, blank=True)
     region = models.CharField(max_length=100, blank=True)
     street = models.CharField(max_length=255, blank=True)
@@ -265,6 +277,7 @@ class VendorDocument(models.Model):
         ('registration_certificate', 'Company Registration Document'),
         ('tax_id_certificate', 'VAT / EIN / Tax ID Certificate'),
         ('tax_residency_certificate', 'Tax Residency Document'),
+        ('government_id', 'Government ID (Passport / National ID)'),
         ('tax_form', 'W-8BEN-E / Applicable Tax Form'),
         ('contract_document', 'Contract Document'),
         ('other', 'Other Document'),
@@ -298,6 +311,12 @@ class VendorDocument(models.Model):
     category = models.CharField(max_length=40, choices=CATEGORY_CHOICES)
     is_required = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='uploaded')
+    # Validity end (passport, trade licence, tax residency certificate ...). A document past this
+    # date reads as "expired" (core.document_security.effective_document_status) and no longer
+    # satisfies a required-document rule.
+    expiry_date = models.DateField(null=True, blank=True)
+    # The identifier printed on the document (passport / certificate number), when captured.
+    document_number = models.CharField(max_length=100, blank=True)
 
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -511,9 +530,12 @@ class VendorAuditLog(models.Model):
         ('document_verified', 'Document Verified'),
         ('document_rejected', 'Document Rejected'),
         ('document_deleted', 'Document Deleted'),
+        ('document_replaced', 'Document Replaced'),
+        ('document_under_review', 'Document Under Review'),
         ('kyc_updated', 'KYC Updated'),
         ('banking_verified', 'Banking Verified'),
         ('banking_updated', 'Banking Review Updated'),
+        ('banking_reset', 'Bank Verification Reset'),
         ('contract_updated', 'Contract Updated'),
         ('email_sent', 'Onboarding Email Sent'),
         ('email_failed', 'Onboarding Email Failed'),

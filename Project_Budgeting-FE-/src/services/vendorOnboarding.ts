@@ -1,4 +1,5 @@
 import axiosInstance from "../utils/axiosInstance";
+import { documentFormData, uploadProgressHandler } from "./vendorOnboardingPublic";
 import type {
   VendorOnboardingChoices,
   VendorOnboardingDetail,
@@ -16,6 +17,8 @@ import type {
   RequestChangesPayload,
   VendorReview,
   VendorAuditLogEntry,
+  VendorSectionsPayload,
+  VendorDocumentUploadOptions,
 } from "../types/vendorOnboarding.types";
 
 const BASE = "/vendor-onboarding";
@@ -60,12 +63,24 @@ export const unarchiveVendor = async (id: number): Promise<VendorOnboardingDetai
   return res.data;
 };
 
-export const createDraft = async (data: { name?: string; vendor_type?: string; email?: string; phone?: string }) => {
+export const createDraft = async (data: { name?: string; first_name?: string; middle_name?: string; last_name?: string; vendor_type?: string; email?: string; phone?: string }) => {
   const res = await axiosInstance.post(`${BASE}/vendors/`, data);
   return res.data as VendorOnboardingDetail;
 };
 
-export const patchDraft = async (id: number, data: Partial<{ name: string; vendor_type: string; email: string; phone: string; last_saved_step: number }>) => {
+/** Creates the vendor (as a draft) and saves its first wizard sections in one request. */
+export const createVendorWithSections = async (payload: VendorSectionsPayload & { identity: Record<string, unknown> }): Promise<VendorOnboardingDetail> => {
+  const res = await axiosInstance.post(`${BASE}/vendors/`, payload);
+  return res.data;
+};
+
+/** The wizard's save: every section sent is validated first and all are saved together. Returns the full detail. */
+export const saveSections = async (id: number, payload: VendorSectionsPayload): Promise<VendorOnboardingDetail> => {
+  const res = await axiosInstance.patch(`${BASE}/vendors/${id}/sections/`, payload);
+  return res.data;
+};
+
+export const patchDraft = async (id: number, data: Partial<{ name: string; first_name: string; middle_name: string; last_name: string; vendor_type: string; email: string; phone: string; last_saved_step: number }>) => {
   const res = await axiosInstance.patch(`${BASE}/vendors/${id}/`, data);
   return res.data as VendorOnboardingDetail;
 };
@@ -104,11 +119,10 @@ export const listDocuments = async (id: number): Promise<VendorDocument[]> => {
   return res.data;
 };
 
-export const uploadDocument = async (id: number, category: string, file: File): Promise<VendorDocument> => {
-  const formData = new FormData();
-  formData.append("category", category);
-  formData.append("file", file);
-  const res = await axiosInstance.post(`${BASE}/vendors/${id}/documents/`, formData);
+export const uploadDocument = async (id: number, category: string, file: File, opts: VendorDocumentUploadOptions = {}): Promise<VendorDocument> => {
+  const res = await axiosInstance.post(`${BASE}/vendors/${id}/documents/`, documentFormData(category, file, opts), {
+    onUploadProgress: uploadProgressHandler(opts),
+  });
   return res.data;
 };
 

@@ -1,11 +1,29 @@
 import publicAxiosInstance from "../utils/publicAxiosInstance";
 import type {
   VendorOnboardingProfile, VendorKYC, VendorBankDetail, VendorProcurementDetail,
-  VendorDocument, VendorPublicChoices,
+  VendorDocument, VendorPublicChoices, VendorSectionsPayload, VendorDocumentUploadOptions,
 } from "../types/vendorOnboarding.types";
 import type { VendorPublicDetail } from "../types/vendorOnboardingPublic.types";
 
 const BASE = "/vendor-onboarding/public";
+
+/** Shared by the admin and portal upload calls: replace / expiry / document number + upload progress.
+ * (Lives here so the token-only portal never imports the authenticated axios instance.) */
+export const documentFormData = (category: string, file: File, opts: VendorDocumentUploadOptions = {}) => {
+  const formData = new FormData();
+  formData.append("category", category);
+  formData.append("file", file);
+  if (opts.replaces) formData.append("replaces", String(opts.replaces));
+  if (opts.expiryDate) formData.append("expiry_date", opts.expiryDate);
+  if (opts.documentNumber) formData.append("document_number", opts.documentNumber);
+  return formData;
+};
+
+export const uploadProgressHandler = (opts: VendorDocumentUploadOptions = {}) =>
+  opts.onProgress
+    ? (e: { loaded: number; total?: number }) => opts.onProgress?.((e.loaded / (e.total || e.loaded || 1)) * 100)
+    : undefined;
+
 
 export const getPublicChoices = async (): Promise<VendorPublicChoices> => {
   const res = await publicAxiosInstance.get(`${BASE}/choices/`);
@@ -19,10 +37,16 @@ export const getRequestByToken = async (token: string): Promise<VendorPublicDeta
 
 export const patchIdentityByToken = async (
   token: string,
-  data: Partial<{ name: string; vendor_type: string; email: string; phone: string; contact_person_name: string; last_saved_step: number }>
+  data: Partial<{ name: string; first_name: string; middle_name: string; last_name: string; vendor_type: string; email: string; phone: string; contact_person_name: string; last_saved_step: number }>
 ) => {
   const res = await publicAxiosInstance.patch(`${BASE}/${token}/identity/`, data);
   return res.data as VendorPublicDetail;
+};
+
+/** One request per wizard save (vendor-facing fields only). Returns the refreshed public detail. */
+export const saveSectionsByToken = async (token: string, payload: VendorSectionsPayload): Promise<VendorPublicDetail> => {
+  const res = await publicAxiosInstance.patch(`${BASE}/${token}/sections/`, payload);
+  return res.data;
 };
 
 export const patchProfileByToken = async (token: string, data: Partial<VendorOnboardingProfile>) => {
@@ -50,11 +74,10 @@ export const listDocumentsByToken = async (token: string): Promise<VendorDocumen
   return res.data;
 };
 
-export const uploadDocumentByToken = async (token: string, category: string, file: File): Promise<VendorDocument> => {
-  const formData = new FormData();
-  formData.append("category", category);
-  formData.append("file", file);
-  const res = await publicAxiosInstance.post(`${BASE}/${token}/documents/`, formData);
+export const uploadDocumentByToken = async (token: string, category: string, file: File, opts: VendorDocumentUploadOptions = {}): Promise<VendorDocument> => {
+  const res = await publicAxiosInstance.post(`${BASE}/${token}/documents/`, documentFormData(category, file, opts), {
+    onUploadProgress: uploadProgressHandler(opts),
+  });
   return res.data;
 };
 

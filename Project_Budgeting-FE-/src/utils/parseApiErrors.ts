@@ -6,9 +6,22 @@ import type { FormErrors } from "../types";
  */
 export const parseApiErrors = (err: any): FormErrors => {
    const newErrors: FormErrors = {};
-   console.error("API Error:", err);
+   // Log only the status/URL: the error object carries the request body (bank / KYC data).
+   console.error("API Error:", err?.response?.status ?? "network", err?.config?.url ?? "");
 
    const data = err?.response?.data || err?.data;
+
+   // Field errors may arrive wrapped: {"errors": {...}} (client create) or
+   // {"error": "first message", "errors": {...}} (the DRF exception handler).
+   if (data && typeof data === 'object' && !Array.isArray(data) && data.errors && typeof data.errors === 'object' && !Array.isArray(data.errors)) {
+      Object.entries(data.errors as Record<string, unknown>).forEach(([key, value]) => {
+         newErrors[key] = flattenMessage(value);
+      });
+      newErrors.general = typeof data.error === 'string' ? data.error
+         : typeof data.message === 'string' ? data.message
+         : Object.values(newErrors)[0] || 'Please correct the highlighted fields.';
+      return newErrors;
+   }
 
    if (data) {
       // 1. Handle string response
@@ -54,3 +67,10 @@ export const parseApiErrors = (err: any): FormErrors => {
 
    return newErrors;
 };
+
+/** First readable message from a DRF error value (string, list or nested object). */
+function flattenMessage(value: unknown): string {
+   if (Array.isArray(value)) return value.map(flattenMessage).filter(Boolean).join(', ');
+   if (value && typeof value === 'object') return Object.values(value as Record<string, unknown>).map(flattenMessage).filter(Boolean).join(', ');
+   return value == null ? '' : String(value);
+}

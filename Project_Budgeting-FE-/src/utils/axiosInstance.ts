@@ -15,8 +15,7 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use((config) => {
   const token = store.getState().auth.accessToken;
 
-  console.log("Attaching token to request:", token);
-
+  // Never log the token (or request bodies) - they end up in shared browser consoles / screenshots.
   if (token) {
     config.headers["Authorization"] = `Bearer ${token}`;
   }
@@ -32,7 +31,6 @@ axiosInstance.interceptors.response.use(
 
     // Check if this request should skip auth redirect
     if (originalRequest.skipAuthRedirect) {
-      console.log('Skipping auth redirect for this request');
       return Promise.reject(error);
     }
 

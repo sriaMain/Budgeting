@@ -76,7 +76,6 @@ INSTALLED_APPS = [
     'core',
     'phonenumber_field',
     'vendor_onboarding',
-    'employee_onboarding',
     'freelancer_onboarding',
     'hrms_integration',
 
@@ -216,30 +215,19 @@ REST_FRAMEWORK = {
     ],
     "EXCEPTION_HANDLER": "myproject.exceptions.custom_exception_handler",
     "DEFAULT_THROTTLE_RATES": {
-        # Public, token-authenticated vendor/employee onboarding endpoints -
+        # Public, token-authenticated vendor/freelancer onboarding endpoints -
         # no login, so they're rate-limited per IP instead of per user.
         "vendor_public": "60/hour",
-        # A single employee onboarding session legitimately fires 40-60+
-        # requests before reaching the documents step (choices + detail on
-        # load, an identity/last_saved_step PATCH per step advance, a section
-        # PATCH per step, a documents-list refetch after every upload/delete,
-        # etc.), so 60/hour was exhausted mid-session and caused genuine
-        # users to be 429'd (e.g. after PAN/Aadhaar upload, by the time Bank
-        # Proof/Photo were reached the bucket was already empty). Rate-limit
-        # per-minute instead of per-hour so a legitimate burst has headroom
-        # and an accidental trip recovers in seconds, not up to an hour.
-        "employee_onboarding_public": "300/min",
-        # Freelancer onboarding is a short, 5-section form - lighter than
-        # employee's but still needs headroom above the tight vendor rate.
+        # Freelancer onboarding is a short, 5-section form but still needs
+        # headroom above the tight vendor rate.
         "freelancer_onboarding_public": "120/min",
+        # IFSC / postal-code lookups proxied for every onboarding form (incl. the public portals).
+        "onboarding_lookup": "60/min",
     },
 }
 
 # Vendor Self-Service Onboarding
 VENDOR_ONBOARDING_TOKEN_TTL_DAYS = 90
-
-# Employee Self-Service Onboarding
-EMPLOYEE_ONBOARDING_TOKEN_TTL_DAYS = 30
 
 # Freelancer Self-Service Onboarding
 FREELANCER_ONBOARDING_TOKEN_TTL_DAYS = 30
@@ -311,10 +299,9 @@ VENDOR_PORTAL_URL = os.environ.get("VENDOR_PORTAL_URL", FRONTEND_BASE_URL).rstri
 if VENDOR_PORTAL_URL not in CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS.append(VENDOR_PORTAL_URL)
 
-# Public URL the Employee Onboarding portal is reachable at - same idea as
-# VENDOR_PORTAL_URL above, kept as its own env var so the two portals can be
-# pointed at different deployments later even though they currently share the
-# same frontend app. Set this in .env, e.g.:
+# Public URL of the app employees sign in to - used for the login link in
+# welcome emails (accounts, hrms_integration). Same idea as VENDOR_PORTAL_URL
+# above, kept as its own env var. Set this in .env, e.g.:
 #   production: EMPLOYEE_PORTAL_URL=https://project.nxsys.in
 EMPLOYEE_PORTAL_URL = os.environ.get("EMPLOYEE_PORTAL_URL", FRONTEND_BASE_URL).rstrip("/")
 
