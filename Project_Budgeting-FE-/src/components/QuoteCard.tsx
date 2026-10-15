@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../utils/date';
 import React from 'react';
 import { Building2 } from 'lucide-react';
 import { Draggable } from '@hello-pangea/dnd';
@@ -12,12 +13,7 @@ interface QuoteCardProps {
 export const QuoteCard: React.FC<QuoteCardProps> = ({ quote, index, onClick }) => {
   // Format date for display
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    });
+    return toDMY(dateString);
   };
 
   // Parse quote value safely

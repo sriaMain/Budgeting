@@ -6,6 +6,7 @@
  * payload as ExpenseDetailsPage.
  */
 
+import { formatDate as toDMY } from '../utils/date';
 import React, { useCallback, useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import axiosInstance from '../utils/axiosInstance';
@@ -33,7 +34,7 @@ const n = (v: number | string | undefined | null) => Number(v) || 0;
 const money = (v: number | string | undefined | null) =>
     `₹${n(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtDate = (d?: string | null) =>
-    d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+    toDMY(d, '-');
 const label = (v?: string | null) => (v ? v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '-');
 
 const Stat: React.FC<{ label: string; value: string; tone?: string }> = ({ label: l, value, tone }) => (

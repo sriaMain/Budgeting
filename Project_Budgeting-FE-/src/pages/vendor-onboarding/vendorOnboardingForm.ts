@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../../utils/date';
 import type { ReactNode } from 'react';
 import type { ReviewRow } from '../../components/onboarding/OnboardingWizard';
 import { bankPayload } from '../../components/onboarding/bankForm';
@@ -397,9 +398,7 @@ export interface ReviewSectionData {
 export const choiceLabel = (choices: Choice[], value: string) => (value ? choices.find((c) => c.value === value)?.label ?? value.replace(/_/g, ' ') : '');
 
 const formatDate = (iso: string) => {
-  if (!iso) return '';
-  const d = new Date(`${iso}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  return toDMY(iso, '');
 };
 
 const yesNo = (v: boolean) => (v ? 'Yes' : 'No');

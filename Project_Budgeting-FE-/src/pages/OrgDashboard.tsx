@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../utils/date';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -62,7 +63,7 @@ const QUICK_ACTIONS = [
 ];
 
 const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  toDMY(value);
 
 const timeSince = (value: string) => {
   const hours = Math.floor((Date.now() - new Date(value).getTime()) / 3_600_000);
@@ -519,36 +520,6 @@ export const OrgDashboard: React.FC = () => {
                     Record Payment
                   </button>
                 </div>
-              ),
-              className: 'text-right',
-            },
-          ]}
-        />
-      </ChartCard>
-
-      {/* Budget Control Center (Section 11) */}
-      <ChartCard
-        title="Budget Control Center"
-        subtitle="Planned vs actual, by GL Account"
-        loading={loading}
-        isEmpty={!loading && !(admin?.budget_control.length)}
-        emptyMessage="No GL-Account budget lines recorded yet."
-      >
-        <ReusableTable
-          data={admin?.budget_control ?? []}
-          keyField="gl_account"
-          emptyMessage="No GL-Account budget lines recorded yet."
-          onRowClick={() => navigate('/projects')}
-          columns={[
-            { header: 'GL Account', accessor: (r) => `${r.gl_account_code} - ${r.gl_account_name}` },
-            { header: 'Budget', accessor: (r) => formatCurrencyCompact(r.planned_amount), className: 'text-right' },
-            { header: 'Actual', accessor: (r) => formatCurrencyCompact(r.actual_amount), className: 'text-right' },
-            {
-              header: 'Variance',
-              accessor: (r) => (
-                <span className={`font-semibold ${r.variance < 0 ? 'text-risk-600 dark:text-red-400' : 'text-teal-700'}`}>
-                  {formatCurrencyCompact(r.variance)}
-                </span>
               ),
               className: 'text-right',
             },

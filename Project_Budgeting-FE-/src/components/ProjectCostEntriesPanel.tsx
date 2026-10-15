@@ -10,6 +10,7 @@
  * month (project start date to end date) instead of Milestone.
  */
 
+import { formatDate as toDMY } from '../utils/date';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -37,7 +38,7 @@ interface ProjectCostEntriesPanelProps {
 const ALL = '';
 
 const fmtDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    toDMY(iso);
 
 const STATUS_META: Record<string, { label: string; variant: 'success' | 'warning' | 'neutral' }> = {
     paid: { label: 'Paid', variant: 'success' },

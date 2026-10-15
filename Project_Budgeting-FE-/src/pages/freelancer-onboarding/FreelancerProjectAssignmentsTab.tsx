@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../../utils/date';
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { AlertTriangle } from 'lucide-react';
@@ -166,7 +167,7 @@ export const FreelancerProjectAssignmentsTab: React.FC<Props> = ({ freelancerId,
         { header: 'Client', accessor: (a) => a.client_name || '-' },
         { header: 'Type', accessor: (a) => a.project_type || '-' },
         { header: 'Role', accessor: (a) => a.role || '-' },
-        { header: 'Dates', accessor: (a) => `${a.start_date} - ${a.end_date || 'ongoing'}` },
+        { header: 'Dates', accessor: (a) => `${toDMY(a.start_date)} - ${toDMY(a.end_date, 'ongoing')}` },
         { header: 'Allocation %', accessor: (a) => `${a.allocation_percent}%` },
         { header: 'Cost Rate', accessor: (a) => a.cost_rate_snapshot ? `${a.currency_snapshot} ${a.cost_rate_snapshot}` : '-' },
         { header: 'Billing Rate', accessor: (a) => a.billing_rate_snapshot ? `${a.currency_snapshot} ${a.billing_rate_snapshot}` : '-' },

@@ -366,7 +366,7 @@ const ClientKycWizard: React.FC<ClientKycDrawerProps> = ({ client, userRole, ini
       if (!saved) return;
       const submitted = await submitClient(saved.id);
       applySaved(submitted);
-      toast.success('Submitted for approval');
+      toast.success('Client submitted');
       onClose();
     } catch (err) {
       showSaveError(err, 'Could not submit the client.');
@@ -452,7 +452,7 @@ const ClientKycWizard: React.FC<ClientKycDrawerProps> = ({ client, userRole, ini
       onCancel={requestClose}
       isSaving={busy === 'saving'}
       isSubmitting={busy === 'submitting'}
-      submitLabel="Submit for approval"
+      submitLabel="Submit"
       submitBlockedReason={submitBlockedReason}
       readOnly={readOnly}
       note={note}

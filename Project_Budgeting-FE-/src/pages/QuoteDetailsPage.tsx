@@ -3,6 +3,7 @@
  * Displays detailed information about a specific quote
  */
 
+import { formatDate as toDMY } from '../utils/date';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Edit, FileText, Share2, Send, Receipt, Loader2, Plus } from 'lucide-react';
@@ -248,8 +249,8 @@ export default function QuoteDetailsPage({
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                         <InfoDisplay label="Quote No" value={quoteData.quote_no} />
                         <InfoDisplay label="Author" value={quoteData.author} />
-                        <InfoDisplay label="Date of Issue" value={quoteData.date_of_issue} />
-                        <InfoDisplay label="End Date" value={quoteData.due_date} />
+                        <InfoDisplay label="Date of Issue" value={toDMY(quoteData.date_of_issue)} />
+                        <InfoDisplay label="End Date" value={toDMY(quoteData.due_date)} />
                         <InfoDisplay label="Quote Name" value={quoteData.quote_name} />
                         <InfoDisplay
                             label="Status"

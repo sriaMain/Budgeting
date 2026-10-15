@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../utils/date';
 import React, { useMemo } from 'react';
 
 interface GanttTask {
@@ -125,7 +126,7 @@ export const TaskGanttView: React.FC<TaskGanttViewProps> = ({ tasks, projectStar
                                     <div className="relative flex-1 h-10">
                                         <button
                                             onClick={() => onTaskClick?.(task)}
-                                            title={`${task.title} — due ${dueDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+                                            title={`${task.title} — due ${toDMY(dueDate)}`}
                                             className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full border-2 ${MARKER_COLORS[task.status]} ${isOverdue ? 'ring-2 ring-red-300' : ''}`}
                                             style={{ left: `${percent}%` }}
                                         />

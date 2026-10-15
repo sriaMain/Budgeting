@@ -7,6 +7,7 @@
  * open payment here (POST invoices/payments/<id>/status/).
  */
 
+import { formatDate as toDMY } from '../utils/date';
 import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import axiosInstance from '../utils/axiosInstance';
@@ -20,7 +21,7 @@ const n = (v: number | string | undefined | null) => Number(v) || 0;
 const money = (v: number | string | undefined | null) =>
     `₹${n(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtDate = (d?: string | null) =>
-    d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+    toDMY(d, '-');
 
 const actionBtn = 'px-2 py-1 rounded-md text-xs font-medium border disabled:opacity-50';
 

@@ -1,3 +1,4 @@
+import { formatDateTime as toDMYTime } from '../utils/date';
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
 import { CheckCircle2, AlertTriangle, Circle } from 'lucide-react';
@@ -142,7 +143,7 @@ export const ApprovalSummaryPanel: React.FC<ApprovalSummaryPanelProps> = ({
 
       {isApproved && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pb-4 border-b dark:border-gray-800">
-          <Field label="Approved On" value={client.kyc_verified_at ? new Date(client.kyc_verified_at).toLocaleString() : undefined} />
+          <Field label="Approved On" value={client.kyc_verified_at ? toDMYTime(client.kyc_verified_at) : undefined} />
           <Field label="Approval Remarks" value={client.approval_remarks} />
         </div>
       )}

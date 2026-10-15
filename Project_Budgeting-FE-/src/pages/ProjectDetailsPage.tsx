@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../utils/date';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Layout } from '../components/Layout';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -116,7 +117,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
             activityType: task.activity_type || 'Development',
             allocatedHours: task.allocated_formatted || (task.allocated_hours ? `${task.allocated_hours}h` : '0h'),
             consumedHours: task.consumed_formatted || (task.consumed_hours ? `${task.consumed_hours}h` : '0h'),
-            dueDate: task.due_date ? new Date(task.due_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'TBD',
+            dueDate: toDMY(task.due_date, 'TBD'),
             dueDateRaw: task.due_date || null,
             remaining: task.remaining_formatted_hms || (task.remaining_hours ? `${task.remaining_hours}h` : task.allocated_hours ? `${task.allocated_hours}h` : '0h'),
             allocatedHoursNum,
@@ -1086,15 +1087,11 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                         },
                                         {
                                             header: 'Issue Date',
-                                            accessor: (invoice) => invoice.issue_date
-                                                ? new Date(invoice.issue_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                                                : '-',
+                                            accessor: (invoice) => toDMY(invoice.issue_date, '-'),
                                         },
                                         {
                                             header: 'Due Date',
-                                            accessor: (invoice) => invoice.due_date
-                                                ? new Date(invoice.due_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                                                : '-',
+                                            accessor: (invoice) => toDMY(invoice.due_date, '-'),
                                         },
                                         {
                                             header: 'Amount',
@@ -1377,11 +1374,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 },
                                                 {
                                                     header: 'PAYMENT DATE',
-                                                    accessor: (payment) => new Date(payment.payment_date).toLocaleDateString('en-GB', {
-                                                        day: '2-digit',
-                                                        month: 'short',
-                                                        year: 'numeric'
-                                                    }),
+                                                    accessor: (payment) => toDMY(payment.payment_date),
                                                     className: 'uppercase text-xs'
                                                 },
                                                 {
@@ -1423,11 +1416,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                     header: 'CREATED',
                                                     accessor: (payment) => (
                                                         <span className="text-xs text-gray-500 dark:text-gray-400">
-                                                            {new Date(payment.created_at).toLocaleDateString('en-GB', {
-                                                                day: '2-digit',
-                                                                month: 'short',
-                                                                year: 'numeric'
-                                                            })}
+                                                            {toDMY(payment.created_at)}
                                                         </span>
                                                     ),
                                                     className: 'uppercase text-xs'

@@ -1,3 +1,4 @@
+import { formatDate as toDMY, formatDateTime as toDMYTime } from '../utils/date';
 import React, { useRef, useState } from 'react';
 import { Upload, FileText, Download, Trash2, XCircle, Loader2, ShieldCheck, ShieldX, Eye, CalendarClock, Clock } from 'lucide-react';
 import { formatFileSize } from '../utils/fileHelpers';
@@ -81,9 +82,7 @@ const DOC_STATUS_LABELS: Record<string, string> = {
 const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 const formatDate = (iso?: string | null) => {
-  if (!iso) return '';
-  const d = new Date(iso.length === 10 ? `${iso}T00:00:00` : iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  return toDMY(iso, '');
 };
 
 /** Checks `file` against an HTML `accept` attribute string (comma-separated
@@ -271,7 +270,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
             {existingDoc?.verifiedAt && (
               <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
                 {existingDoc.status === 'rejected' ? 'Rejected' : existingDoc.status === 'under_review' ? 'Marked for review' : 'Verified'} by {existingDoc.verifiedBy ?? 'reviewer'} on{' '}
-                {new Date(existingDoc.verifiedAt).toLocaleString()}
+                {toDMYTime(existingDoc.verifiedAt)}
               </p>
             )}
             {existingDoc?.status === 'rejected' && existingDoc.remarks && (

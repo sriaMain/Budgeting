@@ -9,6 +9,7 @@
  * milestone's budget, cost summary, billing and payment.
  */
 
+import { formatDate as toDMY } from '../utils/date';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
@@ -114,7 +115,7 @@ const dayAfter = (iso: string) => {
 };
 
 const fmtShortDate = (iso: string) =>
-    new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    toDMY(iso);
 
 const emptyForm = {
     name: '',

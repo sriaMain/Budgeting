@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../utils/date';
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import axiosInstance from '../utils/axiosInstance';
@@ -521,9 +522,9 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                                 {row.status}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{new Date(row.due_date).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{toDMY(row.due_date)}</td>
                                         <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                                            {row.last_payment_date ? new Date(row.last_payment_date).toLocaleDateString() : '-'}
+                                            {toDMY(row.last_payment_date, '-')}
                                         </td>
                                     </tr>
                                 ))
@@ -742,7 +743,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                 }
                                 return data.map((row, idx) => (
                                     <tr key={idx} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
-                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{new Date(row.payment_date).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{toDMY(row.payment_date)}</td>
                                         <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.invoice__invoice_no}</td>
                                         <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{row.invoice__client__company_name}</td>
                                         <td className="px-6 py-4 text-sm">

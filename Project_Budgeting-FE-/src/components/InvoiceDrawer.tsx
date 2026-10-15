@@ -6,6 +6,7 @@
  * PDF, send, delete). Record Payment opens on top as its own drawer.
  */
 
+import { formatDate as toDMY } from '../utils/date';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Download, Send, Trash2, Pencil } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -27,7 +28,7 @@ const n = (v: number | string | undefined | null) => Number(v) || 0;
 const money = (v: number | string | undefined | null) =>
     `₹${n(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtDate = (d?: string | null) =>
-    d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+    toDMY(d, '-');
 
 const statusClass = (status: string) => {
     const s = status.toLowerCase();

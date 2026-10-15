@@ -1,3 +1,4 @@
+import { formatDateTime as toDMYTime } from '../utils/date';
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ChevronDown, Info, Loader2, RefreshCw, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -27,7 +28,7 @@ const PAGE_SIZE = 25;
 
 const SELECT_CLASS = 'pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500';
 
-const formatDateTime = (value: string | null) => (value ? new Date(value).toLocaleString() : '—');
+const formatDateTime = (value: string | null) => toDMYTime(value);
 
 const errorMessage = (err: unknown) => parseApiErrors(err).general || 'Something went wrong. Please try again.';
 

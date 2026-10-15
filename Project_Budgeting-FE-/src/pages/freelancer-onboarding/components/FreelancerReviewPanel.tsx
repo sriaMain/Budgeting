@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../../../utils/date';
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
 import { AlertTriangle, CheckCircle2, Link2, Link2Off, Loader2, Mail, MessageSquareWarning, ShieldCheck, ShieldX } from 'lucide-react';
@@ -92,7 +93,7 @@ export const FreelancerReviewPanel: React.FC<Props> = ({ detail, bank, onDetail,
 
       {detail.review_remarks && (
         <div className="text-xs text-gray-700 dark:text-gray-300">
-          <span className="font-semibold">Last review{detail.reviewed_by_name ? ` by ${detail.reviewed_by_name}` : ''}{detail.reviewed_at ? ` on ${new Date(detail.reviewed_at).toLocaleDateString()}` : ''}:</span> {detail.review_remarks}
+          <span className="font-semibold">Last review{detail.reviewed_by_name ? ` by ${detail.reviewed_by_name}` : ''}{detail.reviewed_at ? ` on ${toDMY(detail.reviewed_at)}` : ''}:</span> {detail.review_remarks}
         </div>
       )}
 

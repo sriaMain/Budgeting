@@ -15,6 +15,7 @@
  * server-side.
  */
 
+import { formatDate as toDMY } from '../utils/date';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
@@ -103,7 +104,7 @@ const todayIso = () => {
 };
 
 const fmtDate = (iso: string | null) =>
-    iso ? new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+    toDMY(iso, '');
 
 const emptyForm = () => ({
     resourceType: 'employee' as ResourceType,

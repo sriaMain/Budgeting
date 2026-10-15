@@ -1,3 +1,4 @@
+import { formatDateTime as toDMYTime } from '../utils/date';
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -351,7 +352,7 @@ export function ClientDetailsPage({ client, pocs, userRole, onAddPOC, onEdit, on
                   <p className="text-sm text-amber-800 mt-0.5 break-words dark:text-amber-300">{cr.required_changes}</p>
                   {cr.comments && <p className="text-xs text-amber-700 mt-0.5 dark:text-amber-400">{cr.comments}</p>}
                   <p className="text-xs text-amber-600 mt-1 dark:text-amber-500">
-                    Requested by {cr.requested_by_name || 'system'} on {new Date(cr.requested_at).toLocaleString()}
+                    Requested by {cr.requested_by_name || 'system'} on {toDMYTime(cr.requested_at)}
                   </p>
                 </div>
                 {perms.request_changes && (
@@ -436,7 +437,7 @@ export function ClientDetailsPage({ client, pocs, userRole, onAddPOC, onEdit, on
                   )}
                   <p className="text-xs text-gray-400 mt-0.5 dark:text-gray-500">by {log.performed_by_name || 'system'}</p>
                 </div>
-                <span className="text-xs text-gray-400 whitespace-nowrap dark:text-gray-500">{new Date(log.created_at).toLocaleString()}</span>
+                <span className="text-xs text-gray-400 whitespace-nowrap dark:text-gray-500">{toDMYTime(log.created_at)}</span>
               </div>
             ))}
           </div>

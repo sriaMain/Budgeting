@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../utils/date';
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AppShell } from '../components/AppShell';
@@ -371,8 +372,8 @@ export default function ProjectsScreen(_props: any) {
 												budgetUsedPct={pct}
 												totalBudget={`${(parseFloat(project.budget?.cost_budget) || 0).toLocaleString()} ${project.budget?.currency || 'INR'}`}
 												totalHours={`${project.budget?.billable_hours != null ? Number(project.budget.billable_hours) : (project.budget?.total_hours || 0)}h`}
-												startDate={project.start_date ? new Date(project.start_date).toLocaleDateString() : undefined}
-												endDate={project.end_date ? new Date(project.end_date).toLocaleDateString() : undefined}
+												startDate={project.start_date ? toDMY(project.start_date) : undefined}
+												endDate={project.end_date ? toDMY(project.end_date) : undefined}
 												statusControl={
 													<StatusSelect project={project} statusChoices={statusChoices} onChange={handleStatusChange} />
 												}

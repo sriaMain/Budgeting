@@ -9,6 +9,7 @@
  * but can't be picked - the backend enforces the same rules.
  */
 
+import { formatDate as toDMY } from '../utils/date';
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import axiosInstance from '../utils/axiosInstance';
@@ -29,7 +30,7 @@ const n = (v: number | string | undefined | null) => Number(v) || 0;
 const money = (v: number | string | undefined | null) =>
     n(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d: string) =>
-    new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    toDMY(d);
 
 /** Why a month can't be invoiced, or null when it can. */
 const blockedReason = (p: TMPeriodRow): string | null => {

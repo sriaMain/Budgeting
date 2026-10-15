@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../utils/date';
 import React from 'react';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Download, FileText, Loader2, RotateCw, Trash2 } from 'lucide-react';
@@ -198,7 +199,7 @@ export const ClientDocumentsSection: React.FC<ClientDocumentsSectionProps> = ({
                       <p className="text-sm font-medium text-gray-900 truncate dark:text-gray-100" title={doc.file_name}>{doc.file_name}</p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         {doc.category_label || categoryLabel(doc.category)} &middot; {formatFileSize(doc.file_size)}
-                        {doc.expiry_date ? ` · expires ${doc.expiry_date}` : ''}
+                        {doc.expiry_date ? ` · expires ${toDMY(doc.expiry_date)}` : ''}
                       </p>
                     </div>
                   </div>

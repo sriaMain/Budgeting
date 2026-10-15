@@ -1,3 +1,4 @@
+import { formatDateTime as toDMYTime } from '../../../utils/date';
 import React, { useRef, useState } from 'react';
 import { AlertTriangle, Camera, Clock, Download, Eye, FileText, Loader2, Trash2 } from 'lucide-react';
 import { FormSection, ReviewSection, type ReviewRow } from '../../../components/onboarding/OnboardingWizard';
@@ -615,7 +616,7 @@ export const FreelancerWizardBody: React.FC<BodyProps> = (props) => {
 export const WizardStatusLine: React.FC<{ w: FreelancerWizard }> = ({ w }) => {
   const submitted = w.record?.submitted_at;
   if (submitted) {
-    return <span className="inline-flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> Submitted {new Date(submitted).toLocaleString()}</span>;
+    return <span className="inline-flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> Submitted {toDMYTime(submitted)}</span>;
   }
   return w.isDirty && !w.readOnly ? <span>Unsaved changes - use Save draft or Save &amp; next.</span> : null;
 };

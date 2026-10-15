@@ -3,6 +3,7 @@
  * Display purchase order details with actions to download PDF and send email
  */
 
+import { formatDate as toDMY } from '../utils/date';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FileText, Send, ArrowLeft, Trash2 } from 'lucide-react';
@@ -243,7 +244,7 @@ export default function PurchaseOrderDetailsPage() {
                                 <div>
                                     <label className="text-sm text-gray-500 dark:text-gray-400 block mb-1">Date</label>
                                     <p className="font-medium text-gray-900 dark:text-white">
-                                        {poData.issue_date ? new Date(poData.issue_date).toLocaleDateString() : 'N/A'}
+                                        {toDMY(poData.issue_date, 'N/A')}
                                     </p>
                                 </div>
                             </div>

@@ -1,3 +1,4 @@
+import { formatDateTime as toDMYTime } from '../../../utils/date';
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -143,7 +144,7 @@ const PortalWizard: React.FC<{ token: string; initial: Extract<PageState, { kind
         <div className="rounded-xl border border-green-200 bg-green-50 p-4 sm:p-5 dark:border-green-500/30 dark:bg-green-500/10">
           <p className="flex items-center gap-2 font-semibold text-green-800 dark:text-green-300"><CheckCircle2 className="w-5 h-5" /> Thank you - your onboarding has been submitted</p>
           <p className="mt-1 text-sm text-green-800/90 dark:text-green-300/90 flex items-center gap-1.5">
-            <Clock className="w-4 h-4" /> It is being reviewed{current.submitted_at ? ` (submitted ${new Date(current.submitted_at).toLocaleString()})` : ''}. You can look through what you sent below; contact us if something needs correcting.
+            <Clock className="w-4 h-4" /> It is being reviewed{current.submitted_at ? ` (submitted ${toDMYTime(current.submitted_at)})` : ''}. You can look through what you sent below; contact us if something needs correcting.
           </p>
         </div>
       )}

@@ -8,7 +8,7 @@ these flags only drive what the UI offers.
 """
 from __future__ import annotations
 
-from .onboarding import APPROVABLE_STATUSES, SUBMITTABLE_STATUSES
+from .onboarding import APPROVABLE_STATUSES, AUTO_APPROVE_ON_SUBMIT, SUBMITTABLE_STATUSES
 
 CLIENT_PERMISSION_CODES = {
     "view": "client.company.view",
@@ -53,7 +53,8 @@ def user_permissions(user) -> dict:
 def is_maker_locked(company, user=None, flags=None) -> bool:
     """A submitted client is frozen for makers until a reviewer approves it or requests changes;
     reviewers (client.company.approve) can still correct it."""
-    if company.kyc_status != "submitted":
+    if AUTO_APPROVE_ON_SUBMIT or company.kyc_status != "submitted":
+        # With auto-approval nothing waits for a reviewer, so nothing is ever frozen.
         return False
     can_approve = flags["approve"] if flags is not None else has_perm(user, "client.company.approve")
     return not can_approve
@@ -66,7 +67,11 @@ def record_permissions(company, flags: dict) -> dict:
         "edit": flags["edit"] and not locked,
         "upload_documents": flags["upload_documents"] and not locked,
         "delete_documents": flags["delete_documents"] and not locked,
-        "submit": flags["edit"] and not locked and company.kyc_status in SUBMITTABLE_STATUSES,
+        "submit": flags["edit"] and not locked and (
+            company.kyc_status in SUBMITTABLE_STATUSES
+            # legacy "awaiting approval" clients are approved by submitting again
+            or (AUTO_APPROVE_ON_SUBMIT and company.kyc_status == "submitted")
+        ),
         "approve": flags["approve"] and company.kyc_status in APPROVABLE_STATUSES,
         "locked": locked,
     })

@@ -1,6 +1,7 @@
+import { formatDateTime as toDMYTime } from '../../utils/date';
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { AlertTriangle, CheckCircle2, Info, Loader2, ShieldCheck } from 'lucide-react';
+import { Info, Loader2, ShieldCheck } from 'lucide-react';
 import { ReviewSection, FormSection, type ReviewRow } from '../../components/onboarding/OnboardingWizard';
 import { FieldShell } from '../../components/onboarding/FieldShell';
 import { INPUT_CLASS } from '../../components/onboarding/fieldStyles';
@@ -9,7 +10,6 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { RequestChangesDialog } from '../../components/RequestChangesDialog';
 import type { CountryConfig } from '../../services/countries';
 import {
-  approveClient,
   listChangeRequests,
   readClientApiError,
   resolveChangeRequest,
@@ -68,13 +68,14 @@ interface ClientReviewStepProps {
   /** The client changed on the server (compliance review, change request ...). */
   onRecordChange: (client: Client) => void;
   /** Final approval succeeded. */
-  onApproved: (client: Client) => void;
+  /** Unused since submitting approves the client; kept so callers needn't change. */
+  onApproved?: (client: Client) => void;
 }
 
 const Yes = (v: boolean | undefined) => (v ? 'Yes' : 'No');
 
 export const ClientReviewStep: React.FC<ClientReviewStepProps> = ({
-  form, record, perms, countryConfig, bankConfig, stepIssues, slots, documents, tags, dirty, onEditStep, onRecordChange, onApproved,
+  form, record, perms, countryConfig, bankConfig, stepIssues, slots, documents, tags, dirty, onEditStep, onRecordChange,
 }) => {
   const individual = form.client_type === 'individual';
   const indian = isIndianCountry(form.country);
@@ -171,7 +172,7 @@ export const ClientReviewStep: React.FC<ClientReviewStepProps> = ({
         onEdit={() => onEditStep('documents')}
       />
 
-      {record && reviewer && <ReviewerPanel record={record} perms={perms} onRecordChange={onRecordChange} onApproved={onApproved} />}
+      {record && reviewer && <ReviewerPanel record={record} perms={perms} onRecordChange={onRecordChange} />}
     </div>
   );
 };
@@ -212,7 +213,7 @@ const StatusPanel: React.FC<{ record?: Client; dirty: boolean; perms: ClientReco
       {dirty && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">You have unsaved changes - they are saved when you submit.</p>}
       {record.kyc_verified_at && status === 'verified' && (
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          Approved {new Date(record.kyc_verified_at).toLocaleString()}{record.approval_remarks ? ` · “${record.approval_remarks}”` : ''}
+          Approved {toDMYTime(record.kyc_verified_at)}{record.approval_remarks ? ` · “${record.approval_remarks}”` : ''}
         </p>
       )}
     </div>
@@ -260,15 +261,11 @@ interface ReviewerPanelProps {
   record: Client;
   perms: ClientRecordPermissions;
   onRecordChange: (client: Client) => void;
-  onApproved: (client: Client) => void;
 }
 
-const ReviewerPanel: React.FC<ReviewerPanelProps> = ({ record, perms, onRecordChange, onApproved }) => {
+const ReviewerPanel: React.FC<ReviewerPanelProps> = ({ record, perms, onRecordChange }) => {
   const [compliance, setCompliance] = useState<ComplianceState>(() => complianceFrom(record));
   const [savingCompliance, setSavingCompliance] = useState(false);
-  const [remarks, setRemarks] = useState('');
-  const [approving, setApproving] = useState(false);
-  const [approvalMissing, setApprovalMissing] = useState<string[] | null>(null);
   const [requests, setRequests] = useState<ClientChangeRequest[] | null>(null);
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
@@ -317,22 +314,6 @@ const ReviewerPanel: React.FC<ReviewerPanelProps> = ({ record, perms, onRecordCh
     }
   };
 
-  const approve = async () => {
-    setApproving(true);
-    setApprovalMissing(null);
-    try {
-      const updated = await approveClient(record.id, remarks);
-      toast.success('Client approved and marked project-ready');
-      onApproved(updated);
-    } catch (err) {
-      const apiError = readClientApiError(err, 'Could not approve the client.');
-      if (apiError.missing.length) setApprovalMissing(apiError.missing);
-      else toast.error(apiError.message);
-    } finally {
-      setApproving(false);
-    }
-  };
-
   const resolve = async (cr: ClientChangeRequest) => {
     setResolvingId(cr.id);
     try {
@@ -347,9 +328,7 @@ const ReviewerPanel: React.FC<ReviewerPanelProps> = ({ record, perms, onRecordCh
     }
   };
 
-  const blockers = record.approval_blockers ?? [];
   const openRequests = (requests ?? []).filter((r) => r.status === 'open');
-  const canApproveNow = perms.approve && !record.is_project_ready;
   const kycFlagOptions = [
     { value: '', label: `No change (${kycStatusLabel(record.kyc_status)})` },
     ...KYC_STATUS_OPTIONS.filter((o) => REVIEWER_KYC_FLAGS.includes(o.value) && o.value !== record.kyc_status),
@@ -427,7 +406,7 @@ const ReviewerPanel: React.FC<ReviewerPanelProps> = ({ record, perms, onRecordCh
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
             {record.compliance_reviewed_at && (
-              <span className="text-xs text-gray-500 dark:text-gray-400 mr-auto">Last reviewed {new Date(record.compliance_reviewed_at).toLocaleString()}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400 mr-auto">Last reviewed {toDMYTime(record.compliance_reviewed_at)}</span>
             )}
             <button
               type="button"
@@ -469,7 +448,7 @@ const ReviewerPanel: React.FC<ReviewerPanelProps> = ({ record, perms, onRecordCh
                   <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{changeRequestSectionLabel(cr.section)}</p>
                   <p className="text-sm text-gray-700 break-words dark:text-gray-300">{cr.required_changes}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {cr.requested_by_name || 'Reviewer'} · {new Date(cr.requested_at).toLocaleString()}
+                    {cr.requested_by_name || 'Reviewer'} · {toDMYTime(cr.requested_at)}
                   </p>
                 </div>
                 {perms.request_changes && (
@@ -487,69 +466,6 @@ const ReviewerPanel: React.FC<ReviewerPanelProps> = ({ record, perms, onRecordCh
           </ul>
         )}
       </FormSection>
-
-      {perms.approve !== undefined && (
-        <FormSection title="Final approval" description="Approval needs every required document verified, the compliance checks passed and the bank account verified.">
-          {record.is_project_ready ? (
-            <p className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
-              <CheckCircle2 className="w-4 h-4" /> Approved - project-ready.
-            </p>
-          ) : (
-            <>
-              {blockers.length > 0 ? (
-                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-                  <p className="font-semibold flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" /> Before this client can be approved:</p>
-                  <ul className="mt-1 space-y-0.5 list-disc list-inside">
-                    {blockers.map((b) => <li key={b}>{b}</li>)}
-                  </ul>
-                </div>
-              ) : (
-                <p className="mb-4 flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
-                  <CheckCircle2 className="w-4 h-4" /> Every approval check passes.
-                </p>
-              )}
-              {approvalMissing && approvalMissing.length > 0 && (
-                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
-                  <p className="font-semibold">The server refused the approval:</p>
-                  <ul className="mt-1 list-disc list-inside">{approvalMissing.map((m) => <li key={m}>{m}</li>)}</ul>
-                </div>
-              )}
-              {canApproveNow ? (
-                <>
-                  <FieldShell label="Approval remarks" htmlFor="client-approval_remarks" optional>
-                    <textarea
-                      id="client-approval_remarks"
-                      rows={2}
-                      maxLength={2000}
-                      value={remarks}
-                      onChange={(e) => setRemarks(e.target.value)}
-                      className={`${INPUT_CLASS} min-h-[64px]`}
-                    />
-                  </FieldShell>
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={approve}
-                      disabled={approving || blockers.length > 0}
-                      title={blockers.length > 0 ? 'Resolve the items above first' : undefined}
-                      className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {approving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                      {approving ? 'Approving…' : 'Approve client'}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {perms.approve
-                    ? 'Approval opens once the client is submitted.'
-                    : 'Approving a client needs the client approval permission.'}
-                </p>
-              )}
-            </>
-          )}
-        </FormSection>
-      )}
 
       <RequestChangesDialog
         isOpen={requestDialogOpen}

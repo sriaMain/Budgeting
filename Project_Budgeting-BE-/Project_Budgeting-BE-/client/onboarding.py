@@ -76,6 +76,16 @@ def registration_required(client_type: str) -> bool:
 # Documents                                                                    #
 # --------------------------------------------------------------------------- #
 
+# KYC documents are collected but never mandatory: no slot blocks submission or approval.
+# Set to True to enforce the per-slot "required" rules below again.
+KYC_DOCUMENTS_MANDATORY = False
+
+# Submitting a client approves it straight away (Verified + project-ready): there is no separate
+# reviewer approval step, so the reviewer checklist (documents verified, sanctions, beneficial
+# ownership, tax residency, bank verified) never blocks. Set to False to restore maker/checker.
+AUTO_APPROVE_ON_SUBMIT = True
+
+
 @dataclass(frozen=True)
 class DocumentSlot:
     category: str
@@ -102,7 +112,7 @@ def document_slots(company) -> list[DocumentSlot]:
     slots: list[DocumentSlot] = []
 
     def add(category, label, required, **kwargs):
-        slots.append(DocumentSlot(category, label, required, **kwargs))
+        slots.append(DocumentSlot(category, label, bool(required) and KYC_DOCUMENTS_MANDATORY, **kwargs))
 
     if indian:
         add("pan_document", "PAN card", True, help_text="Copy of the PAN card or PAN allotment letter.")
@@ -340,12 +350,16 @@ def needs_enhanced_review(company, documents=None) -> bool:
         return True
     if company.sanctions_screening_status == "failed":
         return True
-    if not is_indian(company) and company.pk and not has_current_document(company, "sanctions_screening", documents):
+    if (KYC_DOCUMENTS_MANDATORY and not is_indian(company) and company.pk
+            and not has_current_document(company, "sanctions_screening", documents)):
         return True
     return False
 
 
 def approval_blockers(company, *, issues: list, slots: list, open_change_requests: bool) -> list[str]:
+    if AUTO_APPROVE_ON_SUBMIT:
+        # Only the submission requirements (required fields) remain.
+        return [issue["message"] for issue in issues]
     blockers: list[str] = []
     if company.kyc_status == "changes_requested":
         blockers.append("Changes were requested - resolve them and resubmit the client.")
@@ -433,7 +447,7 @@ def step_statuses(company, issues: list, slots: list) -> dict:
     elif (
         not by_step.get(STEP_BANKING)
         and company.banking_verification_status == "verified"
-        and bank_proof_status in ("uploaded", "under_review", "verified")
+        and (not KYC_DOCUMENTS_MANDATORY or bank_proof_status in ("uploaded", "under_review", "verified"))
     ):
         statuses["banking"] = "completed"
     else:

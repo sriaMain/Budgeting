@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, Plus, Users, ShieldCheck, AlertTriangle, Globe2, ShieldAlert, Clock } from 'lucide-react';
+import { Search, Plus, Users, ShieldCheck, AlertTriangle, Globe2, ShieldAlert } from 'lucide-react';
 import { ReusableTable, type Column } from '../components/ReusableTable';
 import { StatusBadge } from '../components/StatusBadge';
 import { StatCard } from '../components/StatCard';
@@ -170,12 +170,11 @@ export function ClientListPage({
   const kpis = useMemo(() => {
     const total = clients.length;
     const verified = clients.filter((c) => c.kyc_status === 'verified').length;
-    const awaitingApproval = clients.filter((c) => c.kyc_status === 'submitted').length;
     const needsReview = clients.filter((c) => ['enhanced_review', 'review_due', 'changes_requested'].includes(c.kyc_status)).length;
     const overseas = clients.filter((c) => (c.jurisdiction ?? computeJurisdiction(c.country)) === 'Overseas').length;
     const riskWatch = clients.filter((c) => c.risk_rating === 'medium' || c.risk_rating === 'high').length;
     const highRisk = clients.filter((c) => c.risk_rating === 'high').length;
-    return { total, verified, awaitingApproval, needsReview, overseas, riskWatch, highRisk };
+    return { total, verified, needsReview, overseas, riskWatch, highRisk };
   }, [clients]);
 
   const selectedClient = clients.find((c) => c.id === selectedClientId) || null;
@@ -279,7 +278,7 @@ export function ClientListPage({
       </div>
 
       {/* KPI Tiles */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
         <StatCard
           label="Registered Clients"
           value={String(kpis.total)}
@@ -293,14 +292,6 @@ export function ClientListPage({
           icon={<ShieldCheck size={16} />}
           loading={isLoading}
           status="good"
-        />
-        <StatCard
-          label="Awaiting Approval"
-          value={String(kpis.awaitingApproval)}
-          icon={<Clock size={16} />}
-          loading={isLoading}
-          status={kpis.awaitingApproval > 0 ? 'watch' : 'good'}
-          statusLabel={kpis.awaitingApproval > 0 ? 'Submitted for approval' : undefined}
         />
         <StatCard
           label="Needs Action"

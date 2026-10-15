@@ -1,3 +1,4 @@
+import { formatDateTime as toDMYTime } from '../utils/date';
 import React from 'react';
 import { History } from 'lucide-react';
 import type { VendorSubmissionVersion } from '../types/vendorOnboarding.types';
@@ -98,7 +99,7 @@ export const VersionDiffPanel: React.FC<VersionDiffPanelProps> = ({ versions }) 
               <p className="text-sm font-semibold text-gray-900 dark:text-white">
                 Version {version.version_number} — {version.is_resubmission ? 'Vendor Resubmitted' : 'Vendor Submitted'}
               </p>
-              <span className="text-xs text-gray-400 dark:text-gray-500">{new Date(version.created_at).toLocaleString()}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">{toDMYTime(version.created_at)}</span>
             </div>
 
             {isFirst ? (

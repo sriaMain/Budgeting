@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../../../utils/date';
 import { markCurrentStep, type StepCardItem, type StepCardStatus } from '../../../components/OnboardingStepCards';
 import type { AccessLinkSummary, Freelancer, KycStatus, OnboardingStepKey } from '../../../types/freelancerOnboarding.types';
 import { WIZARD_STEPS, type WizardStepKey } from '../wizard/freelancerWizardModel';
@@ -31,7 +32,7 @@ const REVOKE_TEXT: Record<string, string> = {
 };
 export function linkStatusText(link: AccessLinkSummary | undefined): string {
   if (!link || link.status === 'none') return 'No onboarding link sent';
-  if (link.status === 'active') return `Link active until ${new Date(link.expires_at!).toLocaleDateString()}`;
+  if (link.status === 'active') return `Link active until ${toDMY(link.expires_at)}`;
   if (link.status === 'expired') return 'Link expired';
   return `Link ${REVOKE_TEXT[link.revoke_reason] || 'revoked'}`;
 }

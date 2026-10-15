@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../../utils/date';
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/Button';
@@ -111,8 +112,8 @@ export const FreelancerContractsTab: React.FC<Props> = ({ freelancerId, contract
 
     const columns: Column<FreelancerContract>[] = [
         { header: 'Type', accessor: (c) => contractTypes.find((t) => t.value === c.contract_type)?.label || c.contract_type },
-        { header: 'Start Date', accessor: 'start_date' },
-        { header: 'End Date', accessor: (c) => c.end_date || 'Ongoing' },
+        { header: 'Start Date', accessor: (c) => toDMY(c.start_date) },
+        { header: 'End Date', accessor: (c) => toDMY(c.end_date, 'Ongoing') },
         { header: 'Status', accessor: (c) => contractStatuses.find((s) => s.value === c.status)?.label || c.status },
         { header: 'NDA', accessor: (c) => (c.nda_signed ? 'Signed' : 'Not signed') },
         { header: 'Agreement', accessor: (c) => (c.agreement_signed ? 'Signed' : 'Not signed') },

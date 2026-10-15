@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../utils/date';
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ListTodo, PlayCircle, CheckCircle2, AlertTriangle, Clock, CalendarClock } from 'lucide-react';
@@ -190,7 +191,7 @@ export const MyDashboard: React.FC = () => {
                   {task.project_name && <p className="text-xs text-gray-500 dark:text-gray-400">{task.project_name}</p>}
                 </div>
               </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">{new Date(task.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">{toDMY(task.due_date)}</span>
             </div>
           ))}
         </div>

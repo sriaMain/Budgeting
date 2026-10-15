@@ -905,7 +905,9 @@ class ClientChangeRequestResolveView(APIView):
 
 
 class ClientSubmitView(APIView):
-    """Maker: POST -> submits the client for approval (kyc_status 'submitted').
+    """POST -> submits the client. With onboarding.AUTO_APPROVE_ON_SUBMIT (the default) the
+    client is approved at once (Verified + project-ready); otherwise it waits for approval
+    (kyc_status 'submitted').
 
     Every required field and required document must be in place; missing, rejected or expired
     required documents block it. 400 body: {"error", "errors": {"missing": [...], "issues":
@@ -916,7 +918,12 @@ class ClientSubmitView(APIView):
 
     def post(self, request, pk):
         company = get_object_or_404(Company, pk=pk)
-        if company.kyc_status not in onboarding.SUBMITTABLE_STATUSES:
+        auto_approve = onboarding.AUTO_APPROVE_ON_SUBMIT
+        if company.is_project_ready:
+            return Response({"error": "This client is already approved."}, status=status.HTTP_400_BAD_REQUEST)
+        # Clients left "awaiting approval" from before auto-approval can simply be submitted again.
+        submittable = onboarding.SUBMITTABLE_STATUSES + (("submitted",) if auto_approve else ())
+        if company.kyc_status not in submittable:
             message = {
                 "submitted": "This client is already awaiting approval.",
                 "verified": "This client is already approved.",
@@ -928,10 +935,24 @@ class ClientSubmitView(APIView):
             raise DRFValidationError({"missing": [issue["message"] for issue in issues], "issues": issues})
 
         previous = company.kyc_status
-        company.kyc_status = "submitted"
-        company.save(update_fields=["kyc_status", "updated_at"])
-        _log_client_audit(company, "submitted_for_approval", request, field_name="kyc_status",
-                          old_value=previous, new_value=company.kyc_status)
+        if not auto_approve:
+            company.kyc_status = "submitted"
+            company.save(update_fields=["kyc_status", "updated_at"])
+            _log_client_audit(company, "submitted_for_approval", request, field_name="kyc_status",
+                              old_value=previous, new_value=company.kyc_status)
+            return Response(CompanySerializer(company, context=_context(request)).data, status=status.HTTP_200_OK)
+
+        with transaction.atomic():
+            company.kyc_status = "verified"
+            company.onboarding_step = "approved"
+            company.kyc_verified_by = request.user
+            company.kyc_verified_at = now()
+            company.save()
+            _log_client_audit(company, "submitted_for_approval", request)
+            _log_client_audit(company, "kyc_status_changed", request, field_name="kyc_status",
+                              old_value=previous, new_value=company.kyc_status)
+            if company.is_project_ready:
+                _log_client_audit(company, "project_ready_marked", request)
         return Response(CompanySerializer(company, context=_context(request)).data, status=status.HTTP_200_OK)
 
 

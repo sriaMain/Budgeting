@@ -9,6 +9,7 @@
  * (Project/utils/tm_periods.py); the totals row is the API's project total.
  */
 
+import { formatDate as toDMY } from '../utils/date';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import axiosInstance from '../utils/axiosInstance';
@@ -372,7 +373,7 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                 isOpen={!!detail}
                 onClose={() => setDetail(null)}
                 title={detail ? `${detail.label} - Monthly details` : ''}
-                subtitle={detail ? `${detail.period_start} to ${detail.period_end}` : undefined}
+                subtitle={detail ? `${toDMY(detail.period_start)} to ${toDMY(detail.period_end)}` : undefined}
                 size="lg"
             >
                 {detail && (
@@ -471,11 +472,11 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                                                 <span className="font-medium text-gray-900 dark:text-white">{inv.invoice_no} · {inv.status}</span>
                                                 <span className="tabular-nums">{money(inv.total_amount)}</span>
                                             </div>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400">Issued {inv.issue_date} · due {inv.due_date} · paid {money(inv.paid_amount)} · balance {money(inv.balance_amount)}</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">Issued {toDMY(inv.issue_date)} · due {toDMY(inv.due_date)} · paid {money(inv.paid_amount)} · balance {money(inv.balance_amount)}</p>
                                             {inv.payments.map(pay => (
                                                 // Only Completed payments are in "paid"; others are shown greyed with their status
                                                 <p key={pay.id} className={`text-xs tabular-nums ${!pay.status || pay.status === 'Completed' ? 'text-green-700 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
-                                                    {pay.payment_date} · {pay.payment_method}{pay.reference_no ? ` · ${pay.reference_no}` : ''} · {money(pay.amount)}
+                                                    {toDMY(pay.payment_date)} · {pay.payment_method}{pay.reference_no ? ` · ${pay.reference_no}` : ''} · {money(pay.amount)}
                                                     {pay.status && pay.status !== 'Completed' ? ` · ${pay.status_display || pay.status}` : ''}
                                                 </p>
                                             ))}
@@ -486,7 +487,7 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                                     {detail.items.labour.map(t => (
                                         <li key={t.task} className="py-1.5 flex justify-between gap-3 text-sm">
                                             <span className="min-w-0 truncate text-gray-700 dark:text-gray-300">
-                                                {t.title} <span className="text-xs text-gray-500">· {t.assignee || 'Unassigned'}{t.is_freelancer ? ' (freelancer)' : ''} · {n(t.hours).toFixed(2)} h × {money(t.rate)} · {t.date}</span>
+                                                {t.title} <span className="text-xs text-gray-500">· {t.assignee || 'Unassigned'}{t.is_freelancer ? ' (freelancer)' : ''} · {n(t.hours).toFixed(2)} h × {money(t.rate)} · {toDMY(t.date)}</span>
                                             </span>
                                             <span className={`tabular-nums ${t.unrated ? 'text-amber-600 dark:text-amber-400' : ''}`}>{t.unrated ? 'No rate' : money(t.cost)}</span>
                                         </li>
@@ -503,7 +504,7 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                                 <ItemList title="Expenses" empty="No expenses this month." count={detail.items.expenses.length}>
                                     {detail.items.expenses.map(e => (
                                         <li key={e.id} className="py-1.5 flex justify-between gap-3 text-sm">
-                                            <span className="min-w-0 truncate text-gray-700 dark:text-gray-300">{e.description} <span className="text-xs text-gray-500">· {e.category} · {e.date}</span></span>
+                                            <span className="min-w-0 truncate text-gray-700 dark:text-gray-300">{e.description} <span className="text-xs text-gray-500">· {e.category} · {toDMY(e.date)}</span></span>
                                             <span className="tabular-nums">{money(e.amount)}</span>
                                         </li>
                                     ))}
@@ -511,7 +512,7 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                                 <ItemList title="Vendor bill payments" empty="No vendor payments this month." count={detail.items.vendor_bills.length}>
                                     {detail.items.vendor_bills.map(b => (
                                         <li key={b.id} className="py-1.5 flex justify-between gap-3 text-sm">
-                                            <span className="text-gray-700 dark:text-gray-300">{b.bill_no} <span className="text-xs text-gray-500">· {b.vendor} · {b.date}</span></span>
+                                            <span className="text-gray-700 dark:text-gray-300">{b.bill_no} <span className="text-xs text-gray-500">· {b.vendor} · {toDMY(b.date)}</span></span>
                                             <span className="tabular-nums">{money(b.amount)}</span>
                                         </li>
                                     ))}
@@ -527,7 +528,7 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                 isOpen={!!invoicePeriod}
                 onClose={() => setInvoicePeriod(null)}
                 title="Generate Invoice"
-                subtitle={invoicePeriod ? `${invoicePeriod.label} · ${invoicePeriod.period_start} to ${invoicePeriod.period_end}` : undefined}
+                subtitle={invoicePeriod ? `${invoicePeriod.label} · ${toDMY(invoicePeriod.period_start)} to ${toDMY(invoicePeriod.period_end)}` : undefined}
                 size="md"
                 footer={(
                     <DrawerFormFooter

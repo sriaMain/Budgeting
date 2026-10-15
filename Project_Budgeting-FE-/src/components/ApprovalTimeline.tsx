@@ -1,3 +1,4 @@
+import { formatDateTime as toDMYTime } from '../utils/date';
 import React from 'react';
 import { CheckCircle2, Send, MessageSquareWarning, RefreshCw, Mail } from 'lucide-react';
 import type { VendorApprovalHistoryEvent } from '../types/vendorOnboarding.types';
@@ -49,7 +50,7 @@ export const ApprovalTimeline: React.FC<ApprovalTimelineProps> = ({ events }) =>
               </p>
               <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                 {event.actor_name || 'System'}{event.actor_role_snapshot ? ` (${event.actor_role_snapshot})` : ''} &middot;{' '}
-                {new Date(event.created_at).toLocaleString()}
+                {toDMYTime(event.created_at)}
               </p>
               {event.comments && <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap dark:text-gray-300">{event.comments}</p>}
               {event.required_changes && (

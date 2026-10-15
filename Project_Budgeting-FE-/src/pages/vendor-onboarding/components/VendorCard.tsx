@@ -1,3 +1,4 @@
+import { formatDate as toDMY } from '../../../utils/date';
 import React from 'react';
 import { Archive, ArchiveRestore, Star } from 'lucide-react';
 import { StatusBadge } from '../../../components/StatusBadge';
@@ -98,7 +99,7 @@ export const VendorCard: React.FC<VendorCardProps> = ({ vendor, selected, onSele
       <div className="flex items-center justify-between gap-2 pt-3 border-t border-gray-100 mt-auto dark:border-gray-800">
         <p className="text-xs text-gray-500 min-w-0 truncate dark:text-gray-400">
           {f?.latest_po_no
-            ? `${f.latest_po_no}${f.latest_po_issue_date ? ` · ${new Date(f.latest_po_issue_date).toLocaleDateString()}` : ''}`
+            ? `${f.latest_po_no}${f.latest_po_issue_date ? ` · ${toDMY(f.latest_po_issue_date)}` : ''}`
             : vendor.vendor_reference_no || '—'}
         </p>
         <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>

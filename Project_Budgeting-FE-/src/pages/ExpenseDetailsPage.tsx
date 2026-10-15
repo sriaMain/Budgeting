@@ -1,3 +1,4 @@
+import { formatDate as toDMY, formatDateTime as toDMYTime } from '../utils/date';
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -73,21 +74,11 @@ const ExpenseDetailsPage: React.FC<ExpenseDetailsPageProps> = ({ userRole, curre
     };
 
     const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric'
-        });
+        return toDMY(dateString);
     };
 
     const formatDateTime = (dateString: string) => {
-        return new Date(dateString).toLocaleString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
+        return toDMYTime(dateString);
     };
 
     const getCategoryLabel = (category: string) => {

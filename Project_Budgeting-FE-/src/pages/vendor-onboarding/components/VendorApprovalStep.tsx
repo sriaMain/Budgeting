@@ -1,3 +1,4 @@
+import { formatDateTime as toDMYTime } from '../../../utils/date';
 import React, { useEffect, useState } from 'react';
 import { Check, X, Mail, Loader2, ShieldCheck, MessageSquareWarning, History } from 'lucide-react';
 import { ConfirmDialog } from '../../../components/ConfirmDialog';
@@ -126,7 +127,7 @@ export const VendorApprovalStep: React.FC<{ wiz: VendorWizard }> = ({ wiz }) => 
           <div className="text-sm min-w-0">
             <p className="font-semibold text-gray-900 dark:text-white">Vendor self-service link</p>
             <p className="text-gray-500 break-words dark:text-gray-400">
-              {email?.status === 'sent' && `Sent to ${email.recipient} on ${new Date(email.sent_at!).toLocaleString()}`}
+              {email?.status === 'sent' && `Sent to ${email.recipient} on ${toDMYTime(email.sent_at)}`}
               {email?.status === 'failed' && <span className="text-risk-700 dark:text-red-300">Failed to send to {email.recipient} - check the address and try again</span>}
               {(!email || email.status === 'not_sent') && (vendor.email ? `Not sent yet · will go to ${vendor.email}` : 'Add a contact email in Basic Information to send the secure onboarding link')}
             </p>
@@ -160,7 +161,7 @@ export const VendorApprovalStep: React.FC<{ wiz: VendorWizard }> = ({ wiz }) => 
                 <li key={h.id} className="text-sm border-l-2 border-gray-200 pl-3 dark:border-gray-700">
                   <p className="font-medium text-gray-900 dark:text-gray-100">{h.action_display}</p>
                   <p className="text-xs text-gray-500 break-words dark:text-gray-400">
-                    {h.performed_by_name || 'System'} &middot; {new Date(h.created_at).toLocaleString()}
+                    {h.performed_by_name || 'System'} &middot; {toDMYTime(h.created_at)}
                     {h.new_value && ` · ${h.new_value}`}
                   </p>
                   {h.remarks && <p className="text-xs italic text-gray-500 break-words dark:text-gray-400">{h.remarks}</p>}

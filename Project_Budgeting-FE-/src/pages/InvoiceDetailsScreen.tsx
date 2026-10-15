@@ -3,6 +3,7 @@
  * Display invoice with status management and payment recording
  */
 
+import { formatDate as toDMY } from '../utils/date';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Edit, FileText, Share2, Send, ArrowLeft, Trash2 } from 'lucide-react';
@@ -354,7 +355,7 @@ export default function InvoiceDetailsScreen({
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                     />
                                 ) : (
-                                    <p className="text-base font-medium text-gray-900 dark:text-white">{invoiceData.issue_date}</p>
+                                    <p className="text-base font-medium text-gray-900 dark:text-white">{toDMY(invoiceData.issue_date)}</p>
                                 )}
                             </div>
                             <div className="mb-4">
@@ -383,7 +384,7 @@ export default function InvoiceDetailsScreen({
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                                     />
                                 ) : (
-                                    <p className="text-base font-medium text-gray-900 dark:text-white">{invoiceData.due_date}</p>
+                                    <p className="text-base font-medium text-gray-900 dark:text-white">{toDMY(invoiceData.due_date)}</p>
                                 )}
                             </div>
                             <div>

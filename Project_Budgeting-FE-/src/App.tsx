@@ -74,7 +74,8 @@ const App: React.FC = () => {
       />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<CenteredAuthPage><LoginForm /></CenteredAuthPage>} />
+          {/* The login screen is a full-width split layout of its own. */}
+          <Route path="/" element={<LoginForm />} />
 
           <Route path="/forgot-password" element={<CenteredAuthPage><ForgotPasswordForm /></CenteredAuthPage>} />
           <Route path="/verification" element={<CenteredAuthPage><VerificationScreen /></CenteredAuthPage>} />

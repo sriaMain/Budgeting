@@ -1,3 +1,4 @@
+import { formatDateTime as toDMYTime } from '../../utils/date';
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import * as api from '../../services/freelancerOnboarding';
@@ -48,7 +49,7 @@ export const FreelancerActivityTab: React.FC<Props> = ({ freelancerId }) => {
                             <p className="text-xs text-gray-400 mt-0.5 dark:text-gray-500">by {log.performed_by_name}</p>
                         </div>
                         <span className="text-xs text-gray-400 whitespace-nowrap dark:text-gray-500">
-                            {new Date(log.created_at).toLocaleString()}
+                            {toDMYTime(log.created_at)}
                         </span>
                     </div>
                 ))}

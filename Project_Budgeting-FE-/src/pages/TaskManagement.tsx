@@ -1,3 +1,4 @@
+import { formatDate as toDMY, formatDateTime as toDMYTime } from '../utils/date';
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Search, Filter, Play, Pause, Square,
@@ -195,7 +196,6 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     const start = new Date(d.setDate(diff));
     const end = new Date(d.setDate(start.getDate() + 6));
 
-    const options: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric' };
     const year = start.getFullYear();
 
     // Get ISO week number
@@ -203,7 +203,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     const pastDaysOfYear = (start.getTime() - startOfYear.getTime()) / 86400000;
     const weekNum = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
 
-    return `${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', options)}, ${year} (Week ${weekNum})`;
+    return `${toDMY(start)} - ${toDMY(end)} (Week ${weekNum})`;
   };
 
   const shiftWeek = (direction: number) => {
@@ -1778,7 +1778,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                                   </td>
                                   <td className="px-8 py-5 text-right">
                                     <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                                      {new Date(record.last_updated).toLocaleString()}
+                                      {toDMYTime(record.last_updated)}
                                     </span>
                                   </td>
                                 </tr>
@@ -2703,7 +2703,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                               {record.reviewed_by}
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                              {new Date(record.reviewed_at).toLocaleString()}
+                              {toDMYTime(record.reviewed_at)}
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
                               {record.reason || '-'}
@@ -2847,7 +2847,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                   <p className="text-sm font-semibold text-yellow-900 mb-1 dark:text-amber-300">Timer Status</p>
                   <p className="text-sm text-yellow-800 dark:text-amber-200">
                     Stopped ({selectedTaskDetails.stop_reason === 'AUTO' ? 'Automatically' : 'Manually'})
-                    {selectedTaskDetails.stopped_at && ` at ${new Date(selectedTaskDetails.stopped_at).toLocaleString()}`}
+                    {selectedTaskDetails.stopped_at && ` at ${toDMYTime(selectedTaskDetails.stopped_at)}`}
                   </p>
                 </div>
               )}
