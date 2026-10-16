@@ -27,6 +27,16 @@ class HrmsEmployee(models.Model):
     designation = models.CharField(max_length=150, blank=True)
     hrms_role = models.CharField(max_length=150, blank=True)
     branch = models.CharField(max_length=150, blank=True)
+    # Added with the AIRA employee API v2 (blank / null when AIRA doesn't send them).
+    first_name = models.CharField(max_length=150, blank=True)
+    middle_name = models.CharField(max_length=150, blank=True)
+    last_name = models.CharField(max_length=150, blank=True)
+    phone = models.CharField(max_length=30, blank=True)
+    reporting_manager_employee_id = models.CharField(max_length=50, blank=True)
+    date_of_joining = models.DateField(null=True, blank=True)
+    exit_date = models.DateField(null=True, blank=True)
+    employment_type = models.CharField(max_length=30, blank=True)
+    hrms_updated_at = models.DateTimeField(null=True, blank=True)
 
     is_active_in_hrms = models.BooleanField(default=True, db_index=True)
     first_seen_at = models.DateTimeField(auto_now_add=True)

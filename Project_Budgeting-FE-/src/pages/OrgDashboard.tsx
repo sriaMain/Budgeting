@@ -1,4 +1,4 @@
-import { formatDate as toDMY } from '../utils/date';
+import { formatDate as toDMY, formatMonthRange, formatMonthStart } from '../utils/date';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -290,7 +290,7 @@ export const OrgDashboard: React.FC = () => {
           <ResponsiveContainer width="100%" height={260}>
             <AreaChart data={overview?.revenue_trend ?? []} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
               <CartesianGrid stroke={chartChrome.grid} vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: chartChrome.axis, fontSize: 12 }} axisLine={{ stroke: chartChrome.grid }} tickLine={false} />
+              <XAxis dataKey="month" tickFormatter={(m: string) => formatMonthStart(m)} tick={{ fill: chartChrome.axis, fontSize: 12 }} axisLine={{ stroke: chartChrome.grid }} tickLine={false} />
               <YAxis
                 tick={{ fill: chartChrome.axis, fontSize: 12 }}
                 axisLine={false}
@@ -300,6 +300,7 @@ export const OrgDashboard: React.FC = () => {
               />
               <Tooltip
                 formatter={(v) => formatCurrency(v as number)}
+                labelFormatter={(m) => formatMonthRange(String(m))}
                 contentStyle={{ borderRadius: 8, borderColor: chartChrome.tooltipBorder, backgroundColor: chartChrome.tooltipBg, color: chartChrome.tooltipText }}
                 labelStyle={{ color: chartChrome.tooltipText }}
               />

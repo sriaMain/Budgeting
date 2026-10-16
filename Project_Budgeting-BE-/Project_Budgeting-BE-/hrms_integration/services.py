@@ -19,13 +19,14 @@ from django.db import transaction
 from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.html import strip_tags
 
 from accounts.models import Account
 from product_group.models import Product_Services
 from roles.models import Role
 
-from .client import HrmsError, fetch_active_employees
+from .client import HrmsError, HrmsNotFound, fetch_active_employees, fetch_employee
 from .models import HrmsEmployee, HrmsSyncRun
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,11 @@ logger = logging.getLogger(__name__)
 # longer blocks a new Refresh.
 STALE_RUN_AFTER = timedelta(minutes=5)
 
-SYNCED_FIELDS = ('full_name', 'email', 'department', 'designation', 'hrms_role', 'branch')
+SYNCED_FIELDS = (
+    'full_name', 'email', 'department', 'designation', 'hrms_role', 'branch',
+    'first_name', 'middle_name', 'last_name', 'phone', 'reporting_manager_employee_id',
+    'date_of_joining', 'exit_date', 'employment_type', 'hrms_updated_at',
+)
 
 
 class HrmsAccessError(Exception):
@@ -49,21 +54,87 @@ def _clean(value):
     return (value or '').strip() if isinstance(value, str) else ''
 
 
+def _date(value):
+    try:
+        return parse_date(value) if isinstance(value, str) and value else None
+    except ValueError:
+        return None
+
+
+def _datetime(value):
+    try:
+        return parse_datetime(value) if isinstance(value, str) and value else None
+    except ValueError:
+        return None
+
+
 def _normalize(record):
-    """Maps one HRMS record onto HrmsEmployee fields, or raises HrmsError if unusable."""
+    """Maps one HRMS record onto HrmsEmployee fields, or raises HrmsError if unusable.
+
+    Accepts the AIRA v2 fields (first/middle/last name, phone, reporting manager, joining /
+    exit dates, employment type, updated_at) and still works with the original v1 payload
+    (full_name only)."""
     employee_id = _clean(record.get('employee_id')) if isinstance(record, dict) else ''
     if not employee_id:
         # Can't match this person to a local row - aborting is safer than
         # silently treating them as "missing" and revoking their access.
         raise HrmsError("HRMS returned an employee without an employee_id; sync aborted.")
+
+    first, middle, last = (_clean(record.get(k)) for k in ('first_name', 'middle_name', 'last_name'))
+    full_name = _clean(record.get('full_name')) or ' '.join(p for p in (first, middle, last) if p)
+    if not first and full_name:
+        # v1 payload: derive the parts from the full name.
+        first, _, rest = full_name.partition(' ')
+        last = rest.rsplit(' ', 1)[-1] if rest else ''
+        middle = rest.rsplit(' ', 1)[0] if ' ' in rest else ''
+
     return employee_id, {
-        'full_name': _clean(record.get('full_name')),
+        'full_name': full_name,
         'email': _clean(record.get('email')).lower(),
         'department': _clean(record.get('department')),
         'designation': _clean(record.get('designation')),
         'hrms_role': _clean(record.get('role')),
-        'branch': _clean(record.get('branch')),
+        'branch': _clean(record.get('branch')) or _clean(record.get('location')),
+        'first_name': first[:150],
+        'middle_name': middle[:150],
+        'last_name': last[:150],
+        'phone': _clean(record.get('phone'))[:30],
+        'reporting_manager_employee_id': _clean(record.get('reporting_manager_employee_id'))[:50],
+        'date_of_joining': _date(record.get('date_of_joining')),
+        'exit_date': _date(record.get('exit_date')),
+        'employment_type': _clean(record.get('employment_type'))[:30],
+        'hrms_updated_at': _datetime(record.get('updated_at')),
     }
+
+
+def _sync_account_profile(employee):
+    """AIRA is the source of truth for who an employee is: a linked Budgeting account follows
+    its name, position and (when no other account already uses it) email, so every screen
+    that shows the user shows AIRA's data. Roles, modules and the hourly rate stay Budgeting's."""
+    account = employee.account
+    if account is None:
+        return
+    updates = {}
+    first = (employee.first_name or employee.full_name.partition(' ')[0])[:150]
+    last = (employee.last_name if employee.first_name else employee.full_name.partition(' ')[2].strip())[:150]
+    if first and account.first_name != first:
+        updates['first_name'] = first
+    if account.last_name != last and (first or last):
+        updates['last_name'] = last
+    position = employee.designation[:100]
+    if position and account.position != position:
+        updates['position'] = position
+    email = employee.email
+    if email and (account.email or '').lower() != email:
+        if not Account.objects.filter(email__iexact=email).exclude(pk=account.pk).exists():
+            updates['email'] = email
+        else:
+            logger.warning("HRMS employee %s: new email is used by another account; kept the old one", employee.employee_id)
+    if updates:
+        for field, value in updates.items():
+            setattr(account, field, value)
+        account.save(update_fields=list(updates) + ['modified_at'])
+        _invalidate_user_caches(account)
 
 
 def _invalidate_user_caches(account):
@@ -126,7 +197,7 @@ def sync_employees(triggered_by):
 
         now = timezone.now()
         with transaction.atomic():
-            existing = {e.employee_id: e for e in HrmsEmployee.objects.select_for_update()}
+            existing = {e.employee_id: e for e in HrmsEmployee.objects.select_for_update(of=('self',)).select_related('account')}
 
             for employee_id, fields in incoming.items():
                 employee = existing.get(employee_id)
@@ -149,6 +220,8 @@ def sync_employees(triggered_by):
                     run.updated_count += 1
                 employee.last_seen_at = now
                 employee.save(update_fields=changed + ['last_seen_at', 'updated_at'])
+                if changed and employee.account_id:
+                    _sync_account_profile(employee)
 
             newly_missing = HrmsEmployee.objects.filter(is_active_in_hrms=True).exclude(
                 employee_id__in=incoming.keys()
@@ -262,7 +335,7 @@ def grant_access(employee, role_ids, granted_by, module_ids, charges_per_hour, c
 
     new_password = None
     with transaction.atomic():
-        employee = HrmsEmployee.objects.select_for_update().select_related('account').get(pk=employee.pk)
+        employee = HrmsEmployee.objects.select_for_update(of=('self',)).select_related('account').get(pk=employee.pk)
         account = employee.account
         if account is None:
             account = Account.objects.filter(email__iexact=employee.email).first()
@@ -273,7 +346,10 @@ def grant_access(employee, role_ids, granted_by, module_ids, charges_per_hour, c
                     raise HrmsAccessError("This email's Budgeting account is already linked to another HRMS employee.")
 
         if account is None:
-            first_name, _, last_name = employee.full_name.partition(' ')
+            if employee.first_name:
+                first_name, last_name = employee.first_name, employee.last_name
+            else:
+                first_name, _, last_name = employee.full_name.partition(' ')
             new_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
             account = Account.objects.create_user(
                 username=_unique_username(employee.email),
@@ -308,6 +384,48 @@ def grant_access(employee, role_ids, granted_by, module_ids, charges_per_hour, c
 
 def revoke_access(employee):
     with transaction.atomic():
-        employee = HrmsEmployee.objects.select_for_update().select_related('account').get(pk=employee.pk)
+        employee = HrmsEmployee.objects.select_for_update(of=('self',)).select_related('account').get(pk=employee.pk)
         _revoke(employee, 'manual', timezone.now())
+    return employee
+
+
+
+def refresh_employee(employee):
+    """Re-reads ONE employee from the AIRA detail endpoint and applies it right away.
+
+    - Found and active: the local record and the linked account's profile are updated.
+    - Unknown to AIRA (404) or is_active false: marked as no longer in HRMS and any Budgeting
+      access is revoked - the same rule a full Refresh applies.
+    Raises HrmsError when AIRA can't be reached (nothing is changed then).
+    """
+    now = timezone.now()
+    try:
+        record = fetch_employee(employee.employee_id)
+    except HrmsNotFound:
+        record = None
+
+    with transaction.atomic():
+        employee = HrmsEmployee.objects.select_for_update(of=('self',)).select_related('account').get(pk=employee.pk)
+        if record is None or record.get('is_active') is False:
+            if record is not None:
+                _, fields = _normalize(record)
+                for field in SYNCED_FIELDS:
+                    setattr(employee, field, fields[field])
+            if employee.is_active_in_hrms:
+                employee.is_active_in_hrms = False
+                employee.removed_from_hrms_at = now
+            employee.save()
+            if employee.is_eligible or (employee.account and employee.account.is_active):
+                _revoke(employee, 'hrms_missing', now)
+            return employee
+
+        employee_id, fields = _normalize(record)
+        for field in SYNCED_FIELDS:
+            setattr(employee, field, fields[field])
+        # Back in HRMS: listed again, but access is NOT restored automatically (same as sync).
+        employee.is_active_in_hrms = True
+        employee.removed_from_hrms_at = None
+        employee.last_seen_at = now
+        employee.save()
+        _sync_account_profile(employee)
     return employee

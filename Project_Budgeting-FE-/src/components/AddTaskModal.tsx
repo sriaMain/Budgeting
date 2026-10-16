@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { X, ChevronDown, UploadCloud } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { Drawer } from "./Drawer";
+import { DrawerFormFooter } from "./drawerForm";
 import axiosInstance from "../utils/axiosInstance";
 import { parseApiErrors } from "../utils/parseApiErrors";
 import { toast } from "react-hot-toast";
@@ -545,34 +547,23 @@ export function AddTaskModal({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-            {/* Backdrop */}
-            <div
-                className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50"
-                onClick={handleClose}
-            />
-
-            {/* Modal */}
-            <div className="flex min-h-full items-center justify-center p-4">
-                <div
-                    className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl transform transition-all dark:bg-gray-900 dark:shadow-black/40"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    {/* Header */}
-                    <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 rounded-t-xl dark:bg-gray-900 dark:border-gray-800">
-                        <h4 className="text-lg font-bold text-gray-900 dark:text-white">{editingTask ? 'Edit Task' : 'Add Task'}</h4>
-                        <button
-                            onClick={handleClose}
-                            disabled={isSaving}
-                            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-300"
-                            aria-label="Close modal"
-                        >
-                            <X size={24} />
-                        </button>
-                    </div>
-
-                    {/* Content */}
-                    <div className="p-6 max-h-[80vh] overflow-y-auto">
+        <Drawer
+            isOpen={isOpen}
+            onClose={handleClose}
+            title={editingTask ? 'Edit Task' : 'Add Task'}
+            subtitle={editingTask ? 'Update the task details' : prefilledProjectName ? `New task in ${prefilledProjectName}` : 'Create a task and assign it'}
+            size="md"
+            footer={(
+                <DrawerFormFooter
+                    onCancel={handleClose}
+                    onSubmit={() => formRef.current?.requestSubmit()}
+                    submitLabel={editingTask ? 'Update Task' : 'Add Task'}
+                    busyLabel={editingTask ? 'Updating...' : 'Adding...'}
+                    isBusy={isSaving}
+                />
+            )}
+        >
+                    <div>
                         {errors.general && (
                             <div className="mb-4 p-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400">
                                 <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -861,29 +852,8 @@ export function AddTaskModal({
                                 )}
                             </div>
 
-                            {/* Footer */}
-                            <div className="flex justify-end gap-3 pt-4 border-t dark:border-gray-800">
-                                <button
-                                    type="button"
-                                    onClick={handleClose}
-                                    disabled={isSaving}
-                                    className="px-6 py-2 rounded-lg border border-gray-300 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isSaving}
-                                    className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 shadow-md hover:shadow-lg transform active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                                >
-                                    <UploadCloud className="w-4 h-4" />
-                                    {isSaving ? (editingTask ? 'Updating...' : 'Adding...') : (editingTask ? 'Update Task' : 'Add Task')}
-                                </button>
-                            </div>
                         </form>
                     </div>
-                </div>
-            </div>
-        </div>
+        </Drawer>
     );
 }

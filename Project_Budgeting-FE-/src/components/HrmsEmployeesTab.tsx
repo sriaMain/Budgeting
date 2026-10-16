@@ -1,4 +1,4 @@
-import { formatDateTime as toDMYTime } from '../utils/date';
+import { formatDate as toDMY, formatDateTime as toDMYTime } from '../utils/date';
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ChevronDown, Info, Loader2, RefreshCw, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -10,7 +10,7 @@ import axiosInstance from '../utils/axiosInstance';
 import { parseApiErrors } from '../utils/parseApiErrors';
 import type { Role } from '../types';
 import {
-  getHrmsEmployees, grantHrmsAccess, revokeHrmsAccess, syncHrmsEmployees, needsSetup,
+  getHrmsEmployees, grantHrmsAccess, revokeHrmsAccess, syncHrmsEmployees, refreshHrmsEmployee, needsSetup,
   type HrmsEmployee, type HrmsSyncRun,
 } from '../services/hrms';
 
@@ -184,6 +184,21 @@ const HrmsEmployeesTab: React.FC = () => {
     }
   };
 
+  // Per-row "refresh from AIRA" (detail endpoint) - id of the row being refreshed.
+  const [refreshingId, setRefreshingId] = useState<number | null>(null);
+  const handleRefreshOne = async (e: HrmsEmployee) => {
+    setRefreshingId(e.id);
+    try {
+      const updated = await refreshHrmsEmployee(e.id);
+      setEmployees((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+      toast.success(updated.is_active_in_hrms ? `${updated.full_name || updated.employee_id} refreshed from AIRA.` : `${updated.full_name || updated.employee_id} is no longer active in AIRA - access removed.`);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setRefreshingId(null);
+    }
+  };
+
   const columns: Column<HrmsEmployee>[] = [
     {
       header: 'Employee',
@@ -191,6 +206,7 @@ const HrmsEmployeesTab: React.FC = () => {
         <div>
           <div className="font-medium text-gray-900 dark:text-gray-100">{e.full_name || '—'}</div>
           <div className="text-xs text-gray-500 dark:text-gray-400">{e.employee_id} · {e.email || 'no email'}</div>
+          {e.phone && <div className="text-xs text-gray-500 dark:text-gray-400">{e.phone}</div>}
         </div>
       ),
     },
@@ -200,6 +216,13 @@ const HrmsEmployeesTab: React.FC = () => {
         <div>
           <div>{e.department || '—'}</div>
           <div className="text-xs text-gray-500 dark:text-gray-400">{e.designation}{e.branch ? ` · ${e.branch}` : ''}</div>
+          {(e.date_of_joining || e.employment_type) && (
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {e.employment_type ? e.employment_type.replace(/_/g, ' ') : ''}
+              {e.employment_type && e.date_of_joining ? ' · ' : ''}
+              {e.date_of_joining ? `Joined ${toDMY(e.date_of_joining)}` : ''}
+            </div>
+          )}
         </div>
       ),
     },
@@ -250,6 +273,16 @@ const HrmsEmployeesTab: React.FC = () => {
       header: 'Actions',
       accessor: (e) => (
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => handleRefreshOne(e)}
+            disabled={refreshingId === e.id}
+            title="Refresh this employee from AIRA"
+            aria-label={`Refresh ${e.full_name || e.employee_id} from AIRA`}
+            className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            {refreshingId === e.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          </button>
           {e.is_active_in_hrms && (
             <button
               onClick={() => openAccess(e)}

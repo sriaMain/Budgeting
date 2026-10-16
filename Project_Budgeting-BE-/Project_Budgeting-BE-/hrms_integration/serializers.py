@@ -23,7 +23,9 @@ class HrmsEmployeeSerializer(serializers.ModelSerializer):
         model = HrmsEmployee
         fields = [
             'id', 'employee_id', 'full_name', 'email', 'department', 'designation',
-            'hrms_role', 'branch', 'is_active_in_hrms', 'first_seen_at', 'last_seen_at',
+            'hrms_role', 'branch', 'first_name', 'middle_name', 'last_name', 'phone',
+            'reporting_manager_employee_id', 'date_of_joining', 'exit_date', 'employment_type', 'hrms_updated_at',
+            'is_active_in_hrms', 'first_seen_at', 'last_seen_at',
             'removed_from_hrms_at', 'is_eligible', 'account_id', 'account_is_active', 'roles',
             'modules', 'charges_per_hour', 'currency', 'access_granted_at', 'access_granted_by_name', 'access_revoked_at', 'access_revoked_reason',
         ]

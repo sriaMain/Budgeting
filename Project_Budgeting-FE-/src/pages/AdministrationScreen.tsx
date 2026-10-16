@@ -5,9 +5,8 @@ import type { Role, Permission } from '../types';
 import axiosInstance from '../utils/axiosInstance';
 import AddRoleForm from '../components/AddRoleForm';
 import ModulesTab from '../components/ModulesTab';
-import ManageUsersTab from '../components/ManageUsersTab';
-// TEMPORARILY HIDDEN - uncomment together with the HRMS Employees tab below.
-// import HrmsEmployeesTab from '../components/HrmsEmployeesTab';
+// import ManageUsersTab from '../components/ManageUsersTab'; // replaced by HRMS Employees (AIRA)
+import HrmsEmployeesTab from '../components/HrmsEmployeesTab';
 
 interface AdministrationScreenProps {
   userRole: 'admin' | 'user' | 'manager';
@@ -239,7 +238,7 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                 Modules
               </button>
 
-              {/* Manage Users - Only for admin */}
+              {/* Manage Users - commented out: users now come from AIRA HRMS (HRMS Employees tab).
               {userRole === 'admin' && (
                 <button
                   onClick={() => setActiveTab('manage-users')}
@@ -254,11 +253,11 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                   Manage Users
                 </button>
               )}
+              */}
 
-              {/* HRMS Employees - Only for admin.
-                  TEMPORARILY HIDDEN until the hrms_integration migrations are applied on the
-                  database; uncomment this block (and the tab content below) to turn it back on. */}
-              {/* {userRole === 'admin' && (
+              {/* HRMS Employees - Only for admin. Employees synced from the HRMS project
+                  (backend app hrms_integration, /api/hrms/). */}
+              {userRole === 'admin' && (
                 <button
                   onClick={() => setActiveTab('hrms-employees')}
                   className={`
@@ -271,7 +270,7 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                 >
                   HRMS Employees
                 </button>
-              )} */}
+              )}
             </div>
 
             {activeTab === 'manage-roles' && (
@@ -482,15 +481,16 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
               <ModulesTab />
             )}
 
-            {/* Manage Users tab */}
+            {/* Manage Users tab - commented out, replaced by HRMS Employees (AIRA).
             {activeTab === 'manage-users' && (
               <ManageUsersTab />
             )}
+            */}
 
-            {/* HRMS Employees tab - TEMPORARILY HIDDEN (see the tab button above) */}
-            {/* {activeTab === 'hrms-employees' && (
+            {/* HRMS Employees tab */}
+            {activeTab === 'hrms-employees' && (
               <HrmsEmployeesTab />
-            )} */}
+            )}
           </>
         )}
       </div>

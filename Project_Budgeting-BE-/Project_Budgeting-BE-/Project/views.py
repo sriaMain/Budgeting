@@ -87,8 +87,23 @@ class ProjectAPIView(APIView):
         start_date = request.query_params.get("start_date", "").strip()
         end_date = request.query_params.get("end_date", "").strip()
 
-        # 🔹 Base queryset (IMPORTANT)
-        projects = Project.objects.select_related("client", "budget")
+        # 🔹 Base queryset (IMPORTANT) - everything ProjectListSerializer reads is
+        # loaded here in bulk; without it the list ran ~100 queries per project
+        # and timed out against the remote database.
+        from django.db.models import Prefetch
+        from finances.models import Invoice
+
+        projects = (
+            Project.objects
+            .select_related("client", "budget", "call_center", "profit_center", "gl_account", "created_from_quotation")
+            .prefetch_related(
+                "client__pocs",
+                "created_from_quotation__items",
+                "budget__lines__gl_account",
+                Prefetch("invoice_set", queryset=Invoice.objects.select_related("client", "quote", "project__project_manager")),
+                Prefetch("tasks", queryset=Task.objects.select_related("assigned_to").prefetch_related("timer_logs")),
+            )
+        )
 
         # 🔹 Filters
         if search:

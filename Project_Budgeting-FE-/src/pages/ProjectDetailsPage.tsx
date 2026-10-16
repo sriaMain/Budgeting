@@ -530,7 +530,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
     return (
         <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
-            <div className="max-w-7xl mx-auto space-y-6">
+            <div className="w-full space-y-6">{/* full page width, same as the Projects list */}
                 {/* Header Section */}
                 <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-6">
                     {/* Top Row: Project # + Status Badge + Action Buttons */}
@@ -601,11 +601,29 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                     {/* Tab Content */}
                     <div className="p-6">
                         {activeTab === 'Tasks' && (
-                            <>
-                                        <div className="overflow-x-auto">
+                            <div className="space-y-4">
+                                        {/* Header - same layout as the Expenses tab */}
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                            <div>
+                                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Tasks</h3>
+                                                {!isLoadingTasks && (
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                                        {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <button
+                                                onClick={() => setIsAddTaskModalOpen(true)}
+                                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                                            >
+                                                <Plus className="w-4 h-4" />
+                                                Add Task
+                                            </button>
+                                        </div>
+                                        <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
                                             <table className="w-full">
                                                 <thead>
-                                                    <tr className="border-b border-gray-200 dark:border-gray-800">
+                                                    <tr className="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-800/50">
                                                         <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Assignee</th>
                                                         <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Task title</th>
                                                         <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Status</th>
@@ -629,7 +647,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                     ) : tasks.length === 0 ? (
                                                         <tr>
                                                             <td colSpan={8} className="py-12 text-center">
-                                                                <p className="text-sm text-gray-500 dark:text-gray-400">No tasks found for this project. Click "Add task" to create one.</p>
+                                                                <p className="text-sm text-gray-500 dark:text-gray-400">No tasks yet. Use “+ Add Task” to create one.</p>
                                                             </td>
                                                         </tr>
                                                     ) : (
@@ -721,16 +739,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 </tbody>
                                             </table>
                                         </div>
-                                        <div className="mt-6">
-                                            <button
-                                                onClick={() => setIsAddTaskModalOpen(true)}
-                                                className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium"
-                                            >
-                                                <Plus className="w-4 h-4" />
-                                                Add task
-                                            </button>
-                                        </div>
-                            </>
+                            </div>
                         )}
 
                         {activeTab === 'Budget' && (

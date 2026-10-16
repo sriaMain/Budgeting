@@ -14,7 +14,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
 import { Drawer } from './Drawer';
-import { drawerInputClass, drawerLabelClass, FieldHint, DrawerSection, DrawerFormFooter } from './drawerForm';
+import { drawerInputClass, drawerLabelClass, drawerErrorBorder, FieldHint, DrawerSection, DrawerFormFooter } from './drawerForm';
 
 interface Milestone {
     id: number;
@@ -455,137 +455,144 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                     disabled={isPreparingForm}
                     className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-60"
                 >
-                    {showAddForm ? 'Cancel' : isPreparingForm ? 'Loading...' : '+ Add Milestone'}
+                    {isPreparingForm ? 'Loading...' : '+ Add Milestone'}
                 </button>
             </div>
 
-            {showAddForm && (
-                <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4 space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                        <div className="md:col-span-2">
-                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Name</label>
-                            <input
-                                type="text"
-                                value={form.name}
-                                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                                placeholder="e.g. Training"
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.name ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
-                            />
-                            {formErrors.name && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.name}</p>}
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Sequence</label>
-                            <input
-                                type="number"
-                                value={form.sequence}
-                                onChange={(e) => setForm({ ...form, sequence: e.target.value })}
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.sequence ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
-                            />
-                            {formErrors.sequence && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.sequence}</p>}
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Status</label>
-                            <select
-                                value={form.status}
-                                onChange={(e) => setForm({ ...form, status: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-                            >
-                                {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Planned Start</label>
-                            <input
-                                type="date"
-                                value={form.planned_start_date}
-                                onChange={(e) => setForm({ ...form, planned_start_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-                            />
-                            {startHint && form.planned_start_date && (
-                                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">{startHint}</p>
-                            )}
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Planned End</label>
-                            <input
-                                type="date"
-                                value={form.planned_end_date}
-                                min={form.planned_start_date || undefined}
-                                onChange={(e) => setForm({ ...form, planned_end_date: e.target.value })}
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.planned_end_date ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
-                            />
-                            {formErrors.planned_end_date && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.planned_end_date}</p>}
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Budget Amount (%)</label>
-                            <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                step="0.01"
-                                value={form.budget_percent}
-                                onChange={(e) => setForm({ ...form, budget_percent: e.target.value })}
-                                placeholder="e.g. 25"
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.budget_percent ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
-                            />
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                = {pctOf(budgetBase, form.budget_percent).toLocaleString()} {currency} of user budget {budgetBase.toLocaleString()} {currency}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                                Remaining: <span className="font-medium text-gray-700 dark:text-gray-200">{addAvailable.budget.toLocaleString()} {currency} ({pctOfBase(addAvailable.budget, budgetBase)}%)</span>
-                                {form.budget_percent !== '' && ` → ${round2(addAvailable.budget - pctOf(budgetBase, form.budget_percent)).toLocaleString()} ${currency} after this`}
-                            </p>
-                            {formErrors.budget_percent && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.budget_percent}</p>}
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bill Amount (%)</label>
-                            <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                step="0.01"
-                                value={form.bill_percent}
-                                onChange={(e) => setForm({ ...form, bill_percent: e.target.value })}
-                                placeholder="e.g. 25"
-                                className={`w-full px-3 py-2 border rounded-lg text-sm ${formErrors.bill_percent ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
-                            />
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                = {pctOf(quotationBase, form.bill_percent).toLocaleString()} {currency} of quotation {quotationBase.toLocaleString()} {currency}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                                Remaining: <span className="font-medium text-gray-700 dark:text-gray-200">{addAvailable.bill.toLocaleString()} {currency} ({pctOfBase(addAvailable.bill, quotationBase)}%)</span>
-                                {form.bill_percent !== '' && ` → ${round2(addAvailable.bill - pctOf(quotationBase, form.bill_percent)).toLocaleString()} ${currency} after this`}
-                            </p>
-                            {formErrors.bill_percent && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.bill_percent}</p>}
-                        </div>
-                        <div className="md:col-span-4">
-                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Description</label>
-                            <textarea
-                                value={form.description}
-                                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                                rows={2}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm"
-                            />
-                        </div>
+            {/* Add Milestone opens in a side drawer, like Add Resource. */}
+            <Drawer
+                isOpen={showAddForm}
+                onClose={() => setShowAddForm(false)}
+                title="Add Milestone"
+                subtitle="A phase of this fixed-budget project, with its share of the budget and billing"
+                size="md"
+                footer={(
+                    <DrawerFormFooter
+                        summary={<>Remaining budget: <span className="font-semibold text-gray-800 dark:text-gray-200">{addAvailable.budget.toLocaleString()} {currency}</span></>}
+                        onCancel={() => setShowAddForm(false)}
+                        onSubmit={handleAdd}
+                        submitLabel="Add Milestone"
+                        busyLabel="Adding..."
+                        isBusy={isSubmitting}
+                    />
+                )}
+            >
+                <fieldset disabled={isSubmitting}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="sm:col-span-2">
+                        <label className={drawerLabelClass}>Name</label>
+                        <input
+                            type="text"
+                            value={form.name}
+                            onChange={(e) => setForm({ ...form, name: e.target.value })}
+                            placeholder="e.g. Training"
+                            className={`${drawerInputClass} ${formErrors.name ? drawerErrorBorder : ''}`}
+                        />
+                        {formErrors.name && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.name}</p>}
                     </div>
-                    <div className="flex justify-end">
-                        <button
-                            type="button"
-                            onClick={handleAdd}
-                            disabled={isSubmitting}
-                            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    <div>
+                        <label className={drawerLabelClass}>Sequence</label>
+                        <input
+                            type="number"
+                            value={form.sequence}
+                            onChange={(e) => setForm({ ...form, sequence: e.target.value })}
+                            className={`${drawerInputClass} ${formErrors.sequence ? drawerErrorBorder : ''}`}
+                        />
+                        {formErrors.sequence && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.sequence}</p>}
+                    </div>
+                    <div>
+                        <label className={drawerLabelClass}>Status</label>
+                        <select
+                            value={form.status}
+                            onChange={(e) => setForm({ ...form, status: e.target.value })}
+                            className={drawerInputClass}
                         >
-                            {isSubmitting ? 'Adding...' : 'Add Milestone'}
-                        </button>
+                            {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className={drawerLabelClass}>Planned Start</label>
+                        <input
+                            type="date"
+                            value={form.planned_start_date}
+                            onChange={(e) => setForm({ ...form, planned_start_date: e.target.value })}
+                            className={drawerInputClass}
+                        />
+                        {startHint && form.planned_start_date && (
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">{startHint}</p>
+                        )}
+                    </div>
+                    <div>
+                        <label className={drawerLabelClass}>Planned End</label>
+                        <input
+                            type="date"
+                            value={form.planned_end_date}
+                            min={form.planned_start_date || undefined}
+                            onChange={(e) => setForm({ ...form, planned_end_date: e.target.value })}
+                            className={`${drawerInputClass} ${formErrors.planned_end_date ? drawerErrorBorder : ''}`}
+                        />
+                        {formErrors.planned_end_date && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.planned_end_date}</p>}
+                    </div>
+                    <div className="sm:col-span-2">
+                        <label className={drawerLabelClass}>Budget Amount (%)</label>
+                        <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step="0.01"
+                            value={form.budget_percent}
+                            onChange={(e) => setForm({ ...form, budget_percent: e.target.value })}
+                            placeholder="e.g. 25"
+                            className={`${drawerInputClass} ${formErrors.budget_percent ? drawerErrorBorder : ''}`}
+                        />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            = {pctOf(budgetBase, form.budget_percent).toLocaleString()} {currency} of user budget {budgetBase.toLocaleString()} {currency}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Remaining: <span className="font-medium text-gray-700 dark:text-gray-200">{addAvailable.budget.toLocaleString()} {currency} ({pctOfBase(addAvailable.budget, budgetBase)}%)</span>
+                            {form.budget_percent !== '' && ` → ${round2(addAvailable.budget - pctOf(budgetBase, form.budget_percent)).toLocaleString()} ${currency} after this`}
+                        </p>
+                        {formErrors.budget_percent && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.budget_percent}</p>}
+                    </div>
+                    <div className="sm:col-span-2">
+                        <label className={drawerLabelClass}>Bill Amount (%)</label>
+                        <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step="0.01"
+                            value={form.bill_percent}
+                            onChange={(e) => setForm({ ...form, bill_percent: e.target.value })}
+                            placeholder="e.g. 25"
+                            className={`${drawerInputClass} ${formErrors.bill_percent ? drawerErrorBorder : ''}`}
+                        />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            = {pctOf(quotationBase, form.bill_percent).toLocaleString()} {currency} of quotation {quotationBase.toLocaleString()} {currency}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Remaining: <span className="font-medium text-gray-700 dark:text-gray-200">{addAvailable.bill.toLocaleString()} {currency} ({pctOfBase(addAvailable.bill, quotationBase)}%)</span>
+                            {form.bill_percent !== '' && ` → ${round2(addAvailable.bill - pctOf(quotationBase, form.bill_percent)).toLocaleString()} ${currency} after this`}
+                        </p>
+                        {formErrors.bill_percent && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.bill_percent}</p>}
+                    </div>
+                    <div className="sm:col-span-2">
+                        <label className={drawerLabelClass}>Description</label>
+                        <textarea
+                            value={form.description}
+                            onChange={(e) => setForm({ ...form, description: e.target.value })}
+                            rows={2}
+                            className={drawerInputClass}
+                        />
                     </div>
                 </div>
-            )}
+                </fieldset>
+            </Drawer>
 
             <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-x-auto">
                 {isLoading && !hasLoaded ? (
                     <p className="p-4 text-sm text-gray-500 dark:text-gray-400">Loading milestones...</p>
                 ) : milestones.length === 0 ? (
-                    <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No milestones yet. Add one above.</p>
+                    <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No milestones yet. Use “+ Add Milestone”.</p>
                 ) : (
                     <table className="w-full text-sm">
                         <thead>

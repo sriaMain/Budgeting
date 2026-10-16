@@ -1,10 +1,12 @@
 """Thin client for the HRMS external employees API.
 
-GET {HRMS_EMPLOYEES_API_URL}?page=N&page_size=100 with an X-API-Key header.
+GET {HRMS_EMPLOYEES_API_URL}?page=N&page_size=100 with an X-API-Key header (the list), and
+GET {HRMS_EMPLOYEES_API_URL}{employee_id}/ for one employee (AIRA ExternalEmployeeDetailView).
 The key is a secret - it is only ever read from settings and never logged
 or echoed back in an error message.
 """
 import logging
+from urllib.parse import quote
 
 import requests
 from django.conf import settings
@@ -29,6 +31,10 @@ class HrmsAuthError(HrmsError):
 
 class HrmsRateLimitError(HrmsError):
     pass
+
+
+class HrmsNotFound(HrmsError):
+    """The detail endpoint doesn't know this employee_id (HTTP 404)."""
 
 
 def _fetch_page(session, url, page):
@@ -100,3 +106,60 @@ def fetch_active_employees():
             "The list may have changed during the refresh - please try again."
         )
     return employees
+
+
+def _employee_from_body(body):
+    """The employee object from a detail response: {"status": "success", "data": {...}}.
+    Tolerates data wrapping it as data.employee or data.results[0]."""
+    if not isinstance(body, dict) or body.get('status') not in (None, 'success'):
+        raise ValueError
+    data = body.get('data', body)
+    if isinstance(data, dict) and isinstance(data.get('employee'), dict):
+        data = data['employee']
+    elif isinstance(data, dict) and isinstance(data.get('results'), list):
+        data = data['results'][0] if data['results'] else None
+    if not isinstance(data, dict) or not data.get('employee_id'):
+        raise ValueError
+    return data
+
+
+def fetch_employee(employee_id):
+    """One employee from the AIRA detail endpoint. Raises HrmsNotFound for an unknown id,
+    or HrmsError for any other failure (same messages as the list fetch)."""
+    url = settings.HRMS_EMPLOYEES_API_URL
+    api_key = settings.HRMS_API_KEY
+    if not url or not api_key:
+        raise HrmsConfigError("HRMS integration is not configured (HRMS_EMPLOYEES_API_URL / HRMS_API_KEY).")
+    detail_url = f"{url.rstrip('/')}/{quote(str(employee_id), safe='')}/"
+    try:
+        response = requests.get(
+            detail_url,
+            headers={'X-API-Key': api_key, 'Accept': 'application/json'},
+            timeout=settings.HRMS_API_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException as exc:
+        logger.warning("HRMS detail request failed: %s", exc.__class__.__name__)
+        raise HrmsError("Could not reach HRMS. Check the connection and try again.") from exc
+
+    if response.status_code == 404:
+        # Only AIRA's own JSON "not found" means the employee is gone. An HTML 404 is the web
+        # server saying the route doesn't exist (endpoint not deployed / wrong URL) - treating
+        # that as "employee left" would wrongly revoke their access.
+        if 'json' in (response.headers.get('Content-Type') or '').lower():
+            raise HrmsNotFound("HRMS no longer lists this employee.")
+        logger.warning("HRMS detail endpoint returned a non-API 404 (route missing?)")
+        raise HrmsError(
+            "AIRA's employee-detail endpoint isn't available (HTTP 404 from the server, not the API). "
+            "Check that external/employees/<employee_id>/ is deployed on AIRA and HRMS_EMPLOYEES_API_URL is correct."
+        )
+    if response.status_code == 401:
+        raise HrmsAuthError("HRMS rejected the API key (missing, invalid or revoked).")
+    if response.status_code == 429:
+        raise HrmsRateLimitError("HRMS rate limit reached. Try again later.")
+    if response.status_code != 200:
+        logger.warning("HRMS detail returned HTTP %s", response.status_code)
+        raise HrmsError(f"HRMS returned an unexpected response (HTTP {response.status_code}).")
+    try:
+        return _employee_from_body(response.json())
+    except (ValueError, KeyError, TypeError, IndexError) as exc:
+        raise HrmsError("HRMS returned an employee in an unexpected format.") from exc

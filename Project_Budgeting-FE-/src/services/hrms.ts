@@ -9,6 +9,16 @@ export interface HrmsEmployee {
   designation: string;
   hrms_role: string;
   branch: string;
+  /** AIRA employee API v2 fields - blank / null when AIRA doesn't send them. */
+  first_name: string;
+  middle_name: string;
+  last_name: string;
+  phone: string;
+  reporting_manager_employee_id: string;
+  date_of_joining: string | null;
+  exit_date: string | null;
+  employment_type: string;
+  hrms_updated_at: string | null;
   is_active_in_hrms: boolean;
   first_seen_at: string;
   last_seen_at: string | null;
@@ -71,5 +81,11 @@ export const needsSetup = (e: HrmsEmployee) => e.is_eligible && (e.modules.lengt
 
 export const revokeHrmsAccess = async (id: number): Promise<HrmsEmployee> => {
   const { data } = await axiosInstance.delete(`hrms/employees/${id}/access/`);
+  return data;
+};
+
+/** Re-reads one employee from AIRA (external/employees/<employee_id>/) and applies it. */
+export const refreshHrmsEmployee = async (id: number): Promise<HrmsEmployee> => {
+  const { data } = await axiosInstance.post(`hrms/employees/${id}/refresh/`);
   return data;
 };

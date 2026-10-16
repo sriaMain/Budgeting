@@ -160,7 +160,7 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
     # 🔹 GL Account budget lines (Description / GL Account / Planned / Actual
     # / Variance) plus roll-up totals so Finance can answer "how much was
     # budgeted / spent / remaining per GL Account" without opening each line.
-    lines = BudgetLineSerializer(many=True, read_only=True)
+    lines = serializers.SerializerMethodField()
     total_planned_by_gl = serializers.SerializerMethodField()
     total_actual_by_gl = serializers.SerializerMethodField()
     total_variance_by_gl = serializers.SerializerMethodField()
@@ -193,16 +193,91 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
         )
 
     # ---------------------------
+    # 🔹 Per-serialization memo. Several fields need the same lines, tasks,
+    # consumed hours and timer state; without this each field re-queried
+    # them (≈100 queries per project on the projects list). Uses
+    # prefetched data when the caller prefetched (ProjectAPIView list).
+    # ---------------------------
+    def _memo(self, key, compute):
+        cache = self.__dict__.setdefault("_budget_memo", {})
+        if key not in cache:
+            cache[key] = compute()
+        return cache[key]
+
+    @staticmethod
+    def _is_prefetched(instance, name):
+        return name in getattr(instance, "_prefetched_objects_cache", {})
+
+    def _lines(self, obj):
+        def load():
+            if self._is_prefetched(obj, "lines"):
+                lines = list(obj.lines.all())
+            else:
+                lines = list(obj.lines.select_related("gl_account"))
+            self._attach_line_actuals(obj, lines)
+            return lines
+        return self._memo(("lines", obj.pk), load)
+
+    def _project_spend(self, budget):
+        """The project's cost-bearing expenses and paid vendor-bill amounts per
+        GL Account (None = untagged): two grouped queries that serve both the
+        line actuals and ProjectBudget.actual_expenses."""
+        def load():
+            from finances.models import project_vendor_bills
+
+            project = budget.project
+            expenses = dict(
+                project.expenses.cost_bearing().order_by()
+                .values_list("gl_account").annotate(total=Sum("amount"))
+            )
+            bills_paid = dict(
+                project_vendor_bills(project).order_by()
+                .values_list("gl_account").annotate(total=Sum("paid_amount"))
+            )
+            return expenses, bills_paid
+        return self._memo(("spend", budget.pk), load)
+
+    def to_representation(self, instance):
+        # actual_expenses is read by three fields (directly, via forecasted_profit and via
+        # the used/remaining/profit figures) - work it out once, same rules as the model.
+        if instance.project_id and getattr(instance, "_actual_expenses_override", None) is None:
+            expenses, bills_paid = self._project_spend(instance)
+            logged = (sum((v for v in expenses.values() if v), Decimal("0")) or 0) +                 (sum((v for v in bills_paid.values() if v), Decimal("0")) or Decimal("0.00"))
+            instance._actual_expenses_override = logged if logged else (instance.bills_and_expenses or 0)
+        return super().to_representation(instance)
+
+    def _attach_line_actuals(self, budget, lines):
+        """Every line's actual spend (BudgetLine.actual_amount) from the grouped
+        project spend instead of two queries per line."""
+        if not lines or not budget.project_id:
+            return
+        expenses, bills_paid = self._project_spend(budget)
+        for line in lines:
+            line._actual_amount_override = (
+                (expenses.get(line.gl_account_id) or Decimal("0.00"))
+                + (bills_paid.get(line.gl_account_id) or Decimal("0.00"))
+            )
+
+    def _tasks(self, project):
+        def load():
+            if self._is_prefetched(project, "tasks"):
+                return list(project.tasks.all())
+            return list(project.tasks.select_related("assigned_to"))
+        return self._memo(("tasks", project.pk), load)
+
+    def get_lines(self, obj):
+        return BudgetLineSerializer(self._lines(obj), many=True).data
+
+    # ---------------------------
     # 🔹 GL Account budget lines — roll-ups
     # ---------------------------
     def get_total_planned_by_gl(self, obj):
-        return obj.lines.aggregate(
-            total=Sum('planned_amount')
-        )['total'] or Decimal("0.00")
+        planned = [line.planned_amount for line in self._lines(obj) if line.planned_amount is not None]
+        return sum(planned, Decimal("0.00")) if planned else Decimal("0.00")
 
     def get_total_actual_by_gl(self, obj):
         total = Decimal("0.00")
-        for line in obj.lines.select_related('gl_account').all():
+        for line in self._lines(obj):
             total += line.actual_amount
         return total
 
@@ -219,7 +294,7 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
                 "actual_amount": line.actual_amount,
                 "variance": line.variance,
             }
-            for line in obj.lines.select_related('gl_account').all()
+            for line in self._lines(obj)
             if line.is_over_budget
         ]
 
@@ -275,7 +350,7 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
         # falsely zero when the project's tasks clearly have hours allocated.
         if project:
             return sum(
-                (task.allocated_hours or Decimal("0")) for task in project.tasks.all()
+                (task.allocated_hours or Decimal("0")) for task in self._tasks(project)
             )
 
         return Decimal("0")
@@ -287,14 +362,27 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
     # 🔹 Consumed hours for a task, including the elapsed time of a timer
     # that is actively running right now (not yet committed to a TaskTimerLog
     # row), so budget/hours figures update live while someone is tracking time.
+    def _consumed_hours(self, task):
+        """Task.consumed_hours, from prefetched timer logs when available."""
+        if not self._is_prefetched(task, "timer_logs"):
+            return task.consumed_hours
+        total_seconds = 0
+        for log in task.timer_logs.all():
+            if not log.is_active and log.end_time is not None and log.start_time is not None:
+                total_seconds += (log.end_time - log.start_time).total_seconds()
+        return Decimal(total_seconds) / Decimal(3600)
+
     def _live_consumed_hours(self, task):
-        consumed = task.consumed_hours or Decimal("0")
+        return self._memo(("consumed", task.pk), lambda: self._compute_live_consumed_hours(task))
+
+    def _compute_live_consumed_hours(self, task):
+        consumed = self._consumed_hours(task) or Decimal("0")
 
         if not task.assigned_to_id:
             return consumed
 
         from .utils.timer import get_active_timer
-        redis_task, redis_start = get_active_timer(task.assigned_to_id)
+        redis_task, redis_start = self._memo(("timer", task.assigned_to_id), lambda: get_active_timer(task.assigned_to_id))
         if redis_task and redis_start and int(redis_task) == task.id:
             from django.utils import timezone
             start_time = timezone.datetime.fromisoformat(
@@ -315,7 +403,7 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
 
         # 🔹 Sum consumed hours from tasks (including any live-running timer)
         used_hours = Decimal("0")
-        for task in project.tasks.all():
+        for task in self._tasks(project):
             used_hours += self._live_consumed_hours(task)
 
         remaining_hours = total_hours - used_hours
@@ -346,11 +434,14 @@ class ProjectBudgetSerializer(serializers.ModelSerializer):
     # basis (which made Total ≠ Used + Remaining in the UI).
     # ---------------------------
     def _total_actual_cost(self, obj):
+        return self._memo(("actual_cost", obj.pk), lambda: self._compute_total_actual_cost(obj))
+
+    def _compute_total_actual_cost(self, obj):
         project = obj.project
         labor_cost = Decimal("0.00")
 
         if project:
-            for task in project.tasks.select_related("assigned_to"):
+            for task in self._tasks(project):
                 if not task.assigned_to:
                     continue
 
@@ -1025,9 +1116,9 @@ class ProjectListSerializer(serializers.ModelSerializer):
         except ObjectDoesNotExist:
             return None
     def get_invoices(self, obj):
-        invoices = obj.invoice_set.all()  # ✅ CORRECT
+        invoices = list(obj.invoice_set.all())  # uses the list view's prefetch
 
-        if not invoices.exists():
+        if not invoices:
             return []
 
         return InvoiceListSerializer(invoices, many=True).data

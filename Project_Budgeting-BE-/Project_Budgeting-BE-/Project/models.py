@@ -234,6 +234,9 @@ class ProjectBudget(models.Model):
         don't count). Falls back to the quoted/manual bills_and_expenses
         estimate when neither exists yet.
         """
+        override = getattr(self, "_actual_expenses_override", None)
+        if override is not None:  # precomputed by ProjectBudgetSerializer
+            return override
         if not self.project:
             return self.bills_and_expenses or 0
 
@@ -334,7 +337,14 @@ class BudgetLine(models.Model):
     def actual_amount(self):
         """Real spend logged against this project under this GL Account:
         expenses plus amounts paid on vendor bills tagged with the same GL
-        Account (bill-linked expenses are counted via their bill only)."""
+        Account (bill-linked expenses are counted via their bill only).
+
+        ProjectBudgetSerializer computes every line's figure for a project in
+        two grouped queries and hands it over as _actual_amount_override, so
+        listing projects doesn't run two queries per line per field."""
+        override = getattr(self, "_actual_amount_override", None)
+        if override is not None:
+            return override
         if not self.budget_id or not self.budget.project_id:
             return Decimal("0.00")
 

@@ -42,3 +42,15 @@ export function formatTime(value: DateInput, fallback = '—'): string {
   const h = d.getHours();
   return `${pad(h % 12 || 12)}:${pad(d.getMinutes())} ${h < 12 ? 'AM' : 'PM'}`;
 }
+
+/** A "YYYY-MM" month bucket (dashboard trends) as its first day: 01/10/2026 */
+export function formatMonthStart(month: string, fallback = '—'): string {
+  return /^\d{4}-\d{2}$/.test(month || '') ? formatDate(`${month}-01`, fallback) : month || fallback;
+}
+
+/** A "YYYY-MM" month bucket as its date range: 01/10/2026 – 31/10/2026 */
+export function formatMonthRange(month: string, fallback = '—'): string {
+  if (!/^\d{4}-\d{2}$/.test(month || '')) return month || fallback;
+  const [y, m] = month.split('-').map(Number);
+  return `${formatDate(new Date(y, m - 1, 1))} – ${formatDate(new Date(y, m, 0))}`;
+}

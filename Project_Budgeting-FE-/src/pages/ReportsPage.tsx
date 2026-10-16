@@ -404,6 +404,17 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
 
     const tabs: TabType[] = ['All', 'Financial Reports', 'Project Reports', 'Payment Reports', 'PO & Invoice Reports'];
 
+    // ---- Pagination: PAGE_SIZE rows per page on every tab ----
+    const PAGE_SIZE = 10;
+    const [page, setPage] = useState(1);
+    // Back to page 1 when the tab, filters or sort change (state adjusted during render, not in an effect).
+    const pageResetKey = [activeTab, selectedStatus, selectedProject, dateFrom, dateTo, sortColumn, sortDirection].join('|');
+    const [pagedFor, setPagedFor] = useState(pageResetKey);
+    if (pagedFor !== pageResetKey) {
+        setPagedFor(pageResetKey);
+        setPage(1);
+    }
+
     // Real row count for the currently active tab (mirrors the filtering renderTable() applies),
     // used to drive the results footer instead of a hardcoded placeholder count.
     const getRowCount = (): number => {
@@ -426,6 +437,13 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                 );
         }
     };
+
+    const totalRows = getRowCount();
+    const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+    const currentPageNo = Math.min(page, totalPages); // reloaded data can shrink the list
+    const pageRows = <T,>(rows: T[]): T[] => rows.slice((currentPageNo - 1) * PAGE_SIZE, currentPageNo * PAGE_SIZE);
+    const firstRow = totalRows === 0 ? 0 : (currentPageNo - 1) * PAGE_SIZE + 1;
+    const lastRow = Math.min(currentPageNo * PAGE_SIZE, totalRows);
 
     const renderTable = () => {
         switch (activeTab) {
@@ -502,7 +520,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                         </tr>
                                     );
                                 }
-                                return data.map((row, idx) => (
+                                return pageRows(data).map((row, idx) => (
                                     <tr key={idx} className="hover:bg-gray-50 transition-colors group dark:hover:bg-gray-800">
                                         <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.invoice_no}</td>
                                         <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{row.client_name}</td>
@@ -637,7 +655,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                         </tr>
                                     );
                                 }
-                                return data.map((row) => (
+                                return pageRows(data).map((row) => (
                                     <tr key={row.project_no} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
                                         <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">#{row.project_no}</td>
                                         <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.project_name}</td>
@@ -741,7 +759,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                         </tr>
                                     );
                                 }
-                                return data.map((row, idx) => (
+                                return pageRows(data).map((row, idx) => (
                                     <tr key={idx} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
                                         <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{toDMY(row.payment_date)}</td>
                                         <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.invoice__invoice_no}</td>
@@ -791,7 +809,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                     </td>
                                 </tr>
                             )}
-                            {poInvoiceReports?.rows?.map((row, idx) => (
+                            {pageRows(poInvoiceReports?.rows || []).map((row, idx) => (
                                 <tr key={idx} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
                                     <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.po_no}</td>
                                     <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{row.vendor__name}</td>
@@ -855,7 +873,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                                     </td>
                                 </tr>
                             )}
-                            {allReports.map((row, idx) => (
+                            {pageRows(allReports).map((row, idx) => (
                                 <tr key={idx} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
                                     <td className="px-6 py-4 text-sm">
                                         <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-bold uppercase dark:bg-gray-800 dark:text-gray-400">
@@ -1029,18 +1047,34 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavi
                         {/* Table Footer */}
                         <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between dark:bg-gray-800 dark:border-gray-800">
                             <p className="text-sm text-gray-500 dark:text-gray-400">
-                                {(() => {
-                                    const rowCount = getRowCount();
-                                    return rowCount > 0 ? (
-                                        <>Showing <span className="font-medium text-gray-900 dark:text-gray-100">1</span> to <span className="font-medium text-gray-900 dark:text-gray-100">{rowCount}</span> of <span className="font-medium text-gray-900 dark:text-gray-100">{rowCount}</span> results</>
-                                    ) : (
-                                        <>No results found</>
-                                    );
-                                })()}
+                                {totalRows > 0 ? (
+                                    <>Showing <span className="font-medium text-gray-900 dark:text-gray-100">{firstRow}</span> to <span className="font-medium text-gray-900 dark:text-gray-100">{lastRow}</span> of <span className="font-medium text-gray-900 dark:text-gray-100">{totalRows}</span> results</>
+                                ) : (
+                                    <>No results found</>
+                                )}
                             </p>
-                            <div className="flex gap-2">
-                                <button className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-900" disabled>Previous</button>
-                                <button className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-900" disabled>Next</button>
+                            <div className="flex items-center gap-2">
+                                {totalPages > 1 && (
+                                    <span className="text-sm text-gray-500 dark:text-gray-400 mr-1">
+                                        Page <span className="font-medium text-gray-900 dark:text-gray-100">{currentPageNo}</span> of {totalPages}
+                                    </span>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => setPage(Math.max(1, currentPageNo - 1))}
+                                    disabled={currentPageNo <= 1}
+                                    className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-900"
+                                >
+                                    Previous
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPage(Math.min(totalPages, currentPageNo + 1))}
+                                    disabled={currentPageNo >= totalPages}
+                                    className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-900"
+                                >
+                                    Next
+                                </button>
                             </div>
                         </div>
                     </div>

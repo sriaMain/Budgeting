@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2, TrendingDown } from "lucide-react";
@@ -8,23 +8,25 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { parseApiErrors } from "../utils/parseApiErrors";
 import { Toast } from "../components/Toast";
 
-// Only the username / email is remembered - never the password.
-const REMEMBER_KEY = "pb-remembered-identifier";
+/*
+ * Login - ProjectBudget & Tracking.
+ * Breakpoints: ≤480 small mobile · 481-767 mobile · 768-1023 tablet · 1024-1439 laptop · ≥1440 large.
+ * Desktop (≥1024px) is a 50/50 split with the budget preview on the left; below that the form fills
+ * the screen. Vertical spacing tightens below 650px of height.
+ */
 
-const readRemembered = (): string => {
-  try {
-    return localStorage.getItem(REMEMBER_KEY) ?? "";
-  } catch {
-    return "";
-  }
-};
+/** Left by the removed "Remember me" option - cleared so no username lingers in the browser. */
+const LEGACY_REMEMBER_KEY = "pb-remembered-identifier";
+
 
 const INPUT_CLASS =
-  "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 shadow-sm transition-all " +
-  "placeholder:text-slate-400 focus:border-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-100 " +
+  "box-border block w-full border border-slate-200 bg-white text-[15px] text-slate-900 shadow-sm transition-colors " +
+  "h-[52px] rounded-[14px] px-[18px] max-[480px]:h-[50px] max-[480px]:px-[14px] md:h-14 " +
+  "placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-100 " +
+  "disabled:cursor-not-allowed disabled:bg-slate-50 " +
   "dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-500/20";
 
-const INPUT_ERROR_CLASS = "border-red-400 focus:border-red-500 focus:ring-red-100 dark:border-red-500/60 dark:focus:ring-red-500/20";
+const INPUT_ERROR_CLASS = "border-red-400 hover:border-red-400 focus:border-red-500 focus:ring-red-100 dark:border-red-500/60 dark:focus:ring-red-500/20";
 
 const PREVIEW_ROWS = [
   { label: "Engineering", amount: "₹18,40,000", pct: 82, color: "from-indigo-500 to-indigo-400" },
@@ -33,13 +35,10 @@ const PREVIEW_ROWS = [
   { label: "Marketing", amount: "₹3,34,800", pct: 38, color: "from-emerald-500 to-emerald-400" },
 ];
 
+const LABEL_CLASS = "mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300";
+
 export const LoginForm: React.FC = () => {
-  const [formData, setFormData] = useState<LoginFormData>(() => ({
-    emailOrUsername: readRemembered(),
-    password: "",
-    captchaInput: "",
-  }));
-  const [rememberMe, setRememberMe] = useState(() => readRemembered() !== "");
+  const [formData, setFormData] = useState<LoginFormData>({ emailOrUsername: "", password: "", captchaInput: "" });
   const [errors, setErrors] = useState<FormErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -47,6 +46,14 @@ export const LoginForm: React.FC = () => {
   const [isNavigating, setIsNavigating] = useState(false);
   const { goTo } = useAppNavigation();
   const dispatch = useDispatch();
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_REMEMBER_KEY);
+    } catch {
+      // storage unavailable - nothing to clear
+    }
+  }, []);
 
   const togglePasswordVisibility = useCallback(() => setShowPassword((prev) => !prev), []);
 
@@ -88,13 +95,6 @@ export const LoginForm: React.FC = () => {
       const response = await axiosInstance.post("/accounts/login/", payLoad);
 
       if (response.status === 200) {
-        try {
-          if (rememberMe) localStorage.setItem(REMEMBER_KEY, payLoad.identifier);
-          else localStorage.removeItem(REMEMBER_KEY);
-        } catch {
-          // storage unavailable (private mode) - nothing to remember
-        }
-
         // Map backend roles to frontend roles
         const backendRole = response.data.user.roles[0] || "user";
         let userRole: "admin" | "user" | "manager" = "user";
@@ -129,147 +129,14 @@ export const LoginForm: React.FC = () => {
     }
   };
 
+  const busy = isLoading || isNavigating;
+
   return (
-    <div className="flex min-h-screen w-full flex-col bg-white font-sans lg:flex-row dark:bg-gray-950">
-      {/* ---------------- Sign-in form: right on desktop, the whole screen on mobile ---------------- */}
-      <section className="relative order-1 flex min-h-screen w-full flex-col bg-white px-6 py-12 lg:order-2 lg:w-1/2 lg:px-20 dark:bg-gray-950">
-        {/* Brand */}
-        <div className="flex items-center gap-3">
-          {/* Sria Infotech logo (public/sria_logo_gray.png). The source is a square canvas with
-              wide margins, so the box crops it to the mark + wordmark. White plate in dark mode
-              keeps the grey wordmark legible. */}
-          <span
-            role="img"
-            aria-label="Sria Infotech"
-            className="block h-[62px] w-[98px] shrink-0 rounded-lg bg-no-repeat dark:bg-white"
-            style={{ backgroundImage: "url(/sria_logo_gray.png)", backgroundSize: "100px 100px", backgroundPosition: "-2px -17px" }}
-          />
-          <span className="h-8 w-px bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
-          <span className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white">
-            Project<span className="text-indigo-600 dark:text-indigo-400">Budget</span>
-          </span>
-        </div>
-
-        <div className="flex flex-1 items-center justify-center py-10">
-          <div className="relative w-full max-w-md">
-            {isNavigating && (
-              <div className="absolute inset-0 z-10 rounded-2xl bg-white/50 backdrop-blur-[2px] dark:bg-gray-950/50" />
-            )}
-
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl dark:text-white">Welcome Back</h1>
-              <p className="mt-2 text-slate-600 dark:text-slate-400">Manage your project finances seamlessly.</p>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-              {errors.general && (
-                <div
-                  role="alert"
-                  className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
-                >
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{errors.general}</span>
-                </div>
-              )}
-
-              <div>
-                <label htmlFor="login-identifier" className="mb-1.5 block text-sm font-medium text-slate-600 dark:text-slate-300">
-                  Username or email
-                </label>
-                <input
-                  id="login-identifier"
-                  name="emailOrUsername"
-                  type="text"
-                  value={formData.emailOrUsername}
-                  onChange={handleChange}
-                  placeholder="you@company.com"
-                  autoComplete="username"
-                  autoFocus={!formData.emailOrUsername}
-                  aria-invalid={!!errors.emailOrUsername}
-                  aria-describedby={errors.emailOrUsername ? "login-identifier-error" : undefined}
-                  className={`${INPUT_CLASS} ${errors.emailOrUsername ? INPUT_ERROR_CLASS : ""}`}
-                />
-                {errors.emailOrUsername && (
-                  <p id="login-identifier-error" className="mt-1.5 text-sm text-red-600 dark:text-red-400">{errors.emailOrUsername}</p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="login-password" className="mb-1.5 block text-sm font-medium text-slate-600 dark:text-slate-300">
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    id="login-password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    value={formData.password}
-                    onChange={handleChange}
-                    placeholder="Enter your password"
-                    autoComplete="current-password"
-                    autoFocus={!!formData.emailOrUsername}
-                    aria-invalid={!!errors.password}
-                    aria-describedby={errors.password ? "login-password-error" : undefined}
-                    className={`${INPUT_CLASS} pr-12 ${errors.password ? INPUT_ERROR_CLASS : ""}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={togglePasswordVisibility}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                  >
-                    {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
-                  </button>
-                </div>
-                {errors.password && (
-                  <p id="login-password-error" className="mt-1.5 text-sm text-red-600 dark:text-red-400">{errors.password}</p>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between">
-                <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-indigo-600 focus:ring-2 focus:ring-indigo-500 dark:border-slate-600"
-                  />
-                  Remember me
-                </label>
-                <Link
-                  to="/forgot-password"
-                  className="rounded text-sm font-medium text-indigo-600 transition-colors hover:text-indigo-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300"
-                >
-                  Forgot password?
-                </Link>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoading || isNavigating}
-                className="group flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white shadow-md shadow-indigo-600/20 transition-all hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-600/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70 disabled:active:scale-100 dark:focus-visible:ring-indigo-500/30"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Signing in…
-                  </>
-                ) : (
-                  <>
-                    Sign In <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
-
-        <p className="text-center text-xs text-slate-400 lg:text-left dark:text-slate-500">© {new Date().getFullYear()} ProjectBudget. All rights reserved.</p>
-      </section>
-
-      {/* ---------------- Product preview: left on desktop, hidden on mobile (illustrative sample data) ---------------- */}
+    <div className="box-border flex min-h-[100dvh] w-full bg-white font-sans dark:bg-gray-950">
+      {/* ---------------- Budget preview: left half on desktop, hidden below 1024px (illustrative sample data) ---------------- */}
       <section
         aria-hidden="true"
-        className="relative order-2 hidden min-h-screen overflow-hidden bg-slate-950 lg:order-1 lg:flex lg:w-1/2 lg:flex-col lg:items-center lg:justify-center lg:px-16"
+        className="relative hidden min-h-[100dvh] w-1/2 shrink-0 overflow-hidden bg-slate-950 lg:flex lg:flex-col lg:items-center lg:justify-center lg:px-12 min-[90rem]:px-16"
       >
         <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-950 to-indigo-950/80" />
         <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-indigo-600/20 blur-3xl" />
@@ -341,6 +208,146 @@ export const LoginForm: React.FC = () => {
           </p>
         </div>
       </section>
+
+      {/* ---------------- Content panel: header · centred form · footer ---------------- */}
+      <main
+        className={`box-border flex min-w-0 flex-1 flex-col bg-white lg:w-1/2 lg:flex-none px-5 py-6 max-[480px]:px-4 max-[480px]:py-5 md:px-6 md:py-7 lg:py-8 lg:max-[90rem]:px-8 min-[90rem]:px-12 dark:bg-gray-950 [@media(max-height:649px)]:py-4`}
+      >
+        {/* Header */}
+        <header className="flex items-center gap-4">
+          {/* Sria Infotech logo (public/sria_logo_gray.png): the source is a square canvas with wide
+              margins, so the box crops it to the mark + wordmark at any width. */}
+          <span className="block w-[88px] shrink-0 overflow-hidden rounded-lg min-[481px]:w-[98px] dark:bg-white" style={{ aspectRatio: "98 / 62" }}>
+            <img
+              src="/sria_logo_gray.png"
+              alt="Sria Infotech"
+              className="block"
+              style={{ width: "102.04%", maxWidth: "none", marginLeft: "-2.04%", marginTop: "-17.35%" }}
+            />
+          </span>
+          <span className="h-8 w-px shrink-0 bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
+          <span className="min-w-0 text-[18px] font-semibold leading-tight tracking-tight text-slate-900 min-[481px]:text-[20px] dark:text-white">
+            Project<span className="text-indigo-600 dark:text-indigo-400">Budget</span> &amp; Tracking
+          </span>
+        </header>
+
+        {/* Login area - grows to fill and centres the form between header and footer */}
+        <div className={`flex flex-1 items-center justify-center py-6 [@media(max-height:649px)]:py-4`}>
+          <div className="relative mx-auto w-full max-w-[480px] max-[480px]:max-w-full md:max-w-[460px] lg:max-w-[480px]">
+            {isNavigating && <div className="absolute inset-0 z-10 rounded-2xl bg-white/50 backdrop-blur-[2px] dark:bg-gray-950/50" aria-hidden="true" />}
+
+            <h1
+              className={`m-0 mb-2 text-[32px] font-bold leading-[1.2] tracking-tight text-slate-900 max-[480px]:text-[28px] md:text-[34px] lg:max-[90rem]:text-[36px] min-[90rem]:text-[40px] dark:text-white`}
+            >
+              Welcome Back
+            </h1>
+            <p
+              className={`m-0 mb-6 text-[17px] leading-[1.5] text-slate-600 max-[480px]:text-[15px] md:mb-8 dark:text-slate-400 [@media(max-height:649px)]:mb-5`}
+            >
+              Manage your project finances seamlessly.
+            </p>
+
+            <form onSubmit={handleSubmit} noValidate aria-busy={busy}>
+              <div className={`flex flex-col gap-[18px] max-[480px]:gap-4 md:gap-[22px] [@media(max-height:649px)]:gap-4`}>
+                {errors.general && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                  >
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{errors.general}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label htmlFor="login-identifier" className={LABEL_CLASS}>
+                    Username or email
+                  </label>
+                  <input
+                    id="login-identifier"
+                    name="emailOrUsername"
+                    type="text"
+                    value={formData.emailOrUsername}
+                    onChange={handleChange}
+                    placeholder="you@company.com"
+                    autoComplete="username"
+                    autoFocus
+                    disabled={busy}
+                    aria-invalid={!!errors.emailOrUsername}
+                    aria-describedby={errors.emailOrUsername ? "login-identifier-error" : undefined}
+                    className={`${INPUT_CLASS} ${errors.emailOrUsername ? INPUT_ERROR_CLASS : ""}`}
+                  />
+                  {errors.emailOrUsername && (
+                    <p id="login-identifier-error" className="mt-1.5 text-sm text-red-600 dark:text-red-400">{errors.emailOrUsername}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="login-password" className={LABEL_CLASS}>
+                    Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="login-password"
+                      name="password"
+                      type={showPassword ? "text" : "password"}
+                      value={formData.password}
+                      onChange={handleChange}
+                      placeholder="Enter your password"
+                      autoComplete="current-password"
+                      disabled={busy}
+                      aria-invalid={!!errors.password}
+                      aria-describedby={errors.password ? "login-password-error" : undefined}
+                      className={`${INPUT_CLASS} pr-12 ${errors.password ? INPUT_ERROR_CLASS : ""}`}
+                    />
+                    {/* 20px icon, 16px from the right edge (12px offset + 4px padding) */}
+                    <button
+                      type="button"
+                      onClick={togglePasswordVisibility}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      aria-pressed={showPassword}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                    >
+                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
+                  {errors.password && (
+                    <p id="login-password-error" className="mt-1.5 text-sm text-red-600 dark:text-red-400">{errors.password}</p>
+                  )}
+                  <div className="mt-4 flex justify-end">
+                    <Link
+                      to="/forgot-password"
+                      className="rounded text-sm font-medium text-indigo-600 transition-colors hover:text-indigo-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:text-indigo-400 dark:hover:text-indigo-300"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={busy}
+                className="group mt-6 box-border flex h-[50px] w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-base font-semibold text-white shadow-md shadow-indigo-600/20 transition-colors hover:bg-indigo-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-200 active:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-70 max-[480px]:h-12 md:h-[52px] dark:focus-visible:ring-indigo-500/30"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Signing in…
+                  </>
+                ) : (
+                  <>
+                    Sign In <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <footer className="pt-6 text-center text-[13px] text-slate-400 lg:text-left dark:text-slate-500">
+          © {new Date().getFullYear()} ProjectBudget &amp; Tracking. All rights reserved.
+        </footer>
+      </main>
 
       {showToast && <Toast message="Login successful!" type="success" onClose={() => setShowToast(false)} />}
     </div>

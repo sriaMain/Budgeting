@@ -9,7 +9,8 @@ from roles.permission import HasPermissionCode
 
 from .models import HrmsEmployee, HrmsSyncRun
 from .serializers import GrantAccessSerializer, HrmsEmployeeSerializer, HrmsSyncRunSerializer
-from .services import HrmsAccessError, HrmsSyncInProgress, grant_access, revoke_access, sync_employees
+from .client import HrmsError
+from .services import HrmsAccessError, HrmsSyncInProgress, grant_access, refresh_employee, revoke_access, sync_employees
 
 
 def _employee_queryset():
@@ -78,4 +79,20 @@ class HrmsEmployeeAccessView(APIView):
     def delete(self, request, pk):
         employee = get_object_or_404(HrmsEmployee, pk=pk)
         revoke_access(employee)
+        return Response(HrmsEmployeeSerializer(_employee_queryset().get(pk=pk)).data)
+
+
+class HrmsEmployeeRefreshView(APIView):
+    """POST: re-read one employee from AIRA (GET external/employees/<employee_id>/) and apply it -
+    profile and linked account updated, or access revoked if AIRA no longer lists them as active."""
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, HasPermissionCode]
+    permission_code = "hrms.employees.sync"
+
+    def post(self, request, pk):
+        employee = get_object_or_404(HrmsEmployee, pk=pk)
+        try:
+            refresh_employee(employee)
+        except HrmsError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
         return Response(HrmsEmployeeSerializer(_employee_queryset().get(pk=pk)).data)
