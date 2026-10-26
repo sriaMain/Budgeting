@@ -202,7 +202,8 @@ def sync_employees(triggered_by):
             for employee_id, fields in incoming.items():
                 employee = existing.get(employee_id)
                 if employee is None:
-                    HrmsEmployee.objects.create(employee_id=employee_id, last_seen_at=now, **fields)
+                    employee = HrmsEmployee.objects.create(employee_id=employee_id, last_seen_at=now, **fields)
+                    _ensure_resource_account(employee)
                     run.created_count += 1
                     continue
 
@@ -222,6 +223,7 @@ def sync_employees(triggered_by):
                 employee.save(update_fields=changed + ['last_seen_at', 'updated_at'])
                 if changed and employee.account_id:
                     _sync_account_profile(employee)
+                _ensure_resource_account(employee)
 
             newly_missing = HrmsEmployee.objects.filter(is_active_in_hrms=True).exclude(
                 employee_id__in=incoming.keys()
@@ -265,6 +267,45 @@ def sync_employees(triggered_by):
         run.returned_count, run.removed_count, run.access_revoked_count,
     )
     return run
+
+
+def _ensure_resource_account(employee):
+    """Gives an active AIRA employee a linked Account so they can be picked as a project
+    resource / expense payee straight away - no "Grant access" step.
+
+    Reuses the Account with the same email when there is one; otherwise creates one with
+    NO login (inactive, unusable password, no roles, nothing emailed). Superuser accounts
+    and accounts already linked to another HRMS employee are left alone.
+    """
+    if employee.account_id or not employee.is_active_in_hrms:
+        return
+    account = None
+    if employee.email:
+        account = Account.objects.filter(email__iexact=employee.email).first()
+        if account is not None and (
+            account.is_superuser
+            or HrmsEmployee.objects.filter(account=account).exclude(pk=employee.pk).exists()
+        ):
+            logger.warning("HRMS employee %s: email belongs to an account that can't be linked", employee.employee_id)
+            return
+    if account is None:
+        if employee.first_name:
+            first_name, last_name = employee.first_name, employee.last_name
+        else:
+            first_name, _, last_name = employee.full_name.partition(' ')
+        account = Account(
+            username=_unique_username(employee.email or employee.employee_id),
+            email=employee.email or None,
+            first_name=first_name[:150],
+            last_name=last_name.strip()[:150],
+            position=employee.designation[:100],
+            is_active=False,  # resource record only - no Budgeting login
+        )
+        account.set_unusable_password()
+        account.save()
+        _invalidate_user_caches(account)
+    employee.account = account
+    employee.save(update_fields=['account', 'updated_at'])
 
 
 def _unique_username(email):
@@ -360,6 +401,12 @@ def grant_access(employee, role_ids, granted_by, module_ids, charges_per_hour, c
                 position=employee.designation[:100],
             )
 
+        elif not account.has_usable_password():
+            # Auto-created resource record (no login yet) - give it a real password now.
+            new_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+            account.set_password(new_password)
+            account.save(update_fields=['password'])
+
         account.is_active = True
         account.is_staff = any(role.role_name == "Admin" for role in roles)
         account.charges_per_hour = charges_per_hour
@@ -428,4 +475,5 @@ def refresh_employee(employee):
         employee.last_seen_at = now
         employee.save()
         _sync_account_profile(employee)
+        _ensure_resource_account(employee)
     return employee

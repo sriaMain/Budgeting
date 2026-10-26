@@ -319,6 +319,9 @@ FREELANCER_PORTAL_URL = os.environ.get("FREELANCER_PORTAL_URL", FRONTEND_BASE_UR
 # manual (the Refresh button on Administration > HRMS Employees).
 HRMS_EMPLOYEES_API_URL = os.environ.get("HRMS_EMPLOYEES_API_URL", "https://aira.nxsys.in/api/external/employees/")
 HRMS_API_KEY = os.environ.get("HRMS_API_KEY", "")
+# Employee pickers (resources, expenses, task assignees) list only HRMS employees with Budgeting
+# access. "false" falls back to every active account - see hrms_integration/selectors.py.
+EMPLOYEES_FROM_HRMS = os.environ.get("EMPLOYEES_FROM_HRMS", "true").strip().lower() in ("1", "true", "yes")
 HRMS_API_TIMEOUT_SECONDS = int(os.environ.get("HRMS_API_TIMEOUT_SECONDS", "20"))
 
 if FREELANCER_PORTAL_URL not in CORS_ALLOWED_ORIGINS:

@@ -272,6 +272,21 @@ class UserListView(APIView):
             # if not request.user.has_role_permission(self.permission_code):
             #     return Response({"error": "Permission denied"}, status=403)
 
+            # ?employees=hrms -> only HRMS employees who can log in (task assignee pickers).
+            # Not cached: the full list below keeps its cache for the profile lookup.
+            if request.query_params.get("employees") == "hrms":
+                from hrms_integration.selectors import login_employee_accounts
+
+                qs = login_employee_accounts(User.objects.all()).prefetch_related(Prefetch("roles"))
+                search = request.query_params.get("search")
+                if search:
+                    qs = qs.filter(
+                        Q(first_name__icontains=search)
+                        | Q(last_name__icontains=search)
+                        | Q(email__icontains=search)
+                    )
+                return Response(UserListSerializer(qs, many=True).data, status=200)
+
             cache_key = "users_list"
             try:
                 cached = cache.get(cache_key)

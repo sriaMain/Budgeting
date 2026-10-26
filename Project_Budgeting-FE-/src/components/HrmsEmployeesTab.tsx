@@ -264,9 +264,15 @@ const HrmsEmployeesTab: React.FC = () => {
           )}
         </div>
       ) : (
-        <span className="text-gray-400 italic dark:text-gray-500">
-          {e.access_revoked_reason === 'hrms_missing' ? 'Revoked (left HRMS)' : e.access_revoked_reason === 'manual' ? 'Revoked' : 'No access'}
-        </span>
+        e.is_active_in_hrms ? (
+          <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300" title="Can be picked in Resources and Expenses; no Budgeting login">
+            Available as resource
+          </span>
+        ) : (
+          <span className="text-gray-400 italic dark:text-gray-500">
+            {e.access_revoked_reason === 'hrms_missing' ? 'Revoked (left HRMS)' : e.access_revoked_reason === 'manual' ? 'Revoked' : 'No access'}
+          </span>
+        )
       ),
     },
     {
@@ -283,6 +289,8 @@ const HrmsEmployeesTab: React.FC = () => {
           >
             {refreshingId === e.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
           </button>
+          {/* Grant / Edit Access - commented out: AIRA employees go straight to the Resources
+              employee picker on Refresh, no grant step needed.
           {e.is_active_in_hrms && (
             <button
               onClick={() => openAccess(e)}
@@ -291,6 +299,7 @@ const HrmsEmployeesTab: React.FC = () => {
               {e.is_eligible ? 'Edit Access' : 'Grant Access'}
             </button>
           )}
+          */}
           {e.is_eligible && (
             <button
               onClick={() => setRevoking(e)}

@@ -12,6 +12,8 @@ interface User {
     username?: string;
     email: string;
     role?: string;
+    isAssignable?: boolean;
+    hrmsEmployeeId?: number;
 }
 
 interface Project {
@@ -92,17 +94,13 @@ export function AddTaskModal({
         project: prefilledProjectId || 0,
         status: '',
         allocated_hours: '00:00', // Changed to HH:MM format
-        due_date: '', // Optional due date
+        start_date: '', // Optional start date
+        end_date: '', // Optional end date
         milestone: 0 // Optional milestone (labour cost rolls up to it)
 
     });
 
     const [users, setUsers] = useState<User[]>([]);
-    // services/users selector like AssignTaskModal
-    const [servicesData, setServicesData] = useState<any[]>([]);
-    const [services, setServices] = useState<{ name: string; users: User[] }[]>([]);
-    const [serviceUsers, setServiceUsers] = useState<User[]>([]);
-    const [selectedService, setSelectedService] = useState<string>('');
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
     const [projects, setProjects] = useState<Project[]>([]);
     const [milestones, setMilestones] = useState<{ id: number; name: string; sequence: number }[]>([]);
@@ -125,6 +123,7 @@ export function AddTaskModal({
         status?: string;
         allocated_hours?: string;
         freelancer?: string;
+        end_date?: string;
     }>({});
 
     // Assignee search/dropdown state
@@ -211,7 +210,6 @@ export function AddTaskModal({
     useEffect(() => {
         if (isOpen) {
             fetchUsers();
-            fetchServicesAndUsers();
             fetchStatusChoices();
             // Projects are only needed for the dropdown when the project isn't prefilled
             if (isProjectReadOnly) {
@@ -227,14 +225,14 @@ export function AddTaskModal({
                 project: prefilledProjectId || 0,
                 status: 'planned',
                 allocated_hours: '00:00',
-                due_date: '',
+                start_date: '',
+                end_date: '',
                 milestone: 0
             });
             setAssigneeSearch('');
             setProjectSearch('');
             setSelectedAssignee(null);
             setSelectedProject(null);
-            setSelectedService('');
             setSelectedUserId(null);
             setAssignMode('employee');
             setSelectedFreelancerId(null);
@@ -249,7 +247,9 @@ export function AddTaskModal({
                     status: editingTask.status || prev.status,
                     project: editingTask.project || prev.project,
                     assignee_id: editingTask.assigned_to?.id || prev.assignee_id || 0,
-                    due_date: editingTask.due_date || prev.due_date,
+                    start_date: editingTask.start_date || prev.start_date,
+                    // Support existing tasks while the API transitions from due_date to end_date.
+                    end_date: editingTask.end_date || editingTask.due_date || prev.end_date,
                     milestone: editingTask.milestone || 0,
                 }));
 
@@ -297,47 +297,38 @@ export function AddTaskModal({
     const fetchUsers = async () => {
         setIsLoadingUsers(true);
         try {
-            const response = await axiosInstance.get('accounts/users/');
-            if (response.status === 200) {
-                setUsers(response.data);
-            }
+            // API_BASE_URL already ends in /api/, so this requests /api/hrms/employees/.
+            const response = await axiosInstance.get('hrms/employees/');
+            const employees = Array.isArray(response.data)
+                ? response.data
+                : Array.isArray(response.data?.employees)
+                    ? response.data.employees
+                    : Array.isArray(response.data?.results)
+                        ? response.data.results
+                        : [];
+
+            // Show every active HRMS employee. Employees without a live linked
+            // Budgeting account remain visible but cannot be assigned until access is granted.
+            const taskAssignees: User[] = employees
+                .filter((employee: any) => employee.is_active_in_hrms !== false)
+                .map((employee: any) => ({
+                    // A negative fallback id is display-only; its option is disabled below.
+                    id: employee.account_id || -employee.id,
+                    name: employee.full_name || [employee.first_name, employee.last_name].filter(Boolean).join(' ') || employee.employee_id,
+                    username: employee.employee_id,
+                    email: employee.email || '',
+                    role: employee.designation,
+                    isAssignable: true,
+                    hrmsEmployeeId: employee.id,
+                }));
+            setUsers(taskAssignees);
         } catch (error) {
-            console.error('Failed to fetch users:', error);
-            // Try alternative endpoint if first fails
-            try {
-                const response = await axiosInstance.get('accounts/users/');
-                if (response.status === 200) {
-                    setUsers(response.data);
-                }
-            } catch (err) {
-                console.error('Failed to fetch users from alternative endpoint:', err);
-            }
+            console.error('Failed to fetch HRMS employees:', error);
+            setUsers([]);
         } finally {
             setIsLoadingUsers(false);
         }
     };
-
-    const fetchServicesAndUsers = async () => {
-        try {
-            const response = await axiosInstance.get('services/users/');
-            if (response.status === 200) {
-                const data = response.data;
-                setServicesData(data);
-                const transformed = data.map((item: any) => ({ name: item.product_services, users: item.users }));
-                setServices(transformed);
-                if (editingTask && editingTask.assigned_to) {
-                    const found = transformed.find((s: any) => s.users.some((u: any) => u.id === editingTask.assigned_to.id));
-                    if (found) {
-                        setSelectedService(found.name);
-                        setServiceUsers(found.users);
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Failed to fetch services/users:', error);
-        }
-    };
-
     const fetchProjects = async () => {
         setIsLoadingProjects(true);
         try {
@@ -479,6 +470,8 @@ export function AddTaskModal({
 
         setIsSaving(true);
 
+        const selectedEmployee = users.find(user => user.id === selectedUserId);
+
         const payload = {
             title: formData.title.trim(),
             allocated_hours: hhmmToDecimal(formData.allocated_hours),
@@ -489,15 +482,16 @@ export function AddTaskModal({
                 ? { freelancer: selectedFreelancerId, assigned_to: null }
                 : {
                     freelancer: null,
-                    // prefer selectedUserId (from service->user selector) over freeform assignee_id
-                    ...(selectedUserId && { assigned_to: selectedUserId }),
+                    // Employee list is sourced directly from HRMS accounts.
+                    ...(selectedEmployee?.isAssignable && selectedUserId && { assigned_to: selectedUserId }),
+                    ...(!selectedEmployee?.isAssignable && selectedEmployee?.hrmsEmployeeId && { hrms_employee: selectedEmployee.hrmsEmployeeId }),
                     ...(formData.assignee_id && !selectedUserId && formData.assignee_id !== 0 && { assignee_id: formData.assignee_id }),
                 }),
             ...(formData.project && formData.project !== 0 && { project: formData.project }),
             milestone: formData.milestone || null,
-            // Always send due_date (even when cleared) so removing it on an edit
-            // actually clears it server-side instead of being silently dropped.
-            due_date: formData.due_date || null
+            // Always send date values so clearing either date persists on edits.
+            start_date: formData.start_date || null,
+            end_date: formData.end_date || null
         };
 
         console.log('Form submission payload:', payload); // Debug log
@@ -690,34 +684,8 @@ export function AddTaskModal({
                                 </div>
 
                                 {assignMode === 'employee' ? (
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select Type</label>
-                                        <div className="relative">
-                                            <select
-                                                value={selectedService || ''}
-                                                onChange={(e) => {
-                                                    const value = e.target.value;
-                                                    setSelectedService(value);
-                                                    const svc = services.find(s => s.name === value);
-                                                    setServiceUsers(svc ? svc.users : []);
-                                                    setSelectedUserId(null);
-                                                    setErrors(prev => ({ ...prev, assignee_id: '' }));
-                                                }}
-                                                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.assignee_id ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'}`}
-                                                disabled={services.length === 0}
-                                            >
-                                                <option value="">{services.length === 0 ? (isLoadingUsers ? 'Loading...' : 'No types') : 'Select type'}</option>
-                                                {services.map(s => (
-                                                    <option key={s.name} value={s.name}>{s.name}</option>
-                                                ))}
-                                            </select>
-                                            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select User</label>
+                                <div>
+                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select Employee</label>
                                         <div className="relative">
                                             <select
                                                 value={selectedUserId || ''}
@@ -727,11 +695,11 @@ export function AddTaskModal({
                                                     setErrors(prev => ({ ...prev, assignee_id: '' }));
                                                 }}
                                                 className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.assignee_id ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'}`}
-                                                disabled={!selectedService}
+                                                disabled={isLoadingUsers || users.length === 0}
                                             >
-                                                <option value="">{!selectedService ? 'Select type first' : serviceUsers.length === 0 ? 'No users available' : 'Select user'}</option>
-                                                {serviceUsers.map(user => (
-                                                    <option key={user.id} value={user.id}>{user.username || user.name || user.email}</option>
+                                                <option value="">{isLoadingUsers ? 'Loading HRMS employees...' : users.length === 0 ? 'No HRMS employees available' : 'Select employee'}</option>
+                                                {users.map(user => (
+                                                    <option key={user.id} value={user.id}>{user.name || user.username || user.email}{user.role ? ` — ${user.role}` : ""}</option>
                                                 ))}
                                             </select>
                                             <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
@@ -740,7 +708,6 @@ export function AddTaskModal({
                                             <p className="text-xs text-red-600 mt-1">{errors.assignee_id}</p>
                                         )}
                                     </div>
-                                </div>
                                 ) : (
                                 <div>
                                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select Freelancer</label>
@@ -815,19 +782,17 @@ export function AddTaskModal({
                                 )}
                             </div>
 
-                            {/* Due Date (Optional) */}
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Due Date (Optional)
-                                </label>
-                                <input
-                                    type="date"
-                                    value={formData.due_date}
-                                    onChange={(e) => {
-                                        setFormData({ ...formData, due_date: e.target.value });
-                                    }}
-                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                                />
+                            {/* Start and End Dates (Optional) */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Date (Optional)</label>
+                                    <input type="date" value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">End Date (Optional)</label>
+                                    <input type="date" min={formData.start_date || undefined} value={formData.end_date} onChange={(e) => { setFormData({ ...formData, end_date: e.target.value }); setErrors(prev => ({ ...prev, end_date: '' })); }} className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.end_date ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'}`} />
+                                    {errors.end_date && <p className="text-xs text-red-600 mt-1">{errors.end_date}</p>}
+                                </div>
                             </div>
 
                             {/* Allocated Hours */}

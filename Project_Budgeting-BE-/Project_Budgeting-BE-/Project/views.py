@@ -371,21 +371,22 @@ class ProjectPOCOptionsAPIView(APIView):
     def get(self, request):
         from accounts.models import Vendor
         from freelancer_onboarding.models import Freelancer
+        from hrms_integration.selectors import employee_accounts, employees_from_hrms
 
         options = []
 
-        employees = (
-            Account.objects.filter(is_active=True)
-            .prefetch_related("modules")
-            .order_by("first_name", "last_name")
-        )
+        employees = employee_accounts().prefetch_related("modules").order_by("first_name", "last_name")
+        if employees_from_hrms():
+            employees = employees.select_related("hrms_employee")
         for account in employees:
+            hrms = getattr(account, "hrms_employee", None) if employees_from_hrms() else None
             modules = ", ".join(m.product_service_name for m in account.modules.all())
             options.append({
                 "id": account.id,
                 "type": "employee",
                 "name": account.display_name,
-                "subtitle": modules,
+                # AIRA designation when known, else the Budgeting modules as before.
+                "subtitle": (hrms.designation if hrms and hrms.designation else modules),
             })
 
         vendors = Vendor.objects.filter(status="approved").order_by("name")
@@ -1618,16 +1619,18 @@ class ServiceUsersAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from django.db.models import Prefetch
+        from hrms_integration.selectors import login_employee_accounts
         from product_group.models import Product_Services
 
         services = Product_Services.objects.filter(
             is_active=True
-        ).prefetch_related("accounts")
+        ).prefetch_related(Prefetch("accounts", queryset=login_employee_accounts(), to_attr="employee_accounts"))
 
         result = []
 
         for service in services:
-            active_users = service.accounts.filter(is_active=True)
+            active_users = service.employee_accounts  # HRMS employees who can log in
 
             result.append({
                 "product_services": service.product_service_name,

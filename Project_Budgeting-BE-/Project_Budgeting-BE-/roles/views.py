@@ -23,13 +23,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 # constants.py (or at top of views.py)
-ROLES_ACTIVE_CACHE_KEY = "roles_list_active_v1"
+# Keep this versioned. The previous key could retain deleted or reseeded
+# permission IDs in Redis and return them to the role editor.
+ROLES_ACTIVE_CACHE_KEY = "roles_list_active_v2"
+PERMISSION_TREE_CACHE_KEY = "permission_tree_v2"
 
 
 class PermissionTreeView(APIView):
     permission_classes = [AllowAny]
     def get(self, request):
-        cache_key = "permission_tree_v1"
+        cache_key = PERMISSION_TREE_CACHE_KEY
         try:
             data = cache.get(cache_key)
         except Exception as e:
@@ -206,7 +209,7 @@ class RoleDetailView(APIView):
 
         updated = serializer.save()
         try:
-            cache.delete("roles_list_v1")  # Invalidate cache
+            cache.delete(ROLES_ACTIVE_CACHE_KEY)
         except Exception as e:
             logger.warning(f"Cache delete failed: {e}")
         return Response(

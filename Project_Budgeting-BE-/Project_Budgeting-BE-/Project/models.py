@@ -880,6 +880,12 @@ class Task(models.Model):
         null=True,
         related_name='assigned_tasks'
     )
+    assigned_hrms_employee = models.ForeignKey(
+        'hrms_integration.HrmsEmployee',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='assigned_tasks'
+    )
     milestone = models.ForeignKey(
         Milestone,
         on_delete=models.SET_NULL,
@@ -888,6 +894,7 @@ class Task(models.Model):
     )
     allocated_hours = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planned')
+    start_date = models.DateField(null=True, blank=True)
     due_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     modified_at = models.DateTimeField(auto_now=True)

@@ -6,6 +6,7 @@ from .models import (Project, ProjectBudget, BudgetLine, Milestone, ResourceAssi
 from core.models import GLAccount
 from django.core.exceptions import ObjectDoesNotExist
 from accounts.models import Account
+from hrms_integration.models import HrmsEmployee
 from client.serializers import PointOfContactSerializer
 
 # class ProjectBudgetSerializer(serializers.ModelSerializer):
@@ -1132,11 +1133,19 @@ class ProjectListSerializer(serializers.ModelSerializer):
     
 
 class TaskSerializer(serializers.ModelSerializer):
+    # End date maps to the existing due_date column for backwards-compatible data.
+    end_date = serializers.DateField(source="due_date", required=False, allow_null=True)
     # due_date = serializers.DateField(required=True)
     created_by = serializers.SerializerMethodField(read_only=True)
     modified_by = serializers.SerializerMethodField(read_only=True)
     assigned_to = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.all(),
+        required=False,
+        allow_null=True
+    )
+    hrms_employee = serializers.PrimaryKeyRelatedField(
+        source='assigned_hrms_employee',
+        queryset=HrmsEmployee.objects.filter(is_active_in_hrms=True),
         required=False,
         allow_null=True
     )
@@ -1189,6 +1198,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "consumed_formatted",
             "remaining_formatted_hms",
             "assigned_to",
+            "hrms_employee",
             "freelancer",
             "assigned_freelancer",
             "project",
@@ -1197,6 +1207,8 @@ class TaskSerializer(serializers.ModelSerializer):
             "milestone_name",
             "created_by",
             "modified_by",
+            "start_date",
+            "end_date",
             "due_date",
             "needs_extra_hours",
             "total_seconds",
@@ -1244,11 +1256,22 @@ class TaskSerializer(serializers.ModelSerializer):
         milestone = attrs.get("milestone", getattr(self.instance, "milestone", None))
         project = attrs.get("project", getattr(self.instance, "project", None))
         # Project's primary key is project_no (no `id` field), so compare on pk
+        start_date = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end_date = attrs.get("due_date", getattr(self.instance, "due_date", None))
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError({"end_date": "End date cannot be before start date."})
+
         if milestone and project and milestone.project_id != project.pk:
             raise serializers.ValidationError(
                 {"milestone": "Milestone does not belong to this task's project."}
             )
 
+        if "assigned_hrms_employee" in attrs:
+            hrms_employee = attrs.get("assigned_hrms_employee")
+            if hrms_employee and attrs.get("assigned_to"):
+                raise serializers.ValidationError({"hrms_employee": "Choose either a Budgeting account or an HRMS employee, not both."})
+            if hrms_employee and hrms_employee.account_id:
+                attrs["assigned_to"] = hrms_employee.account
         if attrs.get("freelancer") is not None:
             from freelancer_onboarding.models import Freelancer
             if attrs.get("assigned_to"):

@@ -347,7 +347,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
   React.useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const response = await axiosInstance.get('accounts/users/');
+        const response = await axiosInstance.get('accounts/users/', { params: { employees: 'hrms' } });
         if (response.status === 200) {
           setUsers(Array.isArray(response.data) ? response.data : []);
         }
