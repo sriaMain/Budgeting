@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # constants.py (or at top of views.py)
 # Keep this versioned. The previous key could retain deleted or reseeded
 # permission IDs in Redis and return them to the role editor.
-ROLES_ACTIVE_CACHE_KEY = "roles_list_active_v2"
+ROLES_ACTIVE_CACHE_KEY = "roles_list_active_v3"
 PERMISSION_TREE_CACHE_KEY = "permission_tree_v2"
 
 

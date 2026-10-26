@@ -46,6 +46,11 @@ class PermissionCategorySerializer(serializers.ModelSerializer):
         fields = ["id", "permission_category_name", "permissions"]
 
 
+def serialize_active_role_permissions(role, permission_serializer):
+    permissions = role.permissions.filter(is_active=True).select_related("category")
+    return permission_serializer(permissions, many=True).data
+
+
 
 class RoleWriteSerializer(serializers.ModelSerializer):
     """
@@ -98,7 +103,10 @@ class RoleListSerializer(serializers.ModelSerializer):
     List endpoint:
     Show minimal nested permission objects
     """
-    permissions = PermissionBasicSerializer(many=True, read_only=True)
+    permissions = serializers.SerializerMethodField()
+
+    def get_permissions(self, obj):
+        return serialize_active_role_permissions(obj, PermissionBasicSerializer)
 
     class Meta:
         model = Role
@@ -110,7 +118,10 @@ class RoleDetailSerializer(serializers.ModelSerializer):
     Detailed endpoint:
     Full nested permission data
     """
-    permissions = PermissionSerializer(many=True, read_only=True)
+    permissions = serializers.SerializerMethodField()
+
+    def get_permissions(self, obj):
+        return serialize_active_role_permissions(obj, PermissionSerializer)
 
     class Meta:
         model = Role

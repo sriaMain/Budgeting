@@ -6,7 +6,7 @@ from .models import Permission, PermissionCategory, Role
 
 # These names must match roles.views. Keeping the key here explicit avoids a
 # views import during Django app startup and fixes the old key mismatch.
-ROLES_ACTIVE_CACHE_KEY = "roles_list_active_v2"
+ROLES_ACTIVE_CACHE_KEY = "roles_list_active_v3"
 PERMISSION_TREE_CACHE_KEY = "permission_tree_v2"
 
 
