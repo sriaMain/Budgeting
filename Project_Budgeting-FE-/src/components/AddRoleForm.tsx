@@ -236,10 +236,13 @@ const AddRoleForm: React.FC<AddRoleFormProps> = ({ onCancel, onSuccess, role = n
     setIsSubmitting(true);
 
     try {
+        // Only send permissions the server still lists - a role loaded before permissions were
+        // removed can carry dead IDs, which the API rejects with "Invalid pk ... does not exist".
+        const liveIds = new Set(allPermissions.map(p => p.id));
         const payload = {
           role_name: roleName,
           is_active: isActive,
-          permissions: chosenPermissions.map(p => p.id)
+          permissions: chosenPermissions.map(p => p.id).filter(id => liveIds.size === 0 || liveIds.has(id))
         };
 
         let response;

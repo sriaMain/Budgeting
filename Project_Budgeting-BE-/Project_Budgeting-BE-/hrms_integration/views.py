@@ -10,7 +10,9 @@ from roles.permission import HasPermissionCode
 from .models import HrmsEmployee, HrmsSyncRun
 from .serializers import GrantAccessSerializer, HrmsEmployeeSerializer, HrmsSyncRunSerializer
 from .client import HrmsError
-from .services import HrmsAccessError, HrmsSyncInProgress, grant_access, refresh_employee, revoke_access, sync_employees
+from .services import (
+    HrmsAccessError, HrmsSyncInProgress, grant_access, refresh_employee, revoke_access, sync_employees, sync_if_due,
+)
 
 
 def _employee_queryset():
@@ -39,12 +41,21 @@ class HrmsEmployeeListView(APIView):
 
 
 class HrmsSyncView(APIView):
-    """The manual Refresh button: re-fetch from HRMS and revoke anyone who has left."""
+    """Re-fetch from HRMS and revoke anyone who has left.
+
+    {"auto": true} is the automatic pull the HRMS Employees tab makes when it opens: skipped
+    when a pull ran in the last few minutes, and always 200 - a failure is reported in
+    `sync` (the tab shows it in its banner) instead of as an HTTP error.
+    """
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, HasPermissionCode]
     permission_code = "hrms.employees.sync"
 
     def post(self, request):
+        if request.data.get("auto") in (True, "true", "1", 1):
+            run, ran = sync_if_due(triggered_by=request.user)
+            return Response({"ran": ran, "sync": HrmsSyncRunSerializer(run).data if run else None})
+
         try:
             run = sync_employees(triggered_by=request.user)
         except HrmsSyncInProgress as exc:

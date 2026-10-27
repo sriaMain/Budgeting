@@ -163,6 +163,24 @@ def _revoke(employee, reason, now):
     employee.save(update_fields=['is_eligible', 'access_revoked_at', 'access_revoked_reason', 'updated_at'])
 
 
+def sync_if_due(triggered_by=None, min_interval=None):
+    """Automatic pull from AIRA (HRMS Employees tab opened, or the scheduled task) - there is
+    no Refresh button any more.
+
+    Skips the call when a pull started less than `min_interval` ago (success or failure), so
+    opening the tab repeatedly or AIRA being down doesn't burn AIRA's 120 requests/hour.
+    Returns (run, ran): the latest HrmsSyncRun and whether this call pulled from AIRA.
+    """
+    min_interval = min_interval or timedelta(seconds=settings.HRMS_AUTO_SYNC_MIN_INTERVAL_SECONDS)
+    latest = HrmsSyncRun.objects.order_by('-started_at').first()
+    if latest and timezone.now() - latest.started_at < min_interval:
+        return latest, False
+    try:
+        return sync_employees(triggered_by), True
+    except HrmsSyncInProgress:
+        return HrmsSyncRun.objects.order_by('-started_at').first(), False
+
+
 def sync_employees(triggered_by):
     """Re-fetches the HRMS employee list and re-applies the revocation rule.
 

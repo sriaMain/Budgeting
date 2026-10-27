@@ -63,6 +63,13 @@ export const syncHrmsEmployees = async (): Promise<HrmsSyncRun> => {
   return data.sync;
 };
 
+/** Automatic pull from AIRA (no Refresh button): the backend skips it when one ran in the last
+ * few minutes. Never throws for an AIRA failure - that comes back in `sync.status`. */
+export const autoSyncHrmsEmployees = async (): Promise<{ ran: boolean; sync: HrmsSyncRun | null }> => {
+  const { data } = await axiosInstance.post('hrms/employees/sync/', { auto: true });
+  return data;
+};
+
 export interface GrantHrmsAccessPayload {
   roles: number[];
   modules: number[];

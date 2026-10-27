@@ -10,7 +10,7 @@ import axiosInstance from '../utils/axiosInstance';
 import { parseApiErrors } from '../utils/parseApiErrors';
 import type { Role } from '../types';
 import {
-  getHrmsEmployees, grantHrmsAccess, revokeHrmsAccess, syncHrmsEmployees, refreshHrmsEmployee, needsSetup,
+  getHrmsEmployees, grantHrmsAccess, revokeHrmsAccess, autoSyncHrmsEmployees, syncHrmsEmployees, needsSetup,
   type HrmsEmployee, type HrmsSyncRun,
 } from '../services/hrms';
 
@@ -36,10 +36,10 @@ type HrmsStatus = 'active' | 'removed' | 'all';
 type AccessFilter = 'all' | 'granted' | 'setup' | 'none';
 
 /**
- * Administration > HRMS Employees. Lists employees synced from HRMS and lets
- * an admin mark them eligible + assign Budgeting roles. "Refresh" is the only
- * sync trigger: it re-fetches the active list and revokes access for anyone
- * who is no longer in it.
+ * Administration > HRMS Employees. Lists employees fetched from AIRA HRMS. There is no
+ * Refresh button: opening the tab pulls from AIRA automatically (skipped if a pull ran in the
+ * last few minutes), and a scheduled backend task pulls every 15 minutes. Each pull revokes
+ * access for anyone no longer in AIRA.
  */
 const HrmsEmployeesTab: React.FC = () => {
   const [employees, setEmployees] = useState<HrmsEmployee[]>([]);
@@ -87,6 +87,18 @@ const HrmsEmployeesTab: React.FC = () => {
       } finally {
         setIsLoading(false);
       }
+
+      // Then pull the latest from AIRA in the background and show it when it lands.
+      setIsSyncing(true);
+      try {
+        const { ran, sync } = await autoSyncHrmsEmployees();
+        if (sync) setLastSync(sync);
+        if (ran && sync?.status === 'success') await loadEmployees();
+      } catch {
+        // No permission to pull, or the backend is unreachable - the stored list stays on screen.
+      } finally {
+        setIsSyncing(false);
+      }
     })();
   }, []);
 
@@ -108,13 +120,12 @@ const HrmsEmployeesTab: React.FC = () => {
   const activeModules = modules.filter((m) => m.is_active !== false);
   const setupCount = employees.filter(needsSetup).length;
 
-  const replaceEmployee = (updated: HrmsEmployee) =>
-    setEmployees((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
-
+  // Manual "Refresh from HRMS" - always pulls from AIRA now (the automatic pull may skip).
   const handleRefresh = async () => {
     setIsSyncing(true);
     try {
       const run = await syncHrmsEmployees();
+      setLastSync(run);
       await loadEmployees();
       toast.success(
         `Refreshed: ${run.fetched_count} active in HRMS` +
@@ -129,6 +140,9 @@ const HrmsEmployeesTab: React.FC = () => {
       setIsSyncing(false);
     }
   };
+
+  const replaceEmployee = (updated: HrmsEmployee) =>
+    setEmployees((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
 
   const openAccess = (employee: HrmsEmployee) => {
     setEditing(employee);
@@ -184,21 +198,6 @@ const HrmsEmployeesTab: React.FC = () => {
     }
   };
 
-  // Per-row "refresh from AIRA" (detail endpoint) - id of the row being refreshed.
-  const [refreshingId, setRefreshingId] = useState<number | null>(null);
-  const handleRefreshOne = async (e: HrmsEmployee) => {
-    setRefreshingId(e.id);
-    try {
-      const updated = await refreshHrmsEmployee(e.id);
-      setEmployees((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
-      toast.success(updated.is_active_in_hrms ? `${updated.full_name || updated.employee_id} refreshed from AIRA.` : `${updated.full_name || updated.employee_id} is no longer active in AIRA - access removed.`);
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setRefreshingId(null);
-    }
-  };
-
   const columns: Column<HrmsEmployee>[] = [
     {
       header: 'Employee',
@@ -237,78 +236,6 @@ const HrmsEmployeesTab: React.FC = () => {
         >
           Not in HRMS
         </span>
-      ),
-    },
-    {
-      header: 'Budgeting Access',
-      accessor: (e) => e.is_eligible ? (
-        <div className="space-y-1">
-          <div className="flex flex-wrap gap-1">
-            {e.roles.map((r) => (
-              <span key={r.id} className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">{r.role_name}</span>
-            ))}
-          </div>
-          {needsSetup(e) ? (
-            <button
-              type="button"
-              onClick={() => openAccess(e)}
-              className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline dark:text-amber-300"
-              title="Without an hourly rate, this person's logged time is costed at zero on projects"
-            >
-              <AlertTriangle className="w-3.5 h-3.5" /> Add module &amp; rate
-            </button>
-          ) : (
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              {e.modules.map((m) => m.product_service_name).join(', ')} · {e.currency} {Number(e.charges_per_hour).toLocaleString('en-IN', { minimumFractionDigits: 2 })}/hr
-            </div>
-          )}
-        </div>
-      ) : (
-        e.is_active_in_hrms ? (
-          <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300" title="Can be picked in Resources and Expenses; no Budgeting login">
-            Available as resource
-          </span>
-        ) : (
-          <span className="text-gray-400 italic dark:text-gray-500">
-            {e.access_revoked_reason === 'hrms_missing' ? 'Revoked (left HRMS)' : e.access_revoked_reason === 'manual' ? 'Revoked' : 'No access'}
-          </span>
-        )
-      ),
-    },
-    {
-      header: 'Actions',
-      accessor: (e) => (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => handleRefreshOne(e)}
-            disabled={refreshingId === e.id}
-            title="Refresh this employee from AIRA"
-            aria-label={`Refresh ${e.full_name || e.employee_id} from AIRA`}
-            className="p-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-          >
-            {refreshingId === e.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          </button>
-          {/* Grant / Edit Access - commented out: AIRA employees go straight to the Resources
-              employee picker on Refresh, no grant step needed.
-          {e.is_active_in_hrms && (
-            <button
-              onClick={() => openAccess(e)}
-              className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap"
-            >
-              {e.is_eligible ? 'Edit Access' : 'Grant Access'}
-            </button>
-          )}
-          */}
-          {e.is_eligible && (
-            <button
-              onClick={() => setRevoking(e)}
-              className="px-3 py-1.5 text-sm font-semibold rounded-lg border border-red-300 text-red-600 hover:bg-red-50 whitespace-nowrap dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10"
-            >
-              Revoke
-            </button>
-          )}
-        </div>
       ),
     },
   ];
@@ -360,17 +287,19 @@ const HrmsEmployeesTab: React.FC = () => {
         <div>
           {lastSync ? (
             <>
-              Last refresh: <strong>{formatDateTime(lastSync.finished_at || lastSync.started_at)}</strong>
-              {lastSync.triggered_by_name ? ` by ${lastSync.triggered_by_name}` : ''} —{' '}
+              Last fetched from AIRA: <strong>{formatDateTime(lastSync.finished_at || lastSync.started_at)}</strong>
+              {lastSync.triggered_by_name ? '' : ' (automatic)'} —{' '}
               {lastSync.status === 'success'
                 ? `${lastSync.fetched_count} active employees, ${lastSync.access_revoked_count} access revoked.`
-                : <span className="text-red-700 dark:text-red-300">failed: {lastSync.error_message}</span>}
+                : lastSync.status === 'running'
+                  ? 'in progress...'
+                  : <span className="text-red-700 dark:text-red-300">failed: {lastSync.error_message}</span>}
             </>
           ) : (
-            'The employee list has not been refreshed yet. Click "Refresh from HRMS" to load it.'
+            'Employees have not been fetched from AIRA yet.'
           )}
           <div className="mt-1 text-blue-800/80 dark:text-blue-200/70">
-            Employees who leave HRMS lose Budgeting access only when someone clicks Refresh, so refresh regularly (e.g. daily).
+            Employee data comes from AIRA HRMS automatically - when this tab opens and every 15 minutes - or right away with "Refresh from HRMS". Anyone who leaves AIRA is removed on the next fetch.
           </div>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { Search, Plus, Edit3, AlertCircle, RefreshCw, X, ArrowLeft, Trash2 } fro
 import type { Role, Permission } from '../types';
 import axiosInstance from '../utils/axiosInstance';
 import AddRoleForm from '../components/AddRoleForm';
-import ModulesTab from '../components/ModulesTab';
+import ProductsServicesTab from '../components/ProductsServicesTab';
 // import ManageUsersTab from '../components/ManageUsersTab'; // replaced by HRMS Employees (AIRA)
 import HrmsEmployeesTab from '../components/HrmsEmployeesTab';
 
@@ -235,7 +235,7 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
                   }
                 `}
               >
-                Modules
+                Products &amp; Services
               </button>
 
               {/* Manage Users - commented out: users now come from AIRA HRMS (HRMS Employees tab).
@@ -478,7 +478,7 @@ const AdministrationScreen: React.FC<AdministrationScreenProps> = ({ userRole, c
 
             {/* Modules Section */}
             {activeTab === 'modules' && (
-              <ModulesTab />
+              <ProductsServicesTab />
             )}
 
             {/* Manage Users tab - commented out, replaced by HRMS Employees (AIRA).

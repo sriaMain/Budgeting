@@ -1,87 +1,343 @@
 from rest_framework import serializers
-from .models import ProductGroup, Product_Services, QuoteItem, Quote
+from .models import ProductGroup, Product_Services, QuoteItem, Quote, Tax, UnitOfMeasure
+from accounts.models import Vendor
+from core.models import GLAccount
 from client.models import Company, POC
 from client.serializers import  PointOfContactSerializer
 from core.app_constants import CURRENCY_CHOICES
 
+ACCOUNTING_PERMISSION = 'catalog.accounting.view'
+ACCOUNTING_FIELDS = ('income_account', 'expense_account', 'income_account_label', 'expense_account_label')
+
+
+def can_see_product_accounting(request):
+    """Accounting settings on catalog items are limited to catalog.accounting.view (superusers pass)."""
+    user = getattr(request, 'user', None)
+    if not user or not user.is_authenticated:
+        return False
+    return bool(getattr(user, 'is_superuser', False) or user.has_role_permission(ACCOUNTING_PERMISSION))
+
+
+def hrms_resource_options():
+    """Department and designation names from synced AIRA HRMS employees (active ones). AIRA sends
+    names only, so catalog items store names; switch to IDs once AIRA provides them."""
+    from hrms_integration.models import HrmsEmployee
+    active = HrmsEmployee.objects.filter(is_active_in_hrms=True)
+    departments = sorted({d for d in active.values_list('department', flat=True) if d and d.strip()})
+    designations = sorted({d for d in active.values_list('designation', flat=True) if d and d.strip()})
+    return departments, designations
+
+
+class UnitOfMeasureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UnitOfMeasure
+        fields = ['id', 'code', 'name', 'category', 'is_active']
+
+
+class TaxSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tax
+        fields = ['id', 'name', 'rate', 'scope', 'description', 'is_active']
+
+    def validate_name(self, value):
+        name = value.strip()
+        qs = Tax.objects.filter(name__iexact=name)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("A tax with this name already exists.")
+        return name
+
+
 class ProductGroupSerializer(serializers.ModelSerializer):
- 
-	created_by = serializers.StringRelatedField(read_only=True)
-	modified_by = serializers.StringRelatedField(read_only=True)
-	class Meta:
-		model = ProductGroup
-		fields = [
-			'id',
-			'product_group_name',
-			'description',
-			'created_by',
-			'modified_by',
-			'created_at',
-			'updated_at'
-		]
- 
-	def to_representation(self, instance):
-		data = super().to_representation(instance)
- 
-		# Rename key from product_group_name -> product_group
-		data['product_group'] = data.pop('product_group_name')
- 
-		return data
- 
-	def get_modified_by(self, obj):
-		return obj.modified_by.username if obj.modified_by else None
-   
- 
-	def validate_product_group_name(self, value):
-		if ProductGroup.objects.filter(product_group_name__iexact=value).exists():
-			raise serializers.ValidationError("Product group already exists.")
-		return value
-	
+    """Product category. Output keeps the `product_group` key (= name) existing screens read."""
+
+    created_by = serializers.StringRelatedField(read_only=True)
+    modified_by = serializers.StringRelatedField(read_only=True)
+    parent = serializers.PrimaryKeyRelatedField(
+        queryset=ProductGroup.objects.all(), allow_null=True, required=False)
+    parent_name = serializers.CharField(source='parent.product_group_name', read_only=True, default=None)
+    full_name = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = ProductGroup
+        fields = [
+            'id',
+            'product_group_name',
+            'description',
+            'parent',
+            'parent_name',
+            'full_name',
+            'is_active',
+            'icon',
+            'created_by',
+            'modified_by',
+            'created_at',
+            'updated_at',
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Rename key from product_group_name -> product_group
+        data['product_group'] = data.pop('product_group_name')
+        return data
+
+    def validate_product_group_name(self, value):
+        name = value.strip()
+        qs = ProductGroup.objects.filter(product_group_name__iexact=name)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("Product group already exists.")
+        return name
+
+    def validate(self, attrs):
+        parent = attrs.get('parent')
+        if parent is not None and self.instance is not None:
+            node, seen = parent, set()
+            while node is not None and node.pk not in seen:
+                if node.pk == self.instance.pk:
+                    raise serializers.ValidationError(
+                        {"parent": "A category can't be placed under itself or its own sub-category."})
+                seen.add(node.pk)
+                node = node.parent
+        return attrs
+
+
 class ProductServicesSerializer(serializers.ModelSerializer):
-	"""
-	Serializer for Product_Services.
-	- On GET → show product_group object or product_group_name (if nested).
-	- On POST/PUT → accept product_group as integer primary key.
-	"""
+    """
+    Products & Services catalog item.
+    - Output keeps `product_group` as the category NAME (existing screens read it that way) and
+      adds `product_group_id` / `category_path` for the catalog screen.
+    - Input takes `product_group` as a primary key.
+    - Accounting fields are only shown to / accepted from users with catalog.accounting.view.
+    """
 
-	product_group = serializers.PrimaryKeyRelatedField(
-		queryset=ProductGroup.objects.all(),
-		allow_null=True
-	)
+    product_group = serializers.PrimaryKeyRelatedField(
+        queryset=ProductGroup.objects.all(), allow_null=True, required=False)
+    uom = serializers.PrimaryKeyRelatedField(
+        queryset=UnitOfMeasure.objects.all(), allow_null=True, required=False)
+    purchase_uom = serializers.PrimaryKeyRelatedField(
+        queryset=UnitOfMeasure.objects.all(), allow_null=True, required=False)
+    sales_tax = serializers.PrimaryKeyRelatedField(
+        queryset=Tax.objects.all(), allow_null=True, required=False)
+    purchase_tax = serializers.PrimaryKeyRelatedField(
+        queryset=Tax.objects.all(), allow_null=True, required=False)
+    preferred_vendor = serializers.PrimaryKeyRelatedField(
+        queryset=Vendor.objects.all(), allow_null=True, required=False)
+    income_account = serializers.PrimaryKeyRelatedField(
+        queryset=GLAccount.objects.all(), allow_null=True, required=False)
+    expense_account = serializers.PrimaryKeyRelatedField(
+        queryset=GLAccount.objects.all(), allow_null=True, required=False)
+    internal_reference = serializers.CharField(
+        max_length=64, allow_blank=True, allow_null=True, required=False)
+    suggested_designations = serializers.ListField(
+        child=serializers.CharField(max_length=150), required=False, allow_null=True, max_length=20)
+    payment_terms_days = serializers.IntegerField(min_value=0, max_value=365, required=False, allow_null=True)
+    default_contract_months = serializers.IntegerField(min_value=0, max_value=120, required=False, allow_null=True)
+    category_icon = serializers.CharField(source='product_group.icon', read_only=True, default=None)
 
-	created_by = serializers.StringRelatedField(read_only=True)
-	modified_by = serializers.StringRelatedField(read_only=True)
+    product_group_id = serializers.IntegerField(read_only=True)
+    category_path = serializers.CharField(source='product_group.full_name', read_only=True, default=None)
+    uom_code = serializers.CharField(source='uom.code', read_only=True, default=None)
+    uom_name = serializers.CharField(source='uom.name', read_only=True, default=None)
+    purchase_uom_name = serializers.CharField(source='purchase_uom.name', read_only=True, default=None)
+    sales_tax_name = serializers.CharField(source='sales_tax.name', read_only=True, default=None)
+    sales_tax_rate = serializers.DecimalField(
+        source='sales_tax.rate', max_digits=5, decimal_places=2, read_only=True, default=None)
+    purchase_tax_name = serializers.CharField(source='purchase_tax.name', read_only=True, default=None)
+    preferred_vendor_name = serializers.CharField(source='preferred_vendor.name', read_only=True, default=None)
+    income_account_label = serializers.SerializerMethodField()
+    expense_account_label = serializers.SerializerMethodField()
+    # How many quotation / invoice lines use this item (set by the list/detail views).
+    usage_count = serializers.SerializerMethodField()
 
-	class Meta:
-		model = Product_Services
-		fields = [
-			'id',
-			'product_group',
-			'product_service_name',
-			'description',
-			'is_active',
-			'created_by',
-			'modified_by',
-			'created_at',
-			'updated_at',
-		]
+    created_by = serializers.StringRelatedField(read_only=True)
+    modified_by = serializers.StringRelatedField(read_only=True)
 
-	def create(self, validated_data):
-		request = self.context.get('request')
-		if request and hasattr(request, 'user'):
-			validated_data['created_by'] = request.user
-		return super().create(validated_data)
+    class Meta:
+        model = Product_Services
+        fields = [
+            'id',
+            'product_group',
+            'product_group_id',
+            'category_path',
+            'product_service_name',
+            'description',
+            'is_active',
+            'internal_reference',
+            'product_type',
+            'internal_notes',
+            'short_description',
+            'service_delivery_type',
+            'category_icon',
+            'can_be_sold',
+            'sales_price',
+            'uom',
+            'uom_code',
+            'uom_name',
+            'sales_tax',
+            'sales_tax_name',
+            'sales_tax_rate',
+            'invoicing_policy',
+            'billing_method',
+            'currency',
+            'default_discount_percent',
+            'payment_terms_days',
+            'default_engagement_type',
+            'default_contract_months',
+            'can_be_purchased',
+            'cost_price',
+            'purchase_description',
+            'purchase_uom',
+            'purchase_uom_name',
+            'purchase_tax',
+            'purchase_tax_name',
+            'preferred_vendor',
+            'preferred_vendor_name',
+            'vendor_reference',
+            'cost_currency',
+            'procurement_type',
+            'department_name',
+            'suggested_designations',
+            'default_cost_rate',
+            'default_billing_rate',
+            'estimated_hours',
+            'delivery_team_type',
+            'income_account',
+            'income_account_label',
+            'expense_account',
+            'expense_account_label',
+            'usage_count',
+            'created_by',
+            'modified_by',
+            'created_at',
+            'updated_at',
+        ]
 
-	def update(self, instance, validated_data):
-		request = self.context.get('request')
-		if request and hasattr(request, 'user'):
-			validated_data['modified_by'] = request.user
-		return super().update(instance, validated_data)
-	def to_representation(self, instance):
-		data = super().to_representation(instance)
-		if instance.product_group:
-			data['product_group'] = instance.product_group.product_group_name
-		return data
+    @staticmethod
+    def _account_label(account):
+        return f"{account.code} - {account.name}" if account else None
+
+    def get_income_account_label(self, obj):
+        return self._account_label(obj.income_account)
+
+    def get_expense_account_label(self, obj):
+        return self._account_label(obj.expense_account)
+
+    def get_usage_count(self, obj):
+        quote_lines = getattr(obj, 'quote_line_count', None)
+        invoice_lines = getattr(obj, 'invoice_line_count', None)
+        if quote_lines is None or invoice_lines is None:
+            return None
+        return quote_lines + invoice_lines
+
+    def _accounting_allowed(self):
+        return can_see_product_accounting(self.context.get('request'))
+
+    def validate_product_service_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("Enter the product or service name.")
+        qs = Product_Services.objects.filter(product_service_name__iexact=name)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("A product or service with this name already exists.")
+        return name
+
+    def validate_internal_reference(self, value):
+        ref = (value or '').strip() or None
+        if ref:
+            qs = Product_Services.objects.filter(internal_reference__iexact=ref)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError("Another product or service already uses this internal reference.")
+        return ref
+
+    def validate_suggested_designations(self, value):
+        seen, out = set(), []
+        for name in value or []:
+            name = name.strip()
+            if name and name.lower() not in seen:
+                seen.add(name.lower())
+                out.append(name)
+        return out
+
+    def _check_hrms_names(self, attrs, errors):
+        """Department / designations must be AIRA HRMS values (keeping a value that AIRA later
+        renamed is allowed, so saving an unrelated change never fails)."""
+        if 'department_name' not in attrs and 'suggested_designations' not in attrs:
+            return
+        departments, designations = hrms_resource_options()
+        dept = (attrs.get('department_name') or '').strip()
+        if 'department_name' in attrs:
+            attrs['department_name'] = dept
+            current = (getattr(self.instance, 'department_name', '') or '') if self.instance else ''
+            if dept and dept != current and dept not in departments:
+                errors['department_name'] = "Choose a department from AIRA HRMS."
+        if attrs.get('suggested_designations'):
+            current = set((getattr(self.instance, 'suggested_designations', None) or []) if self.instance else [])
+            unknown = [d for d in attrs['suggested_designations'] if d not in designations and d not in current]
+            if unknown:
+                errors['suggested_designations'] = f"Not an AIRA HRMS designation: {', '.join(unknown)}."
+
+    def _check_active(self, attrs, field, label, errors):
+        """A newly chosen unit / tax / category / account must be active (keeping an existing
+        one that was archived later is fine)."""
+        if field not in attrs or attrs[field] is None:
+            return
+        current = getattr(self.instance, f'{field}_id', None) if self.instance else None
+        if attrs[field].pk != current and not attrs[field].is_active:
+            errors[field] = f"This {label} is archived and can't be selected."
+
+    def validate(self, attrs):
+        if not self._accounting_allowed():
+            # Silently ignore accounting fields from users who can't see them.
+            attrs.pop('income_account', None)
+            attrs.pop('expense_account', None)
+
+        errors = {}
+        self._check_hrms_names(attrs, errors)
+        self._check_active(attrs, 'product_group', 'category', errors)
+        self._check_active(attrs, 'uom', 'unit', errors)
+        self._check_active(attrs, 'purchase_uom', 'unit', errors)
+        self._check_active(attrs, 'sales_tax', 'tax', errors)
+        self._check_active(attrs, 'purchase_tax', 'tax', errors)
+        self._check_active(attrs, 'income_account', 'account', errors)
+        self._check_active(attrs, 'expense_account', 'account', errors)
+        if attrs.get('sales_tax') is not None and attrs['sales_tax'].scope == 'purchase':
+            errors['sales_tax'] = "This tax is for purchases only."
+        if attrs.get('purchase_tax') is not None and attrs['purchase_tax'].scope == 'sale':
+            errors['purchase_tax'] = "This tax is for sales only."
+        if attrs.get('income_account') is not None and attrs['income_account'].account_type not in ('', 'income'):
+            errors['income_account'] = "Choose an income account."
+        if attrs.get('expense_account') is not None and attrs['expense_account'].account_type not in ('', 'expense'):
+            errors['expense_account'] = "Choose an expense account."
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            validated_data['created_by'] = request.user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            validated_data['modified_by'] = request.user
+        return super().update(instance, validated_data)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['product_group'] = instance.product_group.product_group_name if instance.product_group else None
+        if not self._accounting_allowed():
+            for field in ACCOUNTING_FIELDS:
+                data.pop(field, None)
+        return data
 
 class QuoteItemSerializer(serializers.ModelSerializer):
     product_service = serializers.PrimaryKeyRelatedField(
@@ -348,15 +604,25 @@ class QuoteSerializer(serializers.ModelSerializer):
 class ProductServiceModuleSerializer(serializers.ModelSerializer):
 	module_id = serializers.IntegerField(source='id')
 	module_name = serializers.CharField(source='product_service_name')
+	# Catalog defaults a quotation line can pre-fill from.
+	uom_code = serializers.CharField(source='uom.code', read_only=True, default=None)
+	sales_tax_rate = serializers.DecimalField(
+		source='sales_tax.rate', max_digits=5, decimal_places=2, read_only=True, default=None)
 
 	class Meta:
 		model = Product_Services
-		fields = ['module_id', 'module_name', 'description', 'is_active']
+		fields = ['module_id', 'module_name', 'description', 'is_active',
+		          'internal_reference', 'sales_price', 'uom_code', 'sales_tax_rate']
 
 class ProductGroupWithModulesSerializer(serializers.ModelSerializer):
 	group_id = serializers.IntegerField(source='id')
 	group_name = serializers.CharField(source='product_group_name')
-	modules = ProductServiceModuleSerializer(source='products_services', many=True)
+	# Quotation picker: only items that can be sold.
+	modules = serializers.SerializerMethodField()
+
+	def get_modules(self, obj):
+		items = [p for p in obj.products_services.all() if p.can_be_sold]
+		return ProductServiceModuleSerializer(items, many=True).data
 
 	class Meta:
 		model = ProductGroup

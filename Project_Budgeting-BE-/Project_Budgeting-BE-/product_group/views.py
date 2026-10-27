@@ -2,10 +2,14 @@
 from .serializers import QuoteSummarySerializer
 from .models import Quote
 from django.db.models import Avg, Sum, Count
+from roles.permission import HasPermissionCode
 from django.shortcuts import render
 from django.http import Http404
-from .models import ProductGroup, Product_Services, Quote
-from .serializers import ProductGroupSerializer, ProductServicesSerializer, QuoteSerializer, ProductGroupWithModulesSerializer
+from .models import ProductGroup, Product_Services, Quote, Tax, UnitOfMeasure
+from .serializers import (
+    ProductGroupSerializer, ProductServicesSerializer, QuoteSerializer, ProductGroupWithModulesSerializer,
+    TaxSerializer, UnitOfMeasureSerializer,
+)
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -19,23 +23,39 @@ from .tasks import send_quote_email, send_quotation_status_change_email
 from django.db.models import Q
 from Project.models import Project
 
-class ProductGroupListCreateView(APIView):
+class CatalogPermissionMixin:
+    """Products & Services catalog: any logged-in user can read (quotes, HRMS and profile screens
+    load it); creating, editing and archiving needs catalog.manage."""
     authentication_classes = [JWTAuthentication]
-    permission_classes = [AllowAny]
+    permission_code = 'catalog.manage'
+
+    def get_permissions(self):
+        if self.request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), HasPermissionCode()]
+
+
+class ProductGroupListCreateView(CatalogPermissionMixin, APIView):
+    """Product categories ("Product Groups")."""
 
     def get(self, request, pk=None):
         # If pk is provided → return single product group
         if pk is not None:
             try:
-                product_group = ProductGroup.objects.get(pk=pk)
+                product_group = ProductGroup.objects.select_related('parent').get(pk=pk)
             except ProductGroup.DoesNotExist:
                 return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
             serializer = ProductGroupSerializer(product_group)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
-        # If no pk → return all product groups
-        product_groups = ProductGroup.objects.all()
+        # If no pk → return all product groups (?status=active|archived narrows it)
+        product_groups = ProductGroup.objects.select_related('parent').order_by('product_group_name')
+        status_filter = request.query_params.get('status')
+        if status_filter == 'active':
+            product_groups = product_groups.filter(is_active=True)
+        elif status_filter == 'archived':
+            product_groups = product_groups.filter(is_active=False)
         serializer = ProductGroupSerializer(product_groups, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -57,46 +77,99 @@ class ProductGroupListCreateView(APIView):
             serializer.save(modified_by=request.user)
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
+    patch = put
 
     def delete(self, request, pk):
+        """Archives the category (its products keep it); quotes and reports stay intact."""
         try:
             product_group = ProductGroup.objects.get(pk=pk)
         except ProductGroup.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        product_group.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-    
+        product_group.is_active = False
+        product_group.modified_by = request.user
+        product_group.save(update_fields=['is_active', 'modified_by', 'updated_at'])
+        return Response(ProductGroupSerializer(product_group).data, status=status.HTTP_200_OK)
 
 
-class ProductServicesView(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [AllowAny]
+def _catalog_queryset():
+    return (
+        Product_Services.objects
+        .select_related('product_group__parent', 'uom', 'purchase_uom', 'sales_tax', 'purchase_tax',
+                        'preferred_vendor', 'income_account', 'expense_account', 'created_by', 'modified_by')
+        .annotate(
+            quote_line_count=Count('quoteitem', distinct=True),
+            invoice_line_count=Count('invoiceitem', distinct=True),
+        )
+    )
 
-    # Similar methods for Product_Services can be implemented here
+
+TRUE_VALUES = ('1', 'true', 'yes')
+FALSE_VALUES = ('0', 'false', 'no')
+
+
+class ProductServicesView(CatalogPermissionMixin, APIView):
+    """Products & Services catalog (formerly "Modules").
+
+    GET list returns a plain array (existing screens rely on that) and accepts optional filters:
+    ?search= (name / internal reference / descriptions), ?category=<id>, ?product_type=, ?kind=service|product,
+    ?status=active|archived (default: all), ?can_be_sold=, ?can_be_purchased=.
+    DELETE archives - catalog items used on quotations / invoices are never deleted.
+    """
+
     def get(self, request, pk=None):
         if pk is not None:
             try:
-                product_services = Product_Services.objects.get(pk=pk)
-            except ProductGroup.DoesNotExist:
+                product_services = _catalog_queryset().get(pk=pk)
+            except Product_Services.DoesNotExist:
                 return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-            serializer = ProductServicesSerializer(product_services)
+            serializer = ProductServicesSerializer(product_services, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
 
-        # If no pk → return all product groups
-        product_services = Product_Services.objects.all()
-        serializer = ProductServicesSerializer(product_services, many=True)
+        qs = _catalog_queryset()
+        params = request.query_params
+        search = (params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(
+                Q(product_service_name__icontains=search)
+                | Q(internal_reference__icontains=search)
+                | Q(short_description__icontains=search)
+                | Q(description__icontains=search)
+                | Q(purchase_description__icontains=search)
+            )
+        if params.get('category'):
+            qs = qs.filter(product_group_id=params['category'])
+        if params.get('product_type'):
+            qs = qs.filter(product_type=params['product_type'])
+        # ?kind=service|product - the catalog's Services / Products tabs.
+        if params.get('kind') == 'service':
+            qs = qs.filter(product_type='service')
+        elif params.get('kind') == 'product':
+            qs = qs.exclude(product_type='service')
+        if params.get('status') == 'active':
+            qs = qs.filter(is_active=True)
+        elif params.get('status') == 'archived':
+            qs = qs.filter(is_active=False)
+        for flag in ('can_be_sold', 'can_be_purchased'):
+            value = (params.get(flag) or '').lower()
+            if value in TRUE_VALUES:
+                qs = qs.filter(**{flag: True})
+            elif value in FALSE_VALUES:
+                qs = qs.filter(**{flag: False})
+
+        serializer = ProductServicesSerializer(qs, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     def post(self, request):
-        serializer = ProductServicesSerializer(data=request.data)
+        serializer = ProductServicesSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            serializer.save(created_by=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            item = serializer.save(created_by=request.user)
+            return Response(
+                ProductServicesSerializer(_catalog_queryset().get(pk=item.pk), context={'request': request}).data,
+                status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
 
     def put(self, request, pk):
         try:
@@ -104,22 +177,171 @@ class ProductServicesView(APIView):
         except Product_Services.DoesNotExist:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = ProductServicesSerializer(product_services, partial=True, data=request.data)
+        serializer = ProductServicesSerializer(
+            product_services, partial=True, data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save(modified_by=request.user)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(
+                ProductServicesSerializer(_catalog_queryset().get(pk=pk), context={'request': request}).data,
+                status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
+    patch = put
 
     def delete(self, request, pk):
-        try:
-            product_services = Product_Services.objects.get(pk=pk)
-        except Product_Services.DoesNotExist:
+        """Archive (same as POST .../archive/)."""
+        return _set_catalog_item_active(request, pk, False)
+
+
+def _set_catalog_item_active(request, pk, active):
+    try:
+        item = Product_Services.objects.get(pk=pk)
+    except Product_Services.DoesNotExist:
+        return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+    item.is_active = active
+    item.modified_by = request.user
+    item.save(update_fields=['is_active', 'modified_by', 'updated_at'])
+    return Response(
+        ProductServicesSerializer(_catalog_queryset().get(pk=pk), context={'request': request}).data,
+        status=status.HTTP_200_OK)
+
+
+class ProductServiceArchiveView(CatalogPermissionMixin, APIView):
+    """POST product-services/<pk>/archive/ or /restore/. Archived items disappear from pickers;
+    quotations and invoices that already use them are untouched."""
+
+    def post(self, request, pk, action):
+        return _set_catalog_item_active(request, pk, action == 'restore')
+
+
+class CatalogPermissionsView(APIView):
+    """What the signed-in user may do on the Products & Services screen."""
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .serializers import can_see_product_accounting
+        user = request.user
+        can_manage = bool(user.is_superuser or user.has_role_permission('catalog.manage'))
+        return Response({"can_manage": can_manage, "can_view_accounting": can_see_product_accounting(request)})
+
+
+RELATED_LIMIT = 10
+
+
+class ProductServiceRelatedView(APIView):
+    """GET product-services/<pk>/related/ - quotations, invoices, purchase orders and projects that
+    use this catalog item (latest 10 of each, plus totals). Read-only."""
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        from finances.models import Invoice, PurchaseOrder
+        from Project.models import Project
+
+        if not Product_Services.objects.filter(pk=pk).exists():
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        product_services.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-    
+        quotes = (Quote.objects.filter(items__product_service_id=pk).distinct()
+                  .select_related('client').order_by('-date_of_issue', '-quote_no'))
+        invoices = (Invoice.objects.filter(items__product_service_id=pk).distinct()
+                    .select_related('client').order_by('-issue_date', '-id'))
+        orders = (PurchaseOrder.objects.filter(items__quote_item__product_service_id=pk).distinct()
+                  .select_related('vendor').order_by('-issue_date', '-id'))
+        projects = (Project.objects.filter(
+            Q(created_from_quotation__items__product_service_id=pk) | Q(linked_quotes__items__product_service_id=pk)
+        ).distinct().order_by('-start_date'))
+
+        def amount(v):
+            return str(v) if v is not None else None
+
+        return Response({
+            "quotations": {
+                "count": quotes.count(),
+                "results": [{
+                    "id": q.quote_no, "name": q.quote_name, "status": q.status,
+                    "client": q.client.company_name if q.client else None,
+                    "date": q.date_of_issue, "total": amount(q.total_amount), "currency": q.currency,
+                } for q in quotes[:RELATED_LIMIT]],
+            },
+            "invoices": {
+                "count": invoices.count(),
+                "results": [{
+                    "id": i.id, "number": i.invoice_no, "status": i.status,
+                    "client": i.client.company_name if i.client else None,
+                    "date": i.issue_date, "total": amount(i.total_amount),
+                } for i in invoices[:RELATED_LIMIT]],
+            },
+            "purchase_orders": {
+                "count": orders.count(),
+                "results": [{
+                    "id": o.id, "number": o.po_no, "status": o.status,
+                    "vendor": o.vendor.name if o.vendor else None,
+                    "date": o.issue_date, "total": amount(o.total_amount),
+                } for o in orders[:RELATED_LIMIT]],
+            },
+            "projects": {
+                "count": projects.count(),
+                "results": [{
+                    "id": p.project_no, "name": p.project_name, "status": p.status,
+                    "start_date": p.start_date, "end_date": p.end_date,
+                } for p in projects[:RELATED_LIMIT]],
+            },
+        })
+
+
+class CatalogResourceOptionsView(APIView):
+    """AIRA HRMS department and designation names for a service's Resource & Delivery tab."""
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .serializers import hrms_resource_options
+        departments, designations = hrms_resource_options()
+        return Response({"departments": departments, "designations": designations})
+
+
+class UnitOfMeasureListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = UnitOfMeasure.objects.all()
+        if request.query_params.get('status') != 'all':
+            qs = qs.filter(is_active=True)
+        return Response(UnitOfMeasureSerializer(qs, many=True).data)
+
+
+class TaxListCreateView(CatalogPermissionMixin, APIView):
+    """Tax rates offered on catalog items. No delete - set is_active false to retire one."""
+
+    def get(self, request, pk=None):
+        if pk is not None:
+            tax = Tax.objects.filter(pk=pk).first()
+            if tax is None:
+                return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(TaxSerializer(tax).data)
+        qs = Tax.objects.all()
+        if request.query_params.get('status') != 'all':
+            qs = qs.filter(is_active=True)
+        return Response(TaxSerializer(qs, many=True).data)
+
+    def post(self, request):
+        serializer = TaxSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def put(self, request, pk):
+        tax = Tax.objects.filter(pk=pk).first()
+        if tax is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = TaxSerializer(tax, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    patch = put
 
 class ProductGroupNameListView(APIView):
     """
@@ -138,7 +360,8 @@ class ProductGroupWithModulesListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        groups = ProductGroup.objects.all()
+        groups = ProductGroup.objects.prefetch_related(
+            'products_services__uom', 'products_services__sales_tax')
         serializer = ProductGroupWithModulesSerializer(groups, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 class PipelineDataAPIView(APIView):

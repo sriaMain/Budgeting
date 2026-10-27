@@ -9,7 +9,8 @@ import { useNavigate, useParams, useLocation, useSearchParams } from 'react-rout
 import { Layout } from '../components/Layout';
 import { AddClientModal } from '../components/AddClientModal';
 import { AddPOCModal } from '../components/AddPOCModal';
-import ModulesTab from '../components/ModulesTab';
+import ProductServiceDrawer from '../components/ProductServiceDrawer';
+import { getCatalogItems, getCatalogPermissions, type CatalogItem, type CatalogPermissions } from '../services/catalog';
 import type { Quote, QuoteFormData, PipelineStage } from '../types/pipeline.types';
 import axiosInstance from '../utils/axiosInstance';
 import { parseApiErrors } from '../utils/parseApiErrors';
@@ -53,26 +54,24 @@ interface Client {
   pocs: POC[];
 }
 
-interface Module {
-  module_id: number;
-  module_name: string;
-  description: string;
-  is_active: boolean;
-}
-
-interface ProductGroup {
-  group_id: number;
-  group_name: string;
-  description: string;
-  modules: Module[];
-}
-
 interface Service {
   id: string;
   product_service_name: string;
   description: string;
-  product_group: string;
+  sales_price: number;
+  uom_code: string | null;
+  sales_tax_rate: number | null;
 }
+
+/** A sellable catalog item as a quotation line option (Administration > Products & Services). */
+const toQuoteService = (r: CatalogItem): Service => ({
+  id: String(r.id),
+  product_service_name: r.product_service_name,
+  description: r.description,
+  sales_price: Number(r.sales_price) || 0,
+  uom_code: r.uom_code ?? null,
+  sales_tax_rate: r.sales_tax_rate != null ? Number(r.sales_tax_rate) : null,
+});
 
 interface StatusChoice {
   value: string;
@@ -102,7 +101,7 @@ export default function AddQuotePage() {
   };
 
   const [clients, setClients] = useState<Client[]>([]);
-  const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
+  const [catalogPermissions, setCatalogPermissions] = useState<CatalogPermissions>({ can_manage: false, can_view_accounting: false });
   const [services, setServices] = useState<Service[]>([]);
   const [statusChoices, setStatusChoices] = useState<StatusChoice[]>([]);
   const [unitChoices, setUnitChoices] = useState<UnitChoice[]>([]);
@@ -263,7 +262,8 @@ export default function AddQuotePage() {
     try {
       await Promise.allSettled([
         fetchClients(),
-        fetchProductGroupsWithModules(),
+        fetchCatalogItems(),
+        getCatalogPermissions().then(setCatalogPermissions),
         // Status is only chosen when editing an existing quote
         ...(isEditMode ? [fetchStatusChoices()] : []),
         fetchUnitChoices(),
@@ -287,30 +287,12 @@ export default function AddQuotePage() {
     }
   };
 
-  const fetchProductGroupsWithModules = async () => {
+  const fetchCatalogItems = async () => {
     try {
-      const response = await axiosInstance.get('/product-groups-with-modules/');
-      if (response.status === 200) {
-        const data: ProductGroup[] = response.data;
-        setProductGroups(data);
-
-        const allServices: Service[] = [];
-        data.forEach(group => {
-          group.modules.forEach(module => {
-            if (module.is_active) {
-              allServices.push({
-                id: module.module_id.toString(),
-                product_service_name: module.module_name,
-                description: module.description,
-                product_group: group.group_name
-              });
-            }
-          });
-        });
-        setServices(allServices);
-      }
+      const rows = await getCatalogItems();
+      setServices(rows.filter(r => r.is_active && r.can_be_sold).map(toQuoteService));
     } catch (err) {
-      console.error('Failed to fetch product groups with modules:', err);
+      console.error('Failed to fetch products & services:', err);
       throw err;
     }
   };
@@ -377,7 +359,6 @@ export default function AddQuotePage() {
             return {
               ...item,
               product: service.product_service_name,
-              group: service.product_group
             };
           }
         }
@@ -387,13 +368,33 @@ export default function AddQuotePage() {
   }, [services, items.length]); // Depend on services and items count, not deep items to avoid infinite loop
 
   const handleItemChange = (id: string, field: keyof ProductRow, value: string | number) => {
+    // A quotation has one tax % for the whole document: the first product picked sets it from
+    // the catalog's sales tax, but never overrides a tax the user already chose.
+    if (field === 'product' && value && taxPercentage === 0) {
+      const service = services.find(s => s.product_service_name === value);
+      if (service?.sales_tax_rate && [5, 10, 18].includes(service.sales_tax_rate)) {
+        setTaxPercentage(service.sales_tax_rate);
+      }
+    }
     setItems(prev => prev.map(item => {
       if (item.id === id) {
         const updated = { ...item, [field]: value };
-        if (field === 'group') {
-          updated.product = '';
+        if (field === 'product' && value) {
+          // Pre-fill from the catalog: Unit Price = the product's sales price (still editable per
+          // quotation), its unit when set, and its description if the line has none yet.
+          const service = services.find(s => s.product_service_name === value);
+          if (service) {
+            updated.serviceId = Number(service.id);
+            updated.unit_price = service.sales_price;
+            if (service.uom_code && unitChoices.some(u => u.value === service.uom_code)) {
+              updated.unit = service.uom_code;
+            }
+            if (!String(updated.description || '').trim() && service.description) {
+              updated.description = service.description;
+            }
+          }
         }
-        if (field === 'quantity' || field === 'unit_price') {
+        if (field === 'quantity' || field === 'unit_price' || field === 'product') {
           updated.amount = updated.quantity * updated.unit_price;
         }
         return updated;
@@ -426,6 +427,18 @@ export default function AddQuotePage() {
     return item.quantity * item.unit_price;
   };
 
+  const productOptions = (current: string) => (
+    <>
+      <option value="">Select product or service</option>
+      {services.map(service => (
+        <option key={service.id} value={service.product_service_name}>{service.product_service_name}</option>
+      ))}
+      {current && !services.some(service => service.product_service_name === current) && (
+        <option value={current}>{current} (archived)</option>
+      )}
+    </>
+  );
+
   const subTotal = items.reduce((sum, item) => sum + item.amount, 0);
   const taxAmount = (subTotal * taxPercentage) / 100;
   const total = subTotal + taxAmount;
@@ -451,7 +464,7 @@ export default function AddQuotePage() {
           const service = services.find(s => s.product_service_name === item.product);
           return {
             ...(item.backendId ? { id: item.backendId } : {}), // Include ID if it exists (for updates)
-            product_service: service ? parseInt(service.id) : null,
+            product_service: service ? parseInt(service.id) : (item.serviceId ?? null),
             description: item.description || '',
             quantity: item.quantity,
             unit: item.unit,
@@ -532,15 +545,11 @@ export default function AddQuotePage() {
     setQuoteDetails(prev => ({ ...prev, client: clientWithPocs.company_name, poc: '' }));
   };
 
-  const handleServiceAdded = (newService: any) => {
-    const formattedService: Service = {
-      id: newService.id,
-      product_service_name: newService.product_service_name,
-      description: newService.description,
-      product_group: newService.product_group
-    };
-    setServices(prev => [...prev, formattedService]);
-    fetchProductGroupsWithModules();
+  const handleServiceAdded = (newService: CatalogItem) => {
+    if (newService.is_active && newService.can_be_sold) {
+      setServices(prev => [...prev.filter(sv => sv.id !== String(newService.id)), toQuoteService(newService)]);
+    }
+    setIsAddServiceModalOpen(false);
   };
 
   // Duration strings from the budget API look like "HH:MM:SS"
@@ -782,9 +791,8 @@ export default function AddQuotePage() {
 
             <div className="p-4 sm:p-6 md:p-8 pb-0">
               <div className="hidden lg:block border border-gray-200 rounded-lg overflow-hidden dark:border-gray-800">
-                <div className="grid grid-cols-[50px_140px_2fr_200px_140px_140px_50px] gap-4 bg-gray-50 border-b border-gray-200 px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">
+                <div className="grid grid-cols-[50px_2fr_200px_140px_140px_50px] gap-4 bg-gray-50 border-b border-gray-200 px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">
                   <div></div>
-                  <div>Group</div>
                   <div>Product | Description</div>
                   <div>Quantity | Unit</div>
                   <div className="text-right">Unit Price</div>
@@ -795,26 +803,9 @@ export default function AddQuotePage() {
                 <div className="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-900">
                   {items.map((item) => (
                     <div key={item.id} className="px-4 py-4 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
-                      <div className="grid grid-cols-[50px_140px_2fr_200px_140px_140px_50px] gap-4 items-start">
+                      <div className="grid grid-cols-[50px_2fr_200px_140px_140px_50px] gap-4 items-start">
                         <div className="flex justify-center self-center cursor-move text-gray-400 hover:text-gray-600">
                           <GripVertical size={18} />
-                        </div>
-                        <div>
-                          <div className="relative">
-                            <select
-                              value={item.group}
-                              onChange={(e) => handleItemChange(item.id, 'group', e.target.value)}
-                              className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                            >
-                              <option value="">Product Group</option>
-                              {productGroups.map(group => (
-                                <option key={group.group_id} value={group.group_name}>
-                                  {group.group_name}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown size={14} className="absolute right-2 top-3 text-gray-400 pointer-events-none dark:text-gray-500" />
-                          </div>
                         </div>
                         <div className="space-y-2">
                           <div className="flex gap-2 items-center">
@@ -823,28 +814,20 @@ export default function AddQuotePage() {
                                 value={item.product}
                                 onChange={(e) => handleItemChange(item.id, 'product', e.target.value)}
                                 className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white font-medium focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                                disabled={!item.group}
                               >
-                                <option value="">
-                                  {!item.group ? 'Select group first' : 'Select product'}
-                                </option>
-                                {item.group && services
-                                  .filter(service => service.product_group === item.group)
-                                  .map(service => (
-                                    <option key={service.id} value={service.product_service_name}>
-                                      {service.product_service_name}
-                                    </option>
-                                  ))}
+                                {productOptions(item.product)}
                               </select>
                               <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => setIsAddServiceModalOpen(true)}
-                              className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors shadow-sm"
-                            >
-                              <Plus size={16} strokeWidth={2.5} />
-                            </button>
+                            {catalogPermissions.can_manage && (
+                              <button
+                                type="button"
+                                onClick={() => setIsAddServiceModalOpen(true)}
+                                className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors shadow-sm"
+                              >
+                                <Plus size={16} strokeWidth={2.5} />
+                              </button>
+                            )}
                           </div>
                           <textarea
                             value={item.description}
@@ -917,24 +900,6 @@ export default function AddQuotePage() {
                       </button>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">Product Group</label>
-                      <div className="relative">
-                        <select
-                          value={item.group}
-                          onChange={(e) => handleItemChange(item.id, 'group', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                        >
-                          <option value="">Select Group</option>
-                          {productGroups.map(group => (
-                            <option key={group.group_id} value={group.group_name}>
-                              {group.group_name}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
-                      </div>
-                    </div>
-                    <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">Product/Service</label>
                       <div className="flex gap-2">
                         <div className="relative flex-1">
@@ -942,28 +907,20 @@ export default function AddQuotePage() {
                             value={item.product}
                             onChange={(e) => handleItemChange(item.id, 'product', e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                            disabled={!item.group}
                           >
-                            <option value="">
-                              {!item.group ? 'Select group first' : 'Select product'}
-                            </option>
-                            {item.group && services
-                              .filter(service => service.product_group === item.group)
-                              .map(service => (
-                                <option key={service.id} value={service.product_service_name}>
-                                  {service.product_service_name}
-                                </option>
-                              ))}
+                            {productOptions(item.product)}
                           </select>
                           <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setIsAddServiceModalOpen(true)}
-                          className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors"
-                        >
-                          <Plus size={16} strokeWidth={2.5} />
-                        </button>
+                        {catalogPermissions.can_manage && (
+                          <button
+                            type="button"
+                            onClick={() => setIsAddServiceModalOpen(true)}
+                            className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors"
+                          >
+                            <Plus size={16} strokeWidth={2.5} />
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div>
@@ -1110,13 +1067,14 @@ export default function AddQuotePage() {
         ) : null;
       })()}
 
-      {isAddServiceModalOpen && (
-        <ModulesTab
-          isModalMode={true}
-          onModalClose={() => setIsAddServiceModalOpen(false)}
-          onServiceAdded={handleServiceAdded}
-        />
-      )}
+      <ProductServiceDrawer
+        isOpen={isAddServiceModalOpen}
+        item={null}
+        kind="service"
+        permissions={catalogPermissions}
+        onClose={() => setIsAddServiceModalOpen(false)}
+        onSaved={handleServiceAdded}
+      />
     </Layout>
   );
 }
