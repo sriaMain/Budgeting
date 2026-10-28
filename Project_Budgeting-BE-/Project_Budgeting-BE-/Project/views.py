@@ -387,6 +387,9 @@ class ProjectPOCOptionsAPIView(APIView):
                 "name": account.display_name,
                 # AIRA designation when known, else the Budgeting modules as before.
                 "subtitle": (hrms.designation if hrms and hrms.designation else modules),
+                # AIRA HRMS department / designation - lets resource pickers filter employees.
+                "department": (hrms.department if hrms else "") or "",
+                "designation": (hrms.designation if hrms else "") or "",
             })
 
         vendors = Vendor.objects.filter(status="approved").order_by("name")

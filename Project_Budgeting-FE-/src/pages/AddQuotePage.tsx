@@ -10,7 +10,7 @@ import { Layout } from '../components/Layout';
 import { AddClientModal } from '../components/AddClientModal';
 import { AddPOCModal } from '../components/AddPOCModal';
 import ProductServiceDrawer from '../components/ProductServiceDrawer';
-import { getCatalogItems, getCatalogPermissions, type CatalogItem, type CatalogPermissions } from '../services/catalog';
+import { getCatalogItems, getCatalogPermissions, kindOf, type CatalogItem, type CatalogKind, type CatalogPermissions } from '../services/catalog';
 import type { Quote, QuoteFormData, PipelineStage } from '../types/pipeline.types';
 import axiosInstance from '../utils/axiosInstance';
 import { parseApiErrors } from '../utils/parseApiErrors';
@@ -56,6 +56,8 @@ interface Client {
 
 interface Service {
   id: string;
+  /** Line "Group": a service or a product (catalog type). */
+  kind: CatalogKind;
   product_service_name: string;
   description: string;
   sales_price: number;
@@ -66,6 +68,7 @@ interface Service {
 /** A sellable catalog item as a quotation line option (Administration > Products & Services). */
 const toQuoteService = (r: CatalogItem): Service => ({
   id: String(r.id),
+  kind: kindOf(r),
   product_service_name: r.product_service_name,
   description: r.description,
   sales_price: Number(r.sales_price) || 0,
@@ -111,6 +114,8 @@ export default function AddQuotePage() {
   const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
   const [isAddPOCModalOpen, setIsAddPOCModalOpen] = useState(false);
   const [isAddServiceModalOpen, setIsAddServiceModalOpen] = useState(false);
+  // What the "+" next to a line creates: follows that line's Group (service by default).
+  const [quickAddKind, setQuickAddKind] = useState<CatalogKind>('service');
   const [originalStatus, setOriginalStatus] = useState<string>(''); // Track original status for edit mode
   // Header fields lock once a project has been created from the quote (every
   // quote is Confirmed from creation, so Confirmed alone no longer locks it).
@@ -379,6 +384,13 @@ export default function AddQuotePage() {
     setItems(prev => prev.map(item => {
       if (item.id === id) {
         const updated = { ...item, [field]: value };
+        if (field === 'group') {
+          const current = services.find(s => s.product_service_name === item.product);
+          if (current && current.kind !== value) {
+            updated.product = '';
+            updated.serviceId = undefined;
+          }
+        }
         if (field === 'product' && value) {
           // Pre-fill from the catalog: Unit Price = the product's sales price (still editable per
           // quotation), its unit when set, and its description if the line has none yet.
@@ -427,10 +439,24 @@ export default function AddQuotePage() {
     return item.quantity * item.unit_price;
   };
 
-  const productOptions = (current: string) => (
+  // A line's Group: what the user picked, else the type of the product already on it (saved quotes).
+  const rowKind = (item: ProductRow): CatalogKind | '' =>
+    item.group === 'service' || item.group === 'product'
+      ? item.group
+      : services.find(s => s.product_service_name === item.product)?.kind ?? '';
+
+  const groupOptions = (
     <>
-      <option value="">Select product or service</option>
-      {services.map(service => (
+      <option value="">Select group</option>
+      <option value="service">Service</option>
+      <option value="product">Product</option>
+    </>
+  );
+
+  const productOptions = (current: string, kind: CatalogKind | '') => (
+    <>
+      <option value="">{!kind ? 'Select group first' : kind === 'service' ? 'Select service' : 'Select product'}</option>
+      {kind && services.filter(service => service.kind === kind).map(service => (
         <option key={service.id} value={service.product_service_name}>{service.product_service_name}</option>
       ))}
       {current && !services.some(service => service.product_service_name === current) && (
@@ -791,8 +817,9 @@ export default function AddQuotePage() {
 
             <div className="p-4 sm:p-6 md:p-8 pb-0">
               <div className="hidden lg:block border border-gray-200 rounded-lg overflow-hidden dark:border-gray-800">
-                <div className="grid grid-cols-[50px_2fr_200px_140px_140px_50px] gap-4 bg-gray-50 border-b border-gray-200 px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">
+                <div className="grid grid-cols-[50px_150px_2fr_200px_140px_140px_50px] gap-4 bg-gray-50 border-b border-gray-200 px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">
                   <div></div>
+                  <div>Group</div>
                   <div>Product | Description</div>
                   <div>Quantity | Unit</div>
                   <div className="text-right">Unit Price</div>
@@ -803,9 +830,22 @@ export default function AddQuotePage() {
                 <div className="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-900">
                   {items.map((item) => (
                     <div key={item.id} className="px-4 py-4 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
-                      <div className="grid grid-cols-[50px_2fr_200px_140px_140px_50px] gap-4 items-start">
+                      <div className="grid grid-cols-[50px_150px_2fr_200px_140px_140px_50px] gap-4 items-start">
                         <div className="flex justify-center self-center cursor-move text-gray-400 hover:text-gray-600">
                           <GripVertical size={18} />
+                        </div>
+                        <div>
+                          <div className="relative">
+                            <select
+                              value={rowKind(item)}
+                              onChange={(e) => handleItemChange(item.id, 'group', e.target.value)}
+                              aria-label="Group"
+                              className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
+                            >
+                              {groupOptions}
+                            </select>
+                            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
+                          </div>
                         </div>
                         <div className="space-y-2">
                           <div className="flex gap-2 items-center">
@@ -813,16 +853,17 @@ export default function AddQuotePage() {
                               <select
                                 value={item.product}
                                 onChange={(e) => handleItemChange(item.id, 'product', e.target.value)}
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white font-medium focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
+                                disabled={!rowKind(item) && !item.product}
+                                className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white font-medium disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                               >
-                                {productOptions(item.product)}
+                                {productOptions(item.product, rowKind(item))}
                               </select>
                               <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
                             </div>
                             {catalogPermissions.can_manage && (
                               <button
                                 type="button"
-                                onClick={() => setIsAddServiceModalOpen(true)}
+                                onClick={() => { setQuickAddKind(rowKind(item) || 'service'); setIsAddServiceModalOpen(true); }}
                                 className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors shadow-sm"
                               >
                                 <Plus size={16} strokeWidth={2.5} />
@@ -900,22 +941,37 @@ export default function AddQuotePage() {
                       </button>
                     </div>
                     <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">Group</label>
+                      <div className="relative">
+                        <select
+                          value={rowKind(item)}
+                          onChange={(e) => handleItemChange(item.id, 'group', e.target.value)}
+                          aria-label="Group"
+                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
+                        >
+                          {groupOptions}
+                        </select>
+                        <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
+                      </div>
+                    </div>
+                    <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">Product/Service</label>
                       <div className="flex gap-2">
                         <div className="relative flex-1">
                           <select
                             value={item.product}
                             onChange={(e) => handleItemChange(item.id, 'product', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
+                            disabled={!rowKind(item) && !item.product}
+                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm appearance-none bg-white disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
                           >
-                            {productOptions(item.product)}
+                            {productOptions(item.product, rowKind(item))}
                           </select>
                           <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
                         </div>
                         {catalogPermissions.can_manage && (
                           <button
                             type="button"
-                            onClick={() => setIsAddServiceModalOpen(true)}
+                            onClick={() => { setQuickAddKind(rowKind(item) || 'service'); setIsAddServiceModalOpen(true); }}
                             className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors"
                           >
                             <Plus size={16} strokeWidth={2.5} />
@@ -1070,7 +1126,7 @@ export default function AddQuotePage() {
       <ProductServiceDrawer
         isOpen={isAddServiceModalOpen}
         item={null}
-        kind="service"
+        kind={quickAddKind}
         permissions={catalogPermissions}
         onClose={() => setIsAddServiceModalOpen(false)}
         onSaved={handleServiceAdded}

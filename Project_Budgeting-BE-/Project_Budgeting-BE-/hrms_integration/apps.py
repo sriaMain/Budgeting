@@ -5,3 +5,6 @@ class HrmsIntegrationConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'hrms_integration'
     verbose_name = 'HRMS Integration'
+
+    def ready(self):
+        import hrms_integration.signals  # noqa: F401

@@ -12,6 +12,7 @@ interface User {
     username?: string;
     email: string;
     role?: string;
+    department?: string;
     isAssignable?: boolean;
     hrmsEmployeeId?: number;
 }
@@ -106,6 +107,9 @@ export function AddTaskModal({
     const [milestones, setMilestones] = useState<{ id: number; name: string; sequence: number }[]>([]);
     // Assign to an employee (Task.assigned_to) or a freelancer staffed on the selected milestone
     const [assignMode, setAssignMode] = useState<'employee' | 'freelancer'>('employee');
+    // Narrow the employee list by AIRA HRMS department / designation ('' = all).
+    const [departmentFilter, setDepartmentFilter] = useState('');
+    const [designationFilter, setDesignationFilter] = useState('');
     // staffed = already a resource on the selected milestone (else added to it on save)
     const [freelancers, setFreelancers] = useState<{ id: number; name: string; role?: string; staffed: boolean }[]>([]);
     const [isLoadingFreelancers, setIsLoadingFreelancers] = useState(false);
@@ -294,6 +298,33 @@ export function AddTaskModal({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    const uniqueSorted = (values: (string | undefined)[]) =>
+        Array.from(new Set(values.map(v => (v || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    const departmentOptions = uniqueSorted(users.map(u => u.department));
+    const designationOptions = uniqueSorted(
+        users.filter(u => !departmentFilter || u.department === departmentFilter).map(u => u.role),
+    );
+    const matchesFilters = (u: User) =>
+        (!departmentFilter || u.department === departmentFilter) && (!designationFilter || u.role === designationFilter);
+    const matchingCount = users.filter(matchesFilters).length;
+    // The currently selected employee always stays in the list (e.g. editing an existing task).
+    const employeeOptions = users.filter(u => u.id === selectedUserId || matchesFilters(u));
+
+    const changeDepartment = (value: string) => {
+        setDepartmentFilter(value);
+        // Keep the designation only if it exists in the new department.
+        if (designationFilter && !users.some(u => (!value || u.department === value) && u.role === designationFilter)) {
+            setDesignationFilter('');
+        }
+        const current = users.find(u => u.id === selectedUserId);
+        if (current && value && current.department !== value) setSelectedUserId(null);
+    };
+    const changeDesignation = (value: string) => {
+        setDesignationFilter(value);
+        const current = users.find(u => u.id === selectedUserId);
+        if (current && value && current.role !== value) setSelectedUserId(null);
+    };
+
     const fetchUsers = async () => {
         setIsLoadingUsers(true);
         try {
@@ -317,8 +348,10 @@ export function AddTaskModal({
                     name: employee.full_name || [employee.first_name, employee.last_name].filter(Boolean).join(' ') || employee.employee_id,
                     username: employee.employee_id,
                     email: employee.email || '',
-                    role: employee.designation,
-                    isAssignable: true,
+                    role: employee.designation || '',
+                    department: employee.department || '',
+                    // No linked Budgeting account yet: assign through the HRMS employee instead.
+                    isAssignable: !!employee.account_id,
                     hrmsEmployeeId: employee.id,
                 }));
             setUsers(taskAssignees);
@@ -684,8 +717,40 @@ export function AddTaskModal({
                                 </div>
 
                                 {assignMode === 'employee' ? (
-                                <div>
-                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select Employee</label>
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label htmlFor="task-dept" className="block text-xs font-medium text-gray-700 dark:text-gray-300">Department</label>
+                                            <div className="relative">
+                                                <select id="task-dept" value={departmentFilter} onChange={(e) => changeDepartment(e.target.value)}
+                                                    disabled={isLoadingUsers || departmentOptions.length === 0}
+                                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500">
+                                                    <option value="">All departments</option>
+                                                    {departmentOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                                                </select>
+                                                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label htmlFor="task-desig" className="block text-xs font-medium text-gray-700 dark:text-gray-300">Designation</label>
+                                            <div className="relative">
+                                                <select id="task-desig" value={designationFilter} onChange={(e) => changeDesignation(e.target.value)}
+                                                    disabled={isLoadingUsers || designationOptions.length === 0}
+                                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500">
+                                                    <option value="">All designations</option>
+                                                    {designationOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                                                </select>
+                                                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            Select Employee
+                                            {!isLoadingUsers && users.length > 0 && (departmentFilter || designationFilter) && (
+                                                <span className="ml-1 font-normal text-gray-500 dark:text-gray-400">({matchingCount} matching)</span>
+                                            )}
+                                        </label>
                                         <div className="relative">
                                             <select
                                                 value={selectedUserId || ''}
@@ -697,9 +762,9 @@ export function AddTaskModal({
                                                 className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm appearance-none bg-white dark:bg-gray-800 dark:text-gray-100 dark:focus:ring-violet-500 ${errors.assignee_id ? 'border-red-500 bg-red-50 dark:bg-red-500/10' : 'border-gray-300 dark:border-gray-700'}`}
                                                 disabled={isLoadingUsers || users.length === 0}
                                             >
-                                                <option value="">{isLoadingUsers ? 'Loading HRMS employees...' : users.length === 0 ? 'No HRMS employees available' : 'Select employee'}</option>
-                                                {users.map(user => (
-                                                    <option key={user.id} value={user.id}>{user.name || user.username || user.email}{user.role ? ` — ${user.role}` : ""}</option>
+                                                <option value="">{isLoadingUsers ? 'Loading HRMS employees...' : users.length === 0 ? 'No HRMS employees available' : matchingCount === 0 ? 'No employees match these filters' : 'Select employee'}</option>
+                                                {employeeOptions.map(user => (
+                                                    <option key={user.id} value={user.id}>{user.name || user.username || user.email}{user.role ? ` Â· ${user.role}` : ""}</option>
                                                 ))}
                                             </select>
                                             <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
@@ -708,6 +773,7 @@ export function AddTaskModal({
                                             <p className="text-xs text-red-600 mt-1">{errors.assignee_id}</p>
                                         )}
                                     </div>
+                                </div>
                                 ) : (
                                 <div>
                                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Select Freelancer</label>

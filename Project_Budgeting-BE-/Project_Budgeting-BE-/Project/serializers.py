@@ -753,6 +753,9 @@ class ResourceAssignmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"resource_id": "Select a resource."})
         if not self.instance and not data.get('start_date'):
             data['start_date'] = (milestone.planned_start_date if milestone else None) or date.today()
+        # New assignments need an end date (older ones without one can still be edited).
+        if not self.instance and not data.get('end_date'):
+            raise serializers.ValidationError({"end_date": "End date is required."})
 
         if resource_type and resource_id:
             if resource_type == 'employee':

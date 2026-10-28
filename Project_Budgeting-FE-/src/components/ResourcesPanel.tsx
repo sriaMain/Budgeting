@@ -30,7 +30,13 @@ interface PocOption {
     type: 'employee' | 'vendor' | 'freelancer';
     name: string;
     subtitle: string;
+    /** Employees only - from AIRA HRMS. */
+    department?: string;
+    designation?: string;
 }
+
+/** Cost rates are per hour; a daily master rate (freelancer rate card) is converted at this many hours/day. */
+const HOURS_PER_DAY = 8;
 
 interface ResourceAssignment {
     id: number;
@@ -114,6 +120,9 @@ const emptyForm = () => ({
     milestone: '',
     costRate: '',
     units: '',
+    // Employee pickers: narrow by AIRA department / designation ('' = all).
+    departmentFilter: '',
+    designationFilter: '',
     costAmount: '',
     /** True when the cost amount was typed and differs from rate x units. */
     amountOverridden: false,
@@ -129,6 +138,7 @@ type DrawerMode = { kind: 'add' } | { kind: 'edit' | 'view'; assignment: Resourc
 
 const inputClass = 'w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:bg-gray-50 disabled:text-gray-500 dark:disabled:bg-gray-800/60';
 const labelClass = 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1';
+const Req = () => <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>;
 
 export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, currency = 'INR', engagementType = 'fixed', onChanged }) => {
     const [assignments, setAssignments] = useState<ResourceAssignment[]>([]);
@@ -143,7 +153,7 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
     const [isSaving, setIsSaving] = useState(false);
 
     const isFixed = engagementType === 'fixed';
-    const unitsLabel = isFixed ? 'Planned Units' : 'Hours / Period';
+    const unitsLabel = isFixed ? 'Planned Hours' : 'Hours / Period';
     const money = (v: number) => `${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 
     const fetchAssignments = useCallback(async () => {
@@ -172,19 +182,51 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
         }
     }, [fetchAssignments, isFixed, projectId]);
 
+    const isEmployee = form.resourceType === 'employee';
+    const employeeRows = useMemo(() => pocOptions.filter((p) => p.type === 'employee'), [pocOptions]);
+    const uniqueSorted = (values: (string | undefined)[]) =>
+        Array.from(new Set(values.map((v) => (v || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    const departmentOptions = useMemo(() => uniqueSorted(employeeRows.map((p) => p.department)), [employeeRows]);
+    const designationOptions = useMemo(
+        () => uniqueSorted(employeeRows.filter((p) => !form.departmentFilter || p.department === form.departmentFilter).map((p) => p.designation)),
+        [employeeRows, form.departmentFilter]
+    );
     const resourceOptions: SearchableSelectOption[] = useMemo(
         () => pocOptions
             .filter((p) => p.type === form.resourceType)
-            .map((p) => ({ id: p.id, label: p.name, sublabel: p.subtitle || undefined })),
-        [pocOptions, form.resourceType]
+            .filter((p) => !isEmployee || (
+                (!form.departmentFilter || p.department === form.departmentFilter)
+                && (!form.designationFilter || p.designation === form.designationFilter)))
+            .map((p) => ({
+                id: p.id,
+                label: p.name,
+                sublabel: isEmployee ? [p.designation, p.department].filter(Boolean).join(' · ') || p.subtitle || undefined : p.subtitle || undefined,
+            })),
+        [pocOptions, form.resourceType, form.departmentFilter, form.designationFilter, isEmployee]
     );
+    const changeDepartment = (value: string) => setForm((f) => {
+        const keepDesignation = !f.designationFilter
+            || employeeRows.some((p) => (!value || p.department === value) && p.designation === f.designationFilter);
+        const current = employeeRows.find((p) => p.id === f.resource?.id);
+        return {
+            ...f,
+            departmentFilter: value,
+            designationFilter: keepDesignation ? f.designationFilter : '',
+            resource: current && value && current.department !== value ? null : f.resource,
+        };
+    });
+    const changeDesignation = (value: string) => setForm((f) => {
+        const current = employeeRows.find((p) => p.id === f.resource?.id);
+        return { ...f, designationFilter: value, resource: current && value && current.designation !== value ? null : f.resource };
+    });
 
     // Cost shown in the list = server-computed assigned cost of non-removed resources.
     const totalCost = assignments
         .filter((a) => a.status !== 'removed')
         .reduce((sum, a) => sum + num(a.assigned_cost), 0);
 
-    const computedAmount = round2(num(form.costRate) * num(form.units));
+    const plannedHours = num(form.units);
+    const computedAmount = round2(num(form.costRate) * plannedHours);
     const effectiveAmount = form.amountOverridden ? num(form.costAmount) : computedAmount;
     const readOnly = drawer?.kind === 'view';
 
@@ -207,6 +249,8 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
             milestone: a.milestone ? String(a.milestone) : '',
             costRate: String(num(a.cost_rate)),
             units: String(num(a.working_hours)),
+            departmentFilter: '',
+            designationFilter: '',
             costAmount: String(num(a.assigned_cost)),
             amountOverridden: a.is_cost_overridden && round2(num(a.cost_amount)) !== rateXUnits,
             billingRate: num(a.billing_rate) ? String(num(a.billing_rate)) : '',
@@ -233,10 +277,12 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                 params: { resource_type: form.resourceType, resource_id: opt.id },
             });
             setMasterRate(res.data);
+            const daily = res.data.rate_unit === 'daily';
+            const perHour = (v: string | number | null) => (v == null ? null : String(round2(daily ? num(v) / HOURS_PER_DAY : num(v))));
             setForm((f) => ({
                 ...f,
-                costRate: res.data.cost_rate != null ? String(num(res.data.cost_rate)) : f.costRate,
-                billingRate: res.data.billing_rate != null ? String(num(res.data.billing_rate)) : f.billingRate,
+                costRate: perHour(res.data.cost_rate) ?? f.costRate,
+                billingRate: perHour(res.data.billing_rate) ?? f.billingRate,
             }));
         } catch (error) {
             console.error('Failed to load master rate:', error);
@@ -253,9 +299,15 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
             e.resource = 'Select a resource.';
         }
         if (num(form.costRate) < 0) e.costRate = 'Cost rate cannot be negative.';
-        if (effectiveAmount <= 0) e.costAmount = 'Enter a cost rate and units, or a cost amount.';
+        if (form.amountOverridden) {
+            if (num(form.costAmount) <= 0) e.costAmount = 'Enter a cost amount.';
+        } else {
+            if (!(num(form.costRate) > 0)) e.costRate = 'Cost rate is required.';
+            if (!(num(form.units) > 0)) e.units = `${unitsLabel} are required.`;
+        }
         if (!form.startDate) e.startDate = 'Start date is required.';
-        if (form.endDate && form.startDate && form.endDate < form.startDate) e.endDate = 'End date cannot be before start date.';
+        if (!form.endDate) e.endDate = 'End date is required.';
+        else if (form.startDate && form.endDate < form.startDate) e.endDate = 'End date cannot be before start date.';
         return e;
     };
 
@@ -272,7 +324,7 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
             milestone: isFixed && form.milestone ? Number(form.milestone) : null,
             cost_rate: num(form.costRate),
             billing_rate: num(form.billingRate),
-            working_hours: num(form.units),
+            working_hours: round2(plannedHours),
             // null keeps the cost as rate x units; a number is the project-specific amount.
             cost_amount: form.amountOverridden ? num(form.costAmount) : null,
             allocation_percent: Math.min(100, Math.max(0, parseInt(form.allocation, 10) || 0)),
@@ -440,7 +492,7 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                 <fieldset disabled={readOnly || isSaving} className="space-y-4">
                     {/* Resource type */}
                     <div>
-                        <label className={labelClass}>Resource Type</label>
+                        <label className={labelClass}>Resource Type<Req /></label>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             {RESOURCE_TYPES.map((t) => {
                                 const locked = drawer?.kind !== 'add';
@@ -461,9 +513,34 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                         </div>
                     </div>
 
+                    {/* Employees: narrow the list by AIRA HRMS department / designation */}
+                    {isEmployee && drawer?.kind === 'add' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label htmlFor="res-dept" className={labelClass}>Department</label>
+                                <select id="res-dept" value={form.departmentFilter} onChange={(e) => changeDepartment(e.target.value)} className={inputClass} disabled={departmentOptions.length === 0}>
+                                    <option value="">All departments</option>
+                                    {departmentOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="res-desig" className={labelClass}>Designation</label>
+                                <select id="res-desig" value={form.designationFilter} onChange={(e) => changeDesignation(e.target.value)} className={inputClass} disabled={designationOptions.length === 0}>
+                                    <option value="">All designations</option>
+                                    {designationOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Resource */}
                     <div>
-                        <label className={labelClass}>Resource Name</label>
+                        <label className={labelClass}>
+                            Resource Name<Req />
+                            {isEmployee && drawer?.kind === 'add' && (form.departmentFilter || form.designationFilter) && (
+                                <span className="ml-1 font-normal">({resourceOptions.length} matching)</span>
+                            )}
+                        </label>
                         {form.resourceType === 'external' ? (
                             <input
                                 type="text"
@@ -478,7 +555,7 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                                 value={form.resource}
                                 onChange={selectResource}
                                 placeholder={`Search ${RESOURCE_TYPES.find((t) => t.value === form.resourceType)?.label.toLowerCase()}...`}
-                                emptyMessage="None found"
+                                emptyMessage={isEmployee && (form.departmentFilter || form.designationFilter) ? 'No employees match these filters' : 'None found'}
                             />
                         ) : (
                             <p className="px-3 py-2 text-sm text-gray-900 dark:text-white">{form.resource?.label}</p>
@@ -489,11 +566,7 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                         )}
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                            <label className={labelClass}>Role</label>
-                            <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="e.g. Backend Developer" className={inputClass} />
-                        </div>
+                    <div>
                         {isFixed ? (
                             <div>
                                 <label className={labelClass}>Milestone</label>
@@ -514,12 +587,14 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                     <div className="rounded-lg bg-gray-50 dark:bg-gray-800/40 p-3 space-y-3">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <div>
-                                <label className={labelClass}>Cost Rate</label>
-                                <input type="number" min={0} step="0.01" value={form.costRate} onChange={(e) => setForm({ ...form, costRate: e.target.value })} className={`${inputClass} text-right tabular-nums`} />
+                                <label className={labelClass}>Cost Rate / hour<Req /></label>
+                                <input type="number" min={0} step="0.01" value={form.costRate} onChange={(e) => setForm({ ...form, costRate: e.target.value })} placeholder="0.00" className={`${inputClass} text-right tabular-nums ${errors.costRate ? 'border-red-400 dark:border-red-500' : ''}`} />
+                                {errors.costRate && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.costRate}</p>}
                             </div>
                             <div>
-                                <label className={labelClass}>{unitsLabel}</label>
-                                <input type="number" min={0} step="0.01" value={form.units} onChange={(e) => setForm({ ...form, units: e.target.value })} placeholder={isFixed ? 'hours / days' : 'e.g. 160'} className={`${inputClass} text-right tabular-nums`} />
+                                <label className={labelClass}>{unitsLabel}<Req /></label>
+                                <input type="number" min={0} step="0.01" value={form.units} onChange={(e) => setForm({ ...form, units: e.target.value })} placeholder="hours" aria-label={unitsLabel} className={`${inputClass} text-right tabular-nums ${errors.units ? 'border-red-400 dark:border-red-500' : ''}`} />
+                                {errors.units && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.units}</p>}
                             </div>
                             <div>
                                 <label className={labelClass}>Cost Amount ({currency})</label>
@@ -535,14 +610,14 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                         {masterRate && (
                             <p className="text-[11px] text-gray-500 dark:text-gray-400">
                                 {masterRate.cost_rate != null
-                                    ? `Default from master: ${num(masterRate.cost_rate).toLocaleString('en-IN')}${masterRate.rate_unit ? ` / ${masterRate.rate_unit}` : ''} (${masterRate.source}). Changing it here doesn't change the master rate.`
+                                    ? `Default from master: ${num(masterRate.cost_rate).toLocaleString('en-IN')}${masterRate.rate_unit ? ` / ${masterRate.rate_unit}` : ''} (${masterRate.source})${masterRate.rate_unit === 'daily' ? ` = ${round2(num(masterRate.cost_rate) / HOURS_PER_DAY).toLocaleString('en-IN')} / hour` : ''}. Changing it here doesn't change the master rate.`
                                     : 'No cost rate on file for this resource — enter one.'}
                             </p>
                         )}
                         <p className="text-[11px] text-gray-500 dark:text-gray-400">
                             {form.amountOverridden ? (
                                 <>Project-specific cost amount{!readOnly && <> · <button type="button" className="text-blue-600 dark:text-blue-400 hover:underline" onClick={() => setForm({ ...form, amountOverridden: false, costAmount: '' })}>use rate × units ({computedAmount.toLocaleString('en-IN')})</button></>}</>
-                            ) : 'Cost amount = rate × units. Type an amount to override it for this project only.'}
+                            ) : 'Cost amount = rate × hours. Type an amount to override it for this project only.'}
                         </p>
                         {errors.costAmount && <p className="text-xs text-red-600 dark:text-red-400">{errors.costAmount}</p>}
                     </div>
@@ -559,12 +634,12 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                             </select>
                         </div>
                         <div>
-                            <label className={labelClass}>Start Date</label>
+                            <label className={labelClass}>Start Date<Req /></label>
                             <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} className={`${inputClass} ${errors.startDate ? 'border-red-400 dark:border-red-500' : ''}`} />
                             {errors.startDate && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.startDate}</p>}
                         </div>
                         <div>
-                            <label className={labelClass}>End Date</label>
+                            <label className={labelClass}>End Date<Req /></label>
                             <input type="date" value={form.endDate} min={form.startDate || undefined} onChange={(e) => setForm({ ...form, endDate: e.target.value })} className={`${inputClass} ${errors.endDate ? 'border-red-400 dark:border-red-500' : ''}`} />
                             {errors.endDate && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.endDate}</p>}
                         </div>

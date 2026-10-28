@@ -31,6 +31,8 @@ urlpatterns = [
     path('api/vendor-onboarding/', include('vendor_onboarding.urls')),
     path('api/freelancer-onboarding/', include('freelancer_onboarding.urls')),
     path('api/hrms/', include('hrms_integration.urls')),
+    # APIs AIRA HRMS calls on Project Budgeting (X-API-Key, server-to-server).
+    path('api/v1/', include('hrms_integration.external_urls')),
 ]
 
 from django.conf import settings
