@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from .models import ProductGroup, Product_Services, QuoteItem, Quote, Tax, UnitOfMeasure
 from accounts.models import Vendor
@@ -411,6 +413,9 @@ class QuoteSerializer(serializers.ModelSerializer):
     profit_center_name = serializers.CharField(source="profit_center.name", read_only=True, default=None)
     gl_account_name = serializers.CharField(source="gl_account.name", read_only=True, default=None)
 
+    discount_percentage = serializers.DecimalField(
+        max_digits=5, decimal_places=2, min_value=Decimal("0"), max_value=Decimal("100"), required=False)
+
     created_by = serializers.StringRelatedField(read_only=True)
     modified_by = serializers.StringRelatedField(read_only=True)
     author = serializers.StringRelatedField(read_only=True)
@@ -432,6 +437,8 @@ class QuoteSerializer(serializers.ModelSerializer):
             "author",
             "sub_total",
             "tax_percentage",
+            "discount_percentage",
+            "discount_amount",
             "total_amount",
             "total_cost",
             "in_house_cost",
@@ -458,6 +465,7 @@ class QuoteSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "sub_total",
+            "discount_amount",
             "total_amount",
             "total_cost",
         )
@@ -537,7 +545,7 @@ class QuoteSerializer(serializers.ModelSerializer):
                 )
 
         # 🔴 CREATE requires items
-        if not instance and not data.get("items"): 
+        if not instance and not data.get("items"):
             raise serializers.ValidationError(
                 {"items": "At least one valid item is required."}
             )
@@ -596,6 +604,10 @@ class QuoteSerializer(serializers.ModelSerializer):
 
                 instance.items.all().delete()
                 self._create_items(instance, items_data)
+
+            # Tax / discount can change without the items changing - re-total either way.
+            instance.calculate_totals()
+            instance.save(update_fields=['sub_total', 'discount_amount', 'total_amount', 'to_be_invoiced_sum'])
 
         return instance
 
@@ -690,7 +702,10 @@ class QuoteItemDetailSerializer(serializers.ModelSerializer):
 		fields = [
 			'id',
 			'product_group',
+			'product_service',
 			'product_name',
+			# The quote edit page re-sends each line, so it needs the saved text to keep it.
+			'description',
 			'quantity',
 			'unit',
 			'price_per_unit',
@@ -730,6 +745,7 @@ class QuoteDetailSerializer(serializers.ModelSerializer):
     items = QuoteItemDetailSerializer(many=True, read_only=True)
     has_project = serializers.SerializerMethodField()
     project = serializers.SerializerMethodField()
+    poc_details = serializers.SerializerMethodField()
     currency = serializers.ChoiceField(
         choices=CURRENCY_CHOICES,
         required=False
@@ -745,9 +761,13 @@ class QuoteDetailSerializer(serializers.ModelSerializer):
             'status',
             'author',
             'client',
-            'currency', 
+            'poc',
+            'poc_details',
+            'currency',
             'sub_total',
             'tax_percentage',
+            'discount_percentage',
+            'discount_amount',
             'total_amount',
             'total_cost',
             'in_house_cost',
@@ -773,6 +793,12 @@ class QuoteDetailSerializer(serializers.ModelSerializer):
             "project_id": project.project_no,
             "project_name": project.project_name
         }
+
+    def get_poc_details(self, obj):
+        # The quote edit page shows (and keeps) the saved contact from this.
+        if not obj.poc:
+            return None
+        return {"id": obj.poc_id, "poc_name": obj.poc.poc_name, "designation": obj.poc.designation}
 
     def get_has_project(self, obj):
         from Project.models import Project

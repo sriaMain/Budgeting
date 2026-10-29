@@ -328,11 +328,11 @@ HRMS_API_KEY = os.environ.get("HRMS_API_KEY", "")
 # Comma-separated so a key can be rotated without downtime. Empty = the endpoint refuses every call.
 AIRA_INBOUND_API_KEYS = [k.strip() for k in os.environ.get("AIRA_INBOUND_API_KEYS", "").split(",") if k.strip()]
 # Push to AIRA: when an employee's projects change (Resources tab, or a project / milestone they
-# are on), POST that employee's current project list here (hrms_integration.tasks.push_employee_projects).
-# Empty = no push; AIRA can still pull GET /api/v1/project-assignments/.
-AIRA_ASSIGNMENT_WEBHOOK_URL = os.environ.get("AIRA_ASSIGNMENT_WEBHOOK_URL", "").strip()
-# X-API-Key AIRA accepts on that endpoint - defaults to the key AIRA issued for its employees API.
-AIRA_WEBHOOK_API_KEY = os.environ.get("AIRA_WEBHOOK_API_KEY", "") or HRMS_API_KEY
+# are on), POST that employee's complete project list to AIRA_WEBHOOK_URL with X-API-Key:
+# AIRA_PUSH_API_KEY (hrms_integration.tasks). Either empty = no push; AIRA can still pull
+# GET /api/v1/project-assignments/.
+AIRA_WEBHOOK_URL = os.environ.get("AIRA_WEBHOOK_URL", "").strip()
+AIRA_PUSH_API_KEY = os.environ.get("AIRA_PUSH_API_KEY", "").strip()
 # Automatic AIRA pulls (tab open / scheduled task) skip if one started within this many seconds.
 HRMS_AUTO_SYNC_MIN_INTERVAL_SECONDS = int(os.environ.get("HRMS_AUTO_SYNC_MIN_INTERVAL_SECONDS", 300))
 # Employee pickers (resources, expenses, task assignees) list only HRMS employees with Budgeting

@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.conf import settings
 from django.db.models import Sum
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from core.app_constants import CURRENCY_CHOICES
 
 
@@ -314,6 +314,13 @@ class Quote(models.Model):
     # Summary fields can be calculated or stored
     sub_total = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    # Whole-quote discount: the user enters a %, discount_amount is that % of the sub total
+    # (calculate_totals). Taken off before tax, like Invoice.discount_amount.
+    discount_percentage = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("0.00"), db_default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
+    discount_amount = models.DecimalField(
+        max_digits=15, decimal_places=2, default=Decimal("0.00"), db_default=Decimal("0.00"))
     total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
     total_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
     in_house_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
@@ -350,8 +357,13 @@ class Quote(models.Model):
             or Decimal("0.00")
         )
 
-        tax = self.sub_total * (self.tax_percentage / Decimal("100"))
-        self.total_amount = self.sub_total + tax
+        self.discount_amount = (
+            self.sub_total * (self.discount_percentage or Decimal("0.00")) / Decimal("100")
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        # Same as Invoice.calculate_totals: tax is on the amount after the discount.
+        taxable = self.sub_total - self.discount_amount
+        tax = taxable * (self.tax_percentage / Decimal("100"))
+        self.total_amount = taxable + tax
 
         # SAFETY CONVERSION
         invoiced = self.invoiced_sum or Decimal("0.00")
@@ -459,6 +471,7 @@ class QuoteItem(models.Model):
         quote.calculate_totals()
         quote.save(update_fields=[
             'sub_total',
+            'discount_amount',
             'total_amount',
             'to_be_invoiced_sum'
         ])
@@ -470,6 +483,7 @@ class QuoteItem(models.Model):
         quote.calculate_totals()
         quote.save(update_fields=[
             'sub_total',
+            'discount_amount',
             'total_amount',
             'to_be_invoiced_sum'
         ])

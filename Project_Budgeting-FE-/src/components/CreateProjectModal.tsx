@@ -151,10 +151,10 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             if (quote.currency) {
                 setPriceList(quote.currency);
             }
-            // Contract Value must exclude GST: sub_total is the quote's
-            // pre-tax base amount, total_amount includes tax_percentage.
+            // Contract Value must exclude GST: sub_total less the quote's discount
+            // is the pre-tax base amount, total_amount includes tax_percentage.
             if (quote.sub_total != null) {
-                setContractValue(String(quote.sub_total));
+                setContractValue((Number(quote.sub_total) - Number(quote.discount_amount || 0)).toFixed(2));
             }
         } catch (error) {
             console.error('Failed to fetch quote budget data:', error);

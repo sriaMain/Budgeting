@@ -62,7 +62,7 @@ def _assignments(status_filter):
     return qs
 
 
-def _row(a):
+def assignment_row(a):
     return {
         "assignment_id": a.id,
         "project_id": a.project.project_no,
@@ -91,16 +91,24 @@ def _page_data(count, page, page_size, results, **extra):
     }
 
 
-def employee_projects_data(employee, status_filter='', page=1, page_size=DEFAULT_PAGE_SIZE):
-    """The `data` of GET /api/v1/project-assignments/ for one AIRA employee - also what
-    tasks.push_employee_projects sends AIRA when that list changes."""
+def employee_assignments(employee, status_filter=''):
+    """One AIRA employee's assignments - API 1 pages through these; tasks.push_employee_projects
+    sends all of them."""
     # Assignments point at the Budgeting account linked to this AIRA employee.
-    qs = ResourceAssignment.objects.none()
-    if employee.account_id:
-        qs = _assignments(status_filter).filter(resource_type='employee', resource_id=employee.account_id)
+    if not employee.account_id:
+        return ResourceAssignment.objects.none()
+    return _assignments(status_filter).filter(resource_type='employee', resource_id=employee.account_id)
+
+
+def employee_projects_data(employee, status_filter='', page=1, page_size=DEFAULT_PAGE_SIZE):
+    """The `data` of GET /api/v1/project-assignments/ for one AIRA employee."""
+    qs = employee_assignments(employee, status_filter)
     count = qs.count()
     rows = qs[(page - 1) * page_size: page * page_size]
-    return _page_data(count, page, page_size, [_row(a) for a in rows], employee_id=employee.employee_id)
+    account = employee.account if employee.account_id else None
+    employee_name = employee.full_name or (account.display_name if account else '') or None
+    return _page_data(count, page, page_size, [assignment_row(a) for a in rows],
+                      employee_id=employee.employee_id, employee_name=employee_name)
 
 
 class BadRequest(Exception):
@@ -159,7 +167,7 @@ class ProjectAssignmentsView(AiraApiView):
         status_filter = self._status_filter(params)
         page, page_size = self._paging(params)
 
-        employee = HrmsEmployee.objects.filter(employee_id=employee_id).first()
+        employee = HrmsEmployee.objects.select_related('account').filter(employee_id=employee_id).first()
         if employee is None:
             return self._not_found("Employee not found in Project Budgeting.")
 
@@ -225,7 +233,7 @@ class ResourceAssignmentsView(AiraApiView):
                 "resource_type_display": RESOURCE_TYPES[a.resource_type],
                 "resource_code": code,
                 "resource_name": name,
-                **{k: v for k, v in _row(a).items() if k != "assignment_id"},
+                **{k: v for k, v in assignment_row(a).items() if k != "assignment_id"},
             })
 
         return Response(_envelope("Resource assignments retrieved.", _page_data(count, page, page_size, results)))

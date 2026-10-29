@@ -7,7 +7,6 @@ import { useTheme } from '../hooks/useTheme';
 import axiosInstance from '../utils/axiosInstance';
 import { listVendors } from '../services/vendorOnboarding';
 import { listFreelancers } from '../services/freelancerOnboarding';
-import companyLogo from '../assets/company-logo.png';
 
 interface NavbarProps { userRole: 'admin' | 'user' | 'manager' | 'employee'; }
 type NavigationItem = { label: string; path: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number }>; roles: string[]; };
@@ -23,16 +22,21 @@ const navigationItems: NavigationItem[] = [
   { label: 'Administration', path: '/administration', icon: Settings, roles: ['admin', 'manager'] },
 ];
 
-/** One brand icon badge, reused for the desktop and mobile headers. `company-logo.png`
- * is the icon-only export of the full Sria Infotech logo (the wordmark is ghosted out in
- * that file) — background-position/size crop it down to just the coloured mark, since the
- * source canvas has a lot of empty space around it. */
-const BrandMark: React.FC<{ className?: string }> = ({ className = 'w-8 h-8' }) => (
-  <span
-    className={`${className} rounded-lg shrink-0 bg-white bg-no-repeat`}
-    style={{ backgroundImage: `url(${companyLogo})`, backgroundSize: '210%', backgroundPosition: '6% 36%' }}
-    aria-hidden="true"
-  />
+/** The full Sria Infotech logo (public/sria_logo_gray.png, same file as the login page and
+ * favicon), reused for the desktop and mobile headers. The source is a 1563px square canvas
+ * with the logo at x 41–1544, y 296–1185 (8px margin kept), so the box crops to that area at
+ * any width. Its wordmark is grey on transparent, so dark mode sits it on a white plate. */
+const BrandLogo: React.FC<{ className?: string }> = ({ className = 'w-[76px]' }) => (
+  <span className="block shrink-0 rounded-md dark:bg-white dark:px-1.5 dark:py-1">
+    <span className={`${className} block overflow-hidden`} style={{ aspectRatio: '1503 / 889' }}>
+      <img
+        src="/sria_logo_gray.png"
+        alt="Sria Infotech"
+        className="block"
+        style={{ width: '103.99%', maxWidth: 'none', marginLeft: '-2.73%', marginTop: '-19.69%' }}
+      />
+    </span>
+  </span>
 );
 
 interface SearchResult {
@@ -317,12 +321,8 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
   return <>
     {/* Desktop top header */}
     <header className="hidden lg:flex fixed top-0 inset-x-0 z-40 h-16 items-center gap-4 border-b border-gray-200 bg-white px-6 dark:border-gray-800 dark:bg-gray-900">
-      <button type="button" onClick={() => go('/dashboard')} className="flex items-center gap-2.5 shrink-0">
-        <BrandMark className="w-9 h-9" />
-        <span className="leading-none text-left">
-          <span className="block text-base font-bold tracking-tight text-gray-900 dark:text-white">SRIA</span>
-          <span className="block mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">Your trusted digital partner</span>
-        </span>
+      <button type="button" onClick={() => go('/dashboard')} className="flex items-center shrink-0" aria-label="Sria Infotech - go to Command center">
+        <BrandLogo />
       </button>
 
       <nav
@@ -472,8 +472,8 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
 
     {/* Mobile top header + slide-out menu */}
     <header className="lg:hidden fixed top-0 inset-x-0 z-40 flex h-16 items-center justify-between border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-900">
-      <button type="button" onClick={() => go('/dashboard')} className="flex items-center gap-2 font-bold text-gray-900 dark:text-white">
-        <BrandMark className="w-7 h-7" /> SRIA
+      <button type="button" onClick={() => go('/dashboard')} className="flex items-center" aria-label="Sria Infotech - go to Command center">
+        <BrandLogo className="w-[64px]" />
       </button>
       <div className="flex items-center gap-1">
         <button
@@ -492,7 +492,7 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
     {mobileMenuOpen && (
       <div className="lg:hidden fixed inset-0 z-50 bg-white px-5 py-6 overflow-y-auto dark:bg-gray-900">
         <div className="flex items-center justify-between mb-8">
-          <span className="font-bold text-gray-900 dark:text-white">SRIA</span>
+          <BrandLogo className="w-[64px]" />
           <button type="button" onClick={() => setMobileMenuOpen(false)} className="rounded-md p-2 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Close navigation">
             <X size={22} className="text-gray-700 dark:text-gray-300" />
           </button>

@@ -2,7 +2,7 @@
 
 An employee's list changes when they are added to / edited on / removed from a project's
 Resources, or when a project or milestone they are on changes something AIRA shows. Nothing
-runs unless AIRA_ASSIGNMENT_WEBHOOK_URL is set.
+runs unless AIRA_WEBHOOK_URL and AIRA_PUSH_API_KEY are set.
 """
 from django.conf import settings
 from django.db import transaction
@@ -17,7 +17,7 @@ MILESTONE_FIELDS = ('name', 'is_active')
 
 
 def _enabled():
-    return bool(settings.AIRA_ASSIGNMENT_WEBHOOK_URL)
+    return bool(settings.AIRA_WEBHOOK_URL and settings.AIRA_PUSH_API_KEY)
 
 
 def _queue(account_ids):

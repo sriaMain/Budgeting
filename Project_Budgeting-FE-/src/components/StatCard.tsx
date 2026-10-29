@@ -15,6 +15,9 @@ interface StatCardProps {
   status?: 'good' | 'watch' | 'risk';
   /** Caption shown when `status` is set, e.g. "Within control limit" or "₹23.8L overdue". */
   statusLabel?: string;
+  /** Dense dashboard variant (~100px tall): 16px padding, smaller icon, flat card. */
+  compact?: boolean;
+  className?: string;
 }
 
 export const StatCard: React.FC<StatCardProps> = ({
@@ -27,11 +30,18 @@ export const StatCard: React.FC<StatCardProps> = ({
   onClick,
   status,
   statusLabel,
+  compact = false,
+  className = '',
 }) => {
+  // compact cards are size containers: a very narrow one drops its decorative icon so the label fits.
+  const box = compact
+    ? '@container p-4 rounded-lg border border-gray-200 dark:border-gray-800'
+    : 'p-5 rounded-xl border border-gray-200 shadow-sm dark:border-gray-800';
+
   if (loading) {
     return (
-      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm animate-pulse dark:bg-gray-900 dark:border-gray-800">
-        <div className="h-4 w-24 bg-gray-100 rounded mb-3 dark:bg-gray-800" />
+      <div className={`bg-white ${box} animate-pulse dark:bg-gray-900 ${className}`}>
+        <div className={`h-4 w-24 bg-gray-100 rounded ${compact ? 'mb-4' : 'mb-3'} dark:bg-gray-800`} />
         <div className="h-7 w-32 bg-gray-100 rounded dark:bg-gray-800" />
       </div>
     );
@@ -45,18 +55,23 @@ export const StatCard: React.FC<StatCardProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow dark:bg-gray-900 dark:border-gray-800 ${onClick ? 'cursor-pointer' : ''}`}
+      className={`bg-white ${box} transition-shadow dark:bg-gray-900 ${compact ? 'min-w-0' : 'hover:shadow-md'} ${onClick ? 'cursor-pointer' : ''} ${className}`}
     >
-      <div className="flex items-center justify-between mb-3">
+      <div className={`flex items-center justify-between gap-2 ${compact ? 'mb-2' : 'mb-3'}`}>
         <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</span>
         {icon && (
-          <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center dark:bg-blue-500/10 dark:text-blue-400">
+          <div className={`${compact ? 'w-7 h-7 rounded-md @max-[11rem]:hidden' : 'w-9 h-9 rounded-lg'} shrink-0 bg-blue-50 text-blue-600 flex items-center justify-center dark:bg-blue-500/10 dark:text-blue-400`}>
             {icon}
           </div>
         )}
       </div>
       <div className="flex items-end justify-between gap-2">
-        <span className="text-2xl font-bold text-gray-900 dark:text-white">{value}</span>
+        <span
+          className={compact ? 'min-w-0 truncate text-2xl font-semibold tabular-nums text-gray-900 dark:text-white' : 'text-2xl font-bold text-gray-900 dark:text-white'}
+          title={compact ? value : undefined}
+        >
+          {value}
+        </span>
         {hasChange && change !== 0 && (
           <span
             className={`flex items-center gap-0.5 text-sm font-medium ${

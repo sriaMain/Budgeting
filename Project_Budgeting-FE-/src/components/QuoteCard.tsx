@@ -1,8 +1,10 @@
-import { formatDate as toDMY } from '../utils/date';
+import { formatDate } from '../utils/date';
 import React from 'react';
-import { Building2 } from 'lucide-react';
+import { CalendarDays, FolderKanban } from 'lucide-react';
 import { Draggable } from '@hello-pangea/dnd';
 import type { Quote } from '../types/pipeline.types';
+import { formatMoney } from '../utils/format';
+import { stageLabel, stageTheme } from '../utils/pipelineStages';
 
 interface QuoteCardProps {
   quote: Quote;
@@ -10,14 +12,10 @@ interface QuoteCardProps {
   onClick?: (quote: Quote) => void;
 }
 
+/** One quotation on the pipeline board: click or Enter opens it; drag (or Space + arrows) moves it. */
 export const QuoteCard: React.FC<QuoteCardProps> = ({ quote, index, onClick }) => {
-  // Format date for display
-  const formatDate = (dateString: string) => {
-    return toDMY(dateString);
-  };
-
-  // Parse quote value safely
-  const quoteValue = parseFloat(quote.quote_value) || 0;
+  const amount = formatMoney(quote.quote_value, quote.currency, 2);
+  const status = stageLabel(quote.status);
 
   return (
     <Draggable draggableId={quote.quote_no.toString()} index={index}>
@@ -27,41 +25,49 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({ quote, index, onClick }) =
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           onClick={() => onClick?.(quote)}
-          className={`bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer dark:bg-gray-900 dark:border-gray-800 ${snapshot.isDragging ? 'shadow-lg ring-2 ring-blue-500 ring-opacity-50 dark:ring-violet-500' : ''
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onClick?.(quote);
+            }
+          }}
+          className={`block cursor-pointer rounded-lg border bg-white p-3 transition-[border-color,box-shadow] focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:bg-gray-900 ${snapshot.isDragging
+            ? 'border-teal-400 shadow-lg ring-2 ring-teal-500/40 dark:border-violet-500'
+            : 'border-gray-200 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-gray-300 hover:shadow-sm dark:border-gray-800 dark:hover:border-gray-700'
             }`}
         >
-          {/* Header */}
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-              <span className="font-semibold text-gray-900 text-sm dark:text-white">{quote.client_name}</span>
-            </div>
-            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium dark:bg-blue-500/15 dark:text-blue-300">
+          <div className="flex items-start justify-between gap-2">
+            <p className="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-white" title={quote.client_name || undefined}>
+              {quote.client_name || 'No client'}
+            </p>
+            <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-gray-600 dark:bg-gray-800 dark:text-gray-300">
               #{quote.quote_no}
             </span>
           </div>
 
-          {/* Quote Name */}
-          <div className="mb-3">
-            <p className="text-sm font-medium text-gray-700 truncate dark:text-gray-300" title={quote.quote_name}>
-              {quote.quote_name}
-            </p>
-          </div>
+          <p className="mt-1 truncate text-[13px] text-gray-600 dark:text-gray-300" title={quote.quote_name}>
+            {quote.quote_name}
+          </p>
 
-          {/* Date */}
-          <div className="text-xs text-gray-500 mb-3 dark:text-gray-400">
-            <span>Issue Date: {formatDate(quote.date_of_issue)}</span>
-          </div>
-
-          {/* Value */}
-          <div className="pt-3 border-t border-gray-100 flex items-center justify-between dark:border-gray-800">
-            <span className="text-xs text-gray-500 font-medium dark:text-gray-400">Quote Value</span>
-            <span className="font-bold text-gray-900 dark:text-white">
-              ₹{quoteValue.toLocaleString('en-IN', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-              })}
+          <div className="mt-2.5 flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <CalendarDays size={12} aria-hidden="true" className="shrink-0" />
+              <span className="sr-only">Issued</span>
+              <span className="truncate">{formatDate(quote.date_of_issue)}</span>
             </span>
+            <span className="flex shrink-0 items-center gap-1">
+              {quote.has_project && (
+                <span title="A project has been created from this quote" className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium text-teal-700 dark:text-violet-300">
+                  <FolderKanban size={12} aria-hidden="true" /> Project
+                </span>
+              )}
+              <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stageTheme(quote.status.toLowerCase()).pill}`}>{status}</span>
+            </span>
+          </div>
+
+          <div className="mt-2.5 flex items-baseline justify-between gap-2 border-t border-gray-100 pt-2.5 dark:border-gray-800">
+            <span className="text-xs text-gray-500 dark:text-gray-400">Quote value</span>
+            <span className="min-w-0 truncate text-[15px] font-bold tabular-nums text-gray-900 dark:text-white" title={amount}>{amount}</span>
           </div>
         </div>
       )}

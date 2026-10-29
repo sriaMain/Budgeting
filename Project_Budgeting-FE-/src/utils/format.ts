@@ -11,3 +11,17 @@ export function formatCurrencyCompact(amount: number | string | null | undefined
   if (abs >= 1000) return `₹${(value / 1000).toFixed(1)}K`;
   return formatCurrency(value);
 }
+
+/**
+ * Money in the app's en-IN grouping, in the given currency (₹ for INR). Whole amounts drop the
+ * ".00"; `maxDecimals` 2 shows paise when there are any.
+ */
+export const formatMoney = (value: number | string | null | undefined, currency = 'INR', maxDecimals = 0) => {
+  const amount = typeof value === 'number' ? value : parseFloat(String(value ?? 0)) || 0;
+  const digits = { minimumFractionDigits: Number.isInteger(amount) ? 0 : maxDecimals, maximumFractionDigits: maxDecimals };
+  try {
+    return amount.toLocaleString('en-IN', { style: 'currency', currency: currency || 'INR', ...digits });
+  } catch {
+    return `${currency} ${amount.toLocaleString('en-IN', digits)}`;
+  }
+};

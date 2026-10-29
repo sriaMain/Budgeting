@@ -1,4 +1,6 @@
 
+from decimal import Decimal
+
 from .serializers import QuoteSummarySerializer
 from .models import Quote
 from django.db.models import Avg, Sum, Count
@@ -1094,7 +1096,10 @@ def generate_quote_pdf(quote):
         for item in quote.items.all()
     ]
 
-    tax_amount = quote.total_amount - quote.sub_total
+    # total = (sub total - discount) + tax, see Quote.calculate_totals.
+    discount_amount = quote.discount_amount or Decimal("0.00")
+    taxable_amount = quote.sub_total - discount_amount
+    tax_amount = quote.total_amount - taxable_amount
 
     context = {
         'quote_no': quote.quote_no,
@@ -1113,6 +1118,9 @@ def generate_quote_pdf(quote):
         'sub_total': _quote_money(quote.sub_total),
         'tax_percentage': quote.tax_percentage,
         'tax_amount': _quote_money(tax_amount),
+        'discount_percentage': quote.discount_percentage,
+        'discount_amount': _quote_money(discount_amount) if discount_amount > 0 else None,
+        'taxable_amount': _quote_money(taxable_amount),
         'total_amount': _quote_money(quote.total_amount),
         'in_house_cost': _quote_money(quote.in_house_cost),
         'outsourced_cost': _quote_money(quote.outsourced_cost),

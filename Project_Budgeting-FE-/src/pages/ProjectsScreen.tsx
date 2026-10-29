@@ -1,5 +1,5 @@
 import { formatDate as toDMY } from '../utils/date';
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
@@ -9,6 +9,7 @@ import { ProjectHealthCard, type ProjectHealth } from '../components/ProjectHeal
 import { MetricCard } from '../components/StatCard';
 import { EmptyState } from '../components/EmptyState';
 import axiosInstance from '../utils/axiosInstance';
+import { formatMoney } from '../utils/format';
 import { toast } from 'react-hot-toast';
 
 interface Project {
@@ -42,9 +43,18 @@ interface Project {
 		// "User budget" card already shows as "Used", so the list page's
 		// Budget-used % should read the same figure.
 		used_budget: string;
+		// cost_budget - used_budget (same basis); negative when over budget.
+		remaining_budget?: string;
 		currency: string;
 		forecasted_profit: string;
 	};
+}
+
+// GET projects/ groups projects by client: { Projects: [{ company_name, total_projects, project_details }] }
+interface ApiCompany {
+	company_name: string;
+	total_projects: number;
+	project_details?: Project[];
 }
 
 interface CompanyGroup {
@@ -81,30 +91,49 @@ const StatusSelect = ({
 		: [{ value: project.status, label: project.status.replace(/_/g, ' ') }, ...statusChoices];
 
 	return (
-		<select
-			value={project.status}
-			onClick={(e) => e.stopPropagation()}
-			onChange={(e) => onChange(project, e.target.value)}
-			className={`w-full px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer capitalize focus:outline-none focus:ring-2 focus:ring-teal-600 ${activeStyle}`}
-		>
-			{options.map(choice => (
-				<option key={choice.value} value={choice.value}>{choice.label}</option>
-			))}
-		</select>
+		<div className="relative">
+			<select
+				value={project.status}
+				onChange={(e) => onChange(project, e.target.value)}
+				aria-label={`Status of ${project.project_name}`}
+				title={options.find(choice => choice.value === project.status)?.label}
+				className={`h-7 max-w-[8.5rem] appearance-none truncate rounded-full border pl-2.5 pr-6 text-xs font-medium capitalize cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${activeStyle}`}
+			>
+				{options.map(choice => (
+					<option key={choice.value} value={choice.value}>{choice.label}</option>
+				))}
+			</select>
+			<ChevronDown size={12} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-70" />
+		</div>
 	);
 };
 
-// Budget-usage heuristic for the health badge — the API has no computed "health" field
-// today (see enterprise-artifacts/UI_BUILD_HANDOFF.md's Phase 3 backend gaps).
-function projectHealth(project: Project): { health: ProjectHealth; pct: number } {
+// Budget-usage bands for the card colour, as a share of the cost budget already spent:
+// below WATCH is on track (green), WATCH-RISK is getting close (amber), RISK and over is red.
+const BUDGET_WATCH_PCT = 75;
+const BUDGET_RISK_PCT = 90;
+
+// The API has no computed "health" field today (see enterprise-artifacts/UI_BUILD_HANDOFF.md's
+// Phase 3 backend gaps), so it's derived from budget usage.
+function projectHealth(project: Project): { health: ProjectHealth; pct: number | null } {
 	const total = parseFloat(project.budget?.cost_budget) || 0;
+	if (total <= 0) return { health: 'healthy', pct: null };
 	const used = parseFloat(project.budget?.used_budget) || 0;
-	const pct = total > 0 ? (used / total) * 100 : 0;
-	const health: ProjectHealth = pct >= 90 ? 'at_risk' : pct >= 75 ? 'watch' : 'healthy';
+	const pct = (used / total) * 100;
+	const health: ProjectHealth = pct >= BUDGET_RISK_PCT ? 'at_risk' : pct >= BUDGET_WATCH_PCT ? 'watch' : 'healthy';
 	return { health, pct };
 }
 
-export default function ProjectsScreen(_props: any) {
+const projectHours = (project: Project) =>
+	// Prefer billable_hours (falls back to task-allocated hours on the backend when
+	// total_hours/quote hours were never set) over the raw total_hours field.
+	project.budget?.billable_hours != null ? Number(project.budget.billable_hours) : (project.budget?.total_hours || 0);
+
+const formatHours = (hours: number) => `${hours.toLocaleString('en-IN', { maximumFractionDigits: 1 })}h`;
+
+const CONTROL = 'h-10 rounded-md border border-gray-300 bg-white text-sm text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200';
+
+export default function ProjectsScreen(_props: { userRole?: string; currentPage?: string; onNavigate?: (page: string) => void }) {
 	const navigate = useNavigate();
 	const [searchParams, setSearchParams] = useSearchParams();
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -152,6 +181,19 @@ export default function ProjectsScreen(_props: any) {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [searchQuery, filterStatus, appliedFilters]);
 
+	// The filters dialog closes on Escape.
+	useEffect(() => {
+		if (!isFilterModalOpen) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') {
+				setAdvancedFilters(appliedFilters);
+				setIsFilterModalOpen(false);
+			}
+		};
+		document.addEventListener('keydown', onKey);
+		return () => document.removeEventListener('keydown', onKey);
+	}, [isFilterModalOpen, appliedFilters]);
+
 	const fetchStatusChoices = async () => {
 		try {
 			const response = await axiosInstance.get('project-status-choices/');
@@ -180,20 +222,16 @@ export default function ProjectsScreen(_props: any) {
 				let totalBudget = 0;
 				let totalHours = 0;
 
-				const groups: CompanyGroup[] = response.data.Projects.map((company: any, index: number) => {
+				const groups: CompanyGroup[] = response.data.Projects.map((company: ApiCompany, index: number) => {
 					// Map project_details to Project objects
-					const projects: Project[] = (company.project_details || []).map((p: any) => {
+					const projects: Project[] = (company.project_details || []).map((p) => {
 						// Parse budget values for KPIs
 						const profit = p.budget?.forecasted_profit ? parseFloat(p.budget.forecasted_profit) : 0;
 						const budget = p.budget?.cost_budget ? parseFloat(p.budget.cost_budget) : 0;
-						// Prefer billable_hours (falls back to task-allocated hours on the
-						// backend when total_hours/quote hours were never set) over the raw
-						// total_hours field, which can be 0 even when tasks have real hours.
-						const hours = p.budget?.billable_hours != null ? Number(p.budget.billable_hours) : (p.budget?.total_hours || 0);
 
 						totalProfit += profit;
 						totalBudget += budget;
-						totalHours += hours;
+						totalHours += projectHours(p);
 
 						return {
 							id: p.project_no, // Use project_no as id
@@ -265,6 +303,14 @@ export default function ProjectsScreen(_props: any) {
 	const inProcessProjectsCount = totalProjectsCount - completedProjectsCount;
 	const currency = allProjects[0]?.budget?.currency || 'INR';
 
+	const hasFilters = !!searchQuery || filterStatus !== 'All' || !!appliedFilters.project_name;
+	const clearFilters = () => {
+		setSearchQuery('');
+		setFilterStatus('All');
+		setAdvancedFilters({ project_name: '' });
+		setAppliedFilters({ project_name: '' });
+	};
+
 	const handleStatusChange = async (project: Project, newStatus: string) => {
 		if (newStatus === project.status) return;
 
@@ -284,109 +330,136 @@ export default function ProjectsScreen(_props: any) {
 		}
 	};
 
+	const newProjectButton = (
+		<button
+			type="button"
+			onClick={() => setIsCreateModalOpen(true)}
+			className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-md bg-navy-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-navy-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-950"
+		>
+			<Plus size={16} aria-hidden="true" />
+			New Project
+		</button>
+	);
+
 	return (
-		<AppShell breadcrumb="Projects" title="Projects">
-			<div className="max-w-[1600px] mx-auto">
-				<div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
-					<div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-						<button
-							onClick={() => setIsCreateModalOpen(true)}
-							className="bg-navy-900 hover:bg-navy-800 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors whitespace-nowrap"
-						>
-							<Plus size={16} />
-							New
-						</button>
-						<div className="h-8 w-[1px] bg-gray-200 dark:bg-gray-700 mx-2"></div>
-						<div className="relative">
-							<select
-								value={filterStatus}
-								onChange={(e) => setFilterStatus(e.target.value)}
-								className="px-4 py-2 pr-8 appearance-none bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-600 cursor-pointer transition-colors"
-							>
-								<option value="All">All Statuses</option>
-								{statusChoices.map(choice => (
-									<option key={choice.value} value={choice.value}>{choice.label}</option>
-								))}
-							</select>
-							<ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none w-4 h-4" />
-						</div>
-						<button
-							onClick={() => setIsFilterModalOpen(true)}
-							className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg text-sm font-medium flex items-center gap-2 border border-gray-200 dark:border-gray-800 whitespace-nowrap"
-						>
-							<Filter size={16} />
-							Filters
-						</button>
-					</div>
-
-					<div className="relative w-full md:w-80">
-						<Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
-						<input
-							type="text"
-							placeholder="Search..."
-							value={searchQuery}
-							onChange={(e) => setSearchQuery(e.target.value)}
-							className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
-						/>
-					</div>
-				</div>
-
-				{/* Project Overview */}
-				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-					<MetricCard label="Total Projects" value={totalProjectsCount.toString()} icon={<Briefcase size={18} />} />
-					<MetricCard label="In Process" value={inProcessProjectsCount.toString()} icon={<Clock size={18} />} />
-					<MetricCard label="Completed" value={completedProjectsCount.toString()} icon={<CheckCircle2 size={18} />} />
-				</div>
-
-				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-					<MetricCard label="Forecasted profit (budget)" value={`${kpiData.forecastedProfit.toLocaleString()} ${currency}`} icon={<TrendingUp size={18} />} />
-					<MetricCard label="Total Budget" value={`${kpiData.totalBudget.toLocaleString()} ${currency}`} icon={<Wallet size={18} />} />
-					<MetricCard label="Total Hours Allocated" value={`${kpiData.totalHours} hours`} icon={<PieChart size={18} />} />
-				</div>
-
-				{/* Projects */}
-				{loading ? (
-					<div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading projects...</div>
-				) : filteredCompanyGroups.length === 0 ? (
-					<EmptyState title="No projects found" description="Try clearing filters or search, or create a new project." />
-				) : (
-					<div className="space-y-8">
-						{filteredCompanyGroups.map((company) => (
-							<div key={company.id}>
-								<div className="flex items-center justify-between mb-3">
-									<span className="text-sm font-bold text-gray-900 dark:text-white">{company.company_name}</span>
-									<span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-										{company.projects.length} project{company.projects.length !== 1 ? 's' : ''}
-									</span>
-								</div>
-
-								<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-									{company.projects.map((project) => {
-										const { health, pct } = projectHealth(project);
-										return (
-											<ProjectHealthCard
-												key={project.id}
-												name={project.project_name}
-												engagementType={project.engagement_type}
-												health={health}
-												budgetUsedPct={pct}
-												totalBudget={`${(parseFloat(project.budget?.cost_budget) || 0).toLocaleString()} ${project.budget?.currency || 'INR'}`}
-												totalHours={`${project.budget?.billable_hours != null ? Number(project.budget.billable_hours) : (project.budget?.total_hours || 0)}h`}
-												startDate={project.start_date ? toDMY(project.start_date) : undefined}
-												endDate={project.end_date ? toDMY(project.end_date) : undefined}
-												statusControl={
-													<StatusSelect project={project} statusChoices={statusChoices} onChange={handleStatusChange} />
-												}
-												onClick={() => navigate(`/projects/${project.project_no}`)}
-											/>
-										);
-									})}
-								</div>
-							</div>
+		<AppShell breadcrumb="Projects" title="Projects" actions={newProjectButton}>
+			<div className="flex flex-wrap items-center gap-2 mb-4">
+				<div className="relative">
+					<select
+						value={filterStatus}
+						onChange={(e) => setFilterStatus(e.target.value)}
+						aria-label="Filter by status"
+						className={`${CONTROL} appearance-none pl-3 pr-9 font-medium cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800`}
+					>
+						<option value="All">All Statuses</option>
+						{statusChoices.map(choice => (
+							<option key={choice.value} value={choice.value}>{choice.label}</option>
 						))}
-					</div>
-				)}
+					</select>
+					<ChevronDown aria-hidden="true" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none w-4 h-4" />
+				</div>
+				<button
+					type="button"
+					onClick={() => setIsFilterModalOpen(true)}
+					aria-haspopup="dialog"
+					className={`${CONTROL} inline-flex items-center gap-2 px-3.5 font-medium whitespace-nowrap hover:bg-gray-50 dark:hover:bg-gray-800`}
+				>
+					<Filter size={16} aria-hidden="true" />
+					Filters
+					{appliedFilters.project_name && (
+						<span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-navy-900 px-1.5 text-xs font-semibold text-white" aria-label="1 filter applied">1</span>
+					)}
+				</button>
+				<div className="relative min-w-[12rem] flex-1">
+					<Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
+					<input
+						type="search"
+						placeholder="Search projects…"
+						aria-label="Search projects"
+						value={searchQuery}
+						onChange={(e) => setSearchQuery(e.target.value)}
+						className={`${CONTROL} w-full pl-9 pr-3 placeholder:text-gray-400 dark:placeholder:text-gray-500`}
+					/>
+				</div>
 			</div>
+
+			{/* Project Overview - 3 / 2 columns; on phones the money cards take a full row (and below
+			    360px everything stacks) so amounts are never cut off. */}
+			<section aria-label="Project overview" className="mb-6 grid grid-flow-row-dense grid-cols-1 gap-3 sm:gap-4 min-[360px]:grid-cols-2 min-[1024px]:grid-cols-3">
+				<MetricCard compact loading={loading} label="Total Projects" value={totalProjectsCount.toLocaleString('en-IN')} icon={<Briefcase size={16} />} />
+				<MetricCard compact loading={loading} label="In Process" value={inProcessProjectsCount.toLocaleString('en-IN')} icon={<Clock size={16} />} />
+				<MetricCard compact loading={loading} label="Completed" value={completedProjectsCount.toLocaleString('en-IN')} icon={<CheckCircle2 size={16} />} />
+				<MetricCard compact loading={loading} className="min-[360px]:max-[479px]:col-span-2" label="Forecasted Profit (Budget)" value={formatMoney(kpiData.forecastedProfit, currency)} icon={<TrendingUp size={16} />} />
+				<MetricCard compact loading={loading} className="min-[360px]:max-[479px]:col-span-2" label="Total Budget" value={formatMoney(kpiData.totalBudget, currency)} icon={<Wallet size={16} />} />
+				<MetricCard compact loading={loading} label="Total Hours Allocated" value={formatHours(kpiData.totalHours)} icon={<PieChart size={16} />} />
+			</section>
+
+			{/* Projects */}
+			{loading ? (
+				<div role="status" aria-label="Loading projects" className="grid grid-cols-1 gap-3 min-[640px]:grid-cols-2 min-[1280px]:grid-cols-3">
+					{[0, 1, 2, 3, 4, 5].map(i => (
+						<div key={i} className="h-[200px] animate-pulse rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" />
+					))}
+				</div>
+			) : filteredCompanyGroups.length === 0 ? (
+				<EmptyState
+					title="No projects found"
+					description={hasFilters ? 'Nothing matches the current search or filters.' : 'Create your first project to see it here.'}
+					action={hasFilters ? (
+						<button type="button" onClick={clearFilters} className={`${CONTROL} px-4 font-medium hover:bg-gray-50 dark:hover:bg-gray-800`}>Clear filters</button>
+					) : newProjectButton}
+				/>
+			) : (
+				<div className="space-y-4">
+					{filteredCompanyGroups.map((company) => (
+						<section key={company.id} aria-labelledby={`${company.id}-heading`}>
+							<h2 id={`${company.id}-heading`} className="mb-2 flex min-w-0 items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+								<span className="truncate" title={company.company_name}>{company.company_name}</span>
+								<span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium tabular-nums text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+									{company.projects.length} project{company.projects.length !== 1 ? 's' : ''}
+								</span>
+							</h2>
+
+							<div className="grid grid-cols-1 gap-3 min-[640px]:grid-cols-2 min-[1280px]:grid-cols-3">
+								{company.projects.map((project) => {
+									const { health, pct } = projectHealth(project);
+									const projectCurrency = project.budget?.currency || 'INR';
+									const remaining = project.budget?.remaining_budget != null
+										? parseFloat(project.budget.remaining_budget) || 0
+										: (parseFloat(project.budget?.cost_budget) || 0) - (parseFloat(project.budget?.used_budget) || 0);
+									const href = `/projects/${project.project_no}`;
+									return (
+										<ProjectHealthCard
+											key={project.id}
+											name={project.project_name}
+											href={href}
+											engagementType={project.engagement_type}
+											health={health}
+											budgetUsedPct={pct}
+											usedAmount={pct === null ? undefined : formatMoney(project.budget?.used_budget, projectCurrency)}
+											remainingAmount={pct === null ? undefined : remaining < 0
+												? `${formatMoney(-remaining, projectCurrency)} over`
+												: `${formatMoney(remaining, projectCurrency)} left`}
+											overBudget={remaining < 0}
+											totalBudget={project.budget ? formatMoney(project.budget.cost_budget, projectCurrency) : undefined}
+											totalHours={project.budget ? formatHours(projectHours(project)) : undefined}
+											startDate={project.start_date ? toDMY(project.start_date) : undefined}
+											endDate={project.end_date ? toDMY(project.end_date) : undefined}
+											statusControl={
+												<StatusSelect project={project} statusChoices={statusChoices} onChange={handleStatusChange} />
+											}
+											actions={[
+												{ label: 'View project', onSelect: () => navigate(href) },
+												{ label: 'Edit details', onSelect: () => navigate(`/projects/edit/${project.project_no}`) },
+											]}
+										/>
+									);
+								})}
+							</div>
+						</section>
+					))}
+				</div>
+			)}
 
 			<CreateProjectModal
 				isOpen={isCreateModalOpen}
@@ -398,20 +471,21 @@ export default function ProjectsScreen(_props: any) {
 
 			{isFilterModalOpen && (
 				<div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4">
-					<div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+					<div role="dialog" aria-modal="true" aria-labelledby="projects-filter-title" className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
 						<div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-900 z-10">
-							<h2 className="text-lg font-semibold text-gray-900 dark:text-white">Advanced Filters</h2>
-							<button onClick={() => setIsFilterModalOpen(false)} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+							<h2 id="projects-filter-title" className="text-lg font-semibold text-gray-900 dark:text-white">Advanced Filters</h2>
+							<button type="button" onClick={() => setIsFilterModalOpen(false)} aria-label="Close filters" title="Close" className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
 								<X size={20} />
 							</button>
 						</div>
 						<div className="p-4 overflow-y-auto space-y-4">
 							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project Name</label>
+								<label htmlFor="projects-filter-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project Name</label>
 								<select
+									id="projects-filter-name"
 									value={advancedFilters.project_name}
 									onChange={(e) => setAdvancedFilters(prev => ({ ...prev, project_name: e.target.value }))}
-									className="w-full px-3 py-2 border border-gray-200 dark:border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+									className={`${CONTROL} w-full px-3`}
 								>
 									<option value="">All Projects</option>
 									{allProjectNames.map((name, idx) => (

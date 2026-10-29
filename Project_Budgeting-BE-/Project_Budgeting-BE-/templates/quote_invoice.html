@@ -336,6 +336,16 @@
                         <td class="totals-label">Subtotal</td>
                         <td class="totals-value">{{ currency }} {{ sub_total }}</td>
                     </tr>
+                    {% if discount_amount %}
+                    <tr>
+                        <td class="totals-label">Discount ({{ discount_percentage }}%)</td>
+                        <td class="totals-value">- {{ currency }} {{ discount_amount }}</td>
+                    </tr>
+                    <tr>
+                        <td class="totals-label">Amount after Discount</td>
+                        <td class="totals-value">{{ currency }} {{ taxable_amount }}</td>
+                    </tr>
+                    {% endif %}
                     <tr>
                         <td class="totals-label">Tax ({{ tax_percentage }}%)</td>
                         <td class="totals-value">{{ currency }} {{ tax_amount }}</td>

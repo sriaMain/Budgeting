@@ -20,6 +20,9 @@ export interface Quote {
   date_of_issue: string;
   quote_value: string;
   status: string;
+  /** The quote's own currency (quote_value is in it); stage totals are converted to INR. */
+  currency?: string;
+  has_project?: boolean;
 }
 
 export interface StageColumn {
@@ -35,6 +38,8 @@ export interface PipelineStats {
   average_quote: number;
   total_sum: number;
   total_margin: number;
+  /** Margin as a % of quote value (backend: expected profit / revenue). */
+  avg_margin_percentage?: number;
 }
 
 export interface PipelineData {

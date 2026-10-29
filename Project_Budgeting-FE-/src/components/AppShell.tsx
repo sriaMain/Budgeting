@@ -7,6 +7,8 @@ interface AppShellProps {
   /** Small uppercase label above the title, e.g. a date or section crumb. */
   breadcrumb?: string;
   title?: string;
+  /** Page-level actions shown at the right of the title, e.g. a "New" button. */
+  actions?: React.ReactNode;
 }
 
 /**
@@ -14,7 +16,7 @@ interface AppShellProps {
  * Reads role from Redux directly instead of requiring prop-drilled userRole/currentPage/onNavigate,
  * unlike the legacy `Layout` component which ~26 existing pages still use unchanged.
  */
-export const AppShell: React.FC<AppShellProps> = ({ children, breadcrumb, title }) => {
+export const AppShell: React.FC<AppShellProps> = ({ children, breadcrumb, title, actions }) => {
   const userRole = (useAppSelector((state) => state.auth.userRole) || 'user') as
     | 'admin'
     | 'user'
@@ -24,13 +26,17 @@ export const AppShell: React.FC<AppShellProps> = ({ children, breadcrumb, title 
   return (
     <div className="min-h-screen bg-surface w-full font-sans text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <Navbar userRole={userRole} />
-      <main className="min-w-0 max-w-[1600px] mx-auto px-4 pt-20 pb-8 sm:px-6 lg:px-8">
-        {(breadcrumb || title) && (
-          <header className="mb-6">
-            {breadcrumb && (
-              <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-500">{breadcrumb}</p>
-            )}
-            {title && <h1 className="mt-1 text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">{title}</h1>}
+      {/* 24px side padding from sm up lines content up with the navbar's px-6. */}
+      <main className="min-w-0 max-w-[1600px] mx-auto px-4 pt-20 pb-8 sm:px-6">
+        {(breadcrumb || title || actions) && (
+          <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              {breadcrumb && (
+                <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-500">{breadcrumb}</p>
+              )}
+              {title && <h1 className="mt-1 text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">{title}</h1>}
+            </div>
+            {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
           </header>
         )}
         {children}

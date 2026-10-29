@@ -3,15 +3,19 @@
  * Full page for creating and editing quotes/opportunities in the pipeline
  */
 
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Trash2, GripVertical, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Plus, Trash2, GripVertical, ChevronDown, PackagePlus, ListPlus } from 'lucide-react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { AddClientModal } from '../components/AddClientModal';
 import { AddPOCModal } from '../components/AddPOCModal';
 import ProductServiceDrawer from '../components/ProductServiceDrawer';
+import { SearchableSelect, type SearchableSelectOption } from '../components/SearchableSelect';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { LoaderIcon } from '../components/Icons';
 import { getCatalogItems, getCatalogPermissions, kindOf, type CatalogItem, type CatalogKind, type CatalogPermissions } from '../services/catalog';
 import type { Quote, QuoteFormData, PipelineStage } from '../types/pipeline.types';
+import type { FormErrors } from '../types';
 import axiosInstance from '../utils/axiosInstance';
 import { parseApiErrors } from '../utils/parseApiErrors';
 import { toast } from 'react-hot-toast';
@@ -76,6 +80,30 @@ const toQuoteService = (r: CatalogItem): Service => ({
   sales_tax_rate: r.sales_tax_rate != null ? Number(r.sales_tax_rate) : null,
 });
 
+// The API error keys each header field shows under it (and clears once edited).
+const DETAIL_ERROR_KEYS: Record<string, string[]> = {
+  dateOfIssue: ['date_of_issue', 'start_date'],
+  dueDate: ['due_date', 'end_date'],
+  client: ['client', 'poc'],
+  poc: ['poc'],
+  quoteName: ['quote_name', 'project_name'],
+  status: ['status'],
+};
+
+// Dense ERP form styles: 13px labels, 40px fields (36px inside the line-items table).
+const LABEL = 'block text-[13px] font-medium text-gray-700 mb-1.5 dark:text-gray-300';
+const FIELD_BASE = 'w-full rounded-md border bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 dark:disabled:bg-gray-800/50';
+const fieldClass = (invalid: boolean, size = 'h-10 px-3') =>
+  `${FIELD_BASE} ${size} ${invalid
+    ? 'border-red-500 focus:border-red-500 focus:ring-red-500 dark:border-red-500'
+    : 'border-gray-300 focus:border-teal-600 focus:ring-teal-600 dark:border-gray-700 dark:focus:ring-violet-500'}`;
+const ICON_BUTTON = 'flex shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-teal-700 hover:bg-teal-50 hover:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-violet-300 dark:hover:bg-gray-700';
+const SECTION = 'rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900';
+const SECTION_TITLE = 'text-base font-semibold text-gray-900 dark:text-white';
+
+const FieldError: React.FC<{ id: string; message?: string }> = ({ id, message }) =>
+  message ? <p id={id} className="mt-1 text-xs text-red-600 dark:text-red-400">{message}</p> : null;
+
 interface StatusChoice {
   value: string;
   label: string;
@@ -110,7 +138,17 @@ export default function AddQuotePage() {
   const [unitChoices, setUnitChoices] = useState<UnitChoice[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [errors, setErrors] = useState<{ general?: string }>({});
+  // Keyed like the API's fields (quote_name, client, items, ...) so server and local
+  // validation messages land under the same field; row fields use `item:<row id>:<field>`.
+  const [errors, setErrors] = useState<FormErrors>({});
+  // Unsaved edits: the browser warns on refresh/close, and Back/Cancel ask before leaving.
+  const [isDirty, setIsDirty] = useState(false);
+  const [isLeaveConfirmOpen, setIsLeaveConfirmOpen] = useState(false);
+  // Set synchronously, so a double click can't send the quote twice before isSaving renders.
+  const submittingRef = useRef(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  // Quote currency as saved (edit mode); a new quote takes the backend default.
+  const [currency, setCurrency] = useState('');
   const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
   const [isAddPOCModalOpen, setIsAddPOCModalOpen] = useState(false);
   const [isAddServiceModalOpen, setIsAddServiceModalOpen] = useState(false);
@@ -141,7 +179,7 @@ export default function AddQuotePage() {
       group: '',
       product: '',
       description: '',
-      quantity: 0,
+      quantity: 1,
       unit: '',
       unit_price: 0,
       amount: 0,
@@ -149,6 +187,8 @@ export default function AddQuotePage() {
     }
   ]);
   const [taxPercentage, setTaxPercentage] = useState(0);
+  // Whole-quote discount %, taken off the Sub Total before tax (like invoices).
+  const [discountPercentage, setDiscountPercentage] = useState(0);
 
   // Fetch all required data on component mount, then fetch existing data if in edit mode
   useEffect(() => {
@@ -235,6 +275,8 @@ export default function AddQuotePage() {
           // Populate the saved tax percentage — this was previously left at
           // its default of 0 when opening a quote for editing.
           setTaxPercentage(data.tax_percentage != null ? Number(data.tax_percentage) : 0);
+          setDiscountPercentage(data.discount_percentage != null ? Number(data.discount_percentage) : 0);
+          setCurrency(data.currency || '');
 
           if (data.items && data.items.length > 0) {
             const mappedItems = data.items.map((item: any) => ({
@@ -351,7 +393,18 @@ export default function AddQuotePage() {
       }
       return updated;
     });
-    setErrors({});
+    setIsDirty(true);
+    clearErrors(...(DETAIL_ERROR_KEYS[field] ?? [field]));
+  };
+
+  const clearErrors = (...keys: string[]) => {
+    setErrors(prev => {
+      if (!keys.some(k => prev[k]) && !prev.general) return prev;
+      const next = { ...prev };
+      keys.forEach(k => delete next[k]);
+      delete next.general;
+      return next;
+    });
   };
 
   // Effect to populate product names from service IDs once services are loaded
@@ -373,6 +426,8 @@ export default function AddQuotePage() {
   }, [services, items.length]); // Depend on services and items count, not deep items to avoid infinite loop
 
   const handleItemChange = (id: string, field: keyof ProductRow, value: string | number) => {
+    setIsDirty(true);
+    clearErrors('items', `item:${id}:${field}`);
     // A quotation has one tax % for the whole document: the first product picked sets it from
     // the catalog's sales tax, but never overrides a tax the user already chose.
     if (field === 'product' && value && taxPercentage === 0) {
@@ -406,7 +461,10 @@ export default function AddQuotePage() {
             }
           }
         }
-        if (field === 'quantity' || field === 'unit_price' || field === 'product') {
+        if (field === 'unit' && value === 'fixed') {
+          updated.quantity = 1; // a fixed price is one lot
+        }
+        if (field === 'quantity' || field === 'unit_price' || field === 'product' || field === 'unit') {
           updated.amount = updated.quantity * updated.unit_price;
         }
         return updated;
@@ -416,12 +474,14 @@ export default function AddQuotePage() {
   };
 
   const addNewRow = () => {
+    setIsDirty(true);
+    clearErrors('items');
     setItems(prev => [...prev, {
       id: crypto.randomUUID(),
       group: '',
       product: '',
       description: '',
-      quantity: 0,
+      quantity: 1,
       unit: unitChoices.length > 0 ? unitChoices[0].value : '',
       unit_price: 0,
       amount: 0,
@@ -429,10 +489,22 @@ export default function AddQuotePage() {
     }]);
   };
 
+  // The last row can go too - the table then shows its empty state and Save asks for a line.
   const removeRow = (id: string) => {
-    if (items.length > 1) {
-      setItems(prev => prev.filter(item => item.id !== id));
-    }
+    setIsDirty(true);
+    setItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  // Line order is kept on save (the backend re-creates lines in the order sent).
+  const moveRow = (from: number, to: number) => {
+    if (from === to || to < 0 || to >= items.length) return;
+    setIsDirty(true);
+    setItems(prev => {
+      const next = [...prev];
+      const [row] = next.splice(from, 1);
+      next.splice(to, 0, row);
+      return next;
+    });
   };
 
   const calculateRowTotal = (item: ProductRow) => {
@@ -453,31 +525,71 @@ export default function AddQuotePage() {
     </>
   );
 
-  const productOptions = (current: string, kind: CatalogKind | '') => (
-    <>
-      <option value="">{!kind ? 'Select group first' : kind === 'service' ? 'Select service' : 'Select product'}</option>
-      {kind && services.filter(service => service.kind === kind).map(service => (
-        <option key={service.id} value={service.product_service_name}>{service.product_service_name}</option>
-      ))}
-      {current && !services.some(service => service.product_service_name === current) && (
-        <option value={current}>{current} (archived)</option>
-      )}
-    </>
-  );
+  // Searchable pickers: values stay the names the form already stores (client / POC / product).
+  const productChoices = (kind: CatalogKind | '') =>
+    kind ? services.filter(service => service.kind === kind).map(service => ({ id: service.id, label: service.product_service_name })) : [];
+  const productValue = (current: string): SearchableSelectOption | null => {
+    if (!current) return null;
+    const service = services.find(s => s.product_service_name === current);
+    return service ? { id: service.id, label: current } : { id: `archived:${current}`, label: `${current} (archived)` };
+  };
 
-  const subTotal = items.reduce((sum, item) => sum + item.amount, 0);
-  const taxAmount = (subTotal * taxPercentage) / 100;
-  const total = subTotal + taxAmount;
-  const totalCost = total * 1;
+  const selectedClient = clients.find(c => c.company_name === quoteDetails.client);
+  const clientChoices = clients.map(c => ({ id: c.id, label: c.company_name }));
+  const pocChoices = (selectedClient?.pocs ?? []).map(p => ({ id: p.id, label: p.poc_name, sublabel: p.designation || undefined }));
+  const clientValue = quoteDetails.client
+    ? { id: selectedClient?.id ?? quoteDetails.client, label: quoteDetails.client }
+    : null;
+  const selectedPoc = selectedClient?.pocs.find(p => p.poc_name === quoteDetails.poc);
+  const pocValue = quoteDetails.poc
+    ? { id: selectedPoc?.id ?? quoteDetails.poc, label: quoteDetails.poc, sublabel: selectedPoc?.designation || undefined }
+    : null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Derived from each line's quantity x unit price, so every edit re-totals at once.
+  const subTotal = items.reduce((sum, item) => sum + calculateRowTotal(item), 0);
+  // Same as the backend (Quote.calculate_totals): the discount is that % of the Sub Total
+  // (to the paisa), and tax is on the amount after the discount.
+  const discountAmount = Math.round(subTotal * discountPercentage) / 100;
+  const taxableAmount = subTotal - discountAmount;
+  const taxAmount = (taxableAmount * taxPercentage) / 100;
+  const total = taxableAmount + taxAmount;
+
+  // Every amount on the page: the viewer's number grouping, always 2 decimals.
+  const money = (value: number) =>
+    value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // What the API requires, checked first so each problem shows under its own field.
+  const validate = (): FormErrors => {
+    const found: FormErrors = {};
+    const kind = projectId ? 'project' : 'quote';
+    if (!quoteDetails.quoteName.trim()) found[`${kind}_name`] = `Enter a ${kind} name.`;
+    if (!quoteDetails.dateOfIssue) found[projectId ? 'start_date' : 'date_of_issue'] = 'Choose the date of issue.';
+    if (!quoteDetails.dueDate) found[projectId ? 'end_date' : 'due_date'] = 'Choose the end date.';
+    if (projectId) return found; // a project edit saves only these header fields
+    if (!quoteDetails.client) found.client = 'Select a client.';
+    const lines = items.filter(item => item.product);
+    if (lines.length === 0) found.items = 'Add at least one product or service.';
+    lines.forEach(item => {
+      if (!(item.quantity >= 1)) found[`item:${item.id}:quantity`] = 'Must be at least 1';
+      if (item.unit_price < 0) found[`item:${item.id}:unit_price`] = "Can't be negative";
+    });
+    return found;
+  };
+
+  const handleSubmit = async (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
+    if (submittingRef.current) return;
+    const found = validate();
+    if (Object.keys(found).length > 0) {
+      setErrors(found);
+      toast.error('Please fix the highlighted fields.');
+      return;
+    }
+    submittingRef.current = true;
     setIsSaving(true);
     setErrors({});
 
     try {
-      const selectedClient = clients.find(c => c.company_name === quoteDetails.client);
-
       let pocId: number | null = null;
       if (selectedClient && quoteDetails.poc) {
         const selectedPoc = selectedClient.pocs.find(p => p.poc_name === quoteDetails.poc);
@@ -513,6 +625,7 @@ export default function AddQuotePage() {
         client: selectedClient?.id || null,
         ...(pocId && { poc: pocId }),
         tax_percentage: taxPercentage,
+        discount_percentage: discountPercentage,
         items: quoteItems,
         // Link this quote back to the project it's being raised for
         // (e.g. a Phase 2 quote), if created from that project's page
@@ -535,6 +648,7 @@ export default function AddQuotePage() {
       }
 
       if (response.status >= 200 && response.status < 300) {
+        setIsDirty(false);
         toast.success(`${projectId ? 'Project' : 'Quote'} ${isEditMode ? 'updated' : 'created'} successfully`);
         if (projectId) {
           navigate(`/projects/${projectId}`);
@@ -558,7 +672,30 @@ export default function AddQuotePage() {
         toast.error(`Failed to ${isEditMode ? 'update' : 'create'} ${projectId ? 'project' : 'quote'}`);
       }
     } finally {
+      submittingRef.current = false;
       setIsSaving(false);
+    }
+  };
+
+  // Browser refresh / tab close with unsaved edits gets the browser's own "leave site?" prompt.
+  useEffect(() => {
+    if (!isDirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [isDirty]);
+
+  const backPath = projectId ? `/projects/${projectId}` : forProjectId ? `/projects/${forProjectId}?tab=Finances` : '/pipeline';
+  const backLabel = projectId || forProjectId ? 'Project Details' : 'Pipeline';
+  // Back / Cancel: confirm first when there are unsaved edits.
+  const requestLeave = () => {
+    if (isDirty) {
+      setIsLeaveConfirmOpen(true);
+    } else {
+      navigate(backPath);
     }
   };
 
@@ -569,6 +706,8 @@ export default function AddQuotePage() {
     };
     setClients(prev => [...prev, clientWithPocs]);
     setQuoteDetails(prev => ({ ...prev, client: clientWithPocs.company_name, poc: '' }));
+    setIsDirty(true);
+    clearErrors('client', 'poc');
   };
 
   const handleServiceAdded = (newService: CatalogItem) => {
@@ -602,504 +741,568 @@ export default function AddQuotePage() {
     fetchClients().then(() => {
       // Auto-select the new POC
       setQuoteDetails(prev => ({ ...prev, poc: newPOC.poc_name }));
+      setIsDirty(true);
     });
   };
 
+  const pageTitle = projectId ? 'Edit Project' : quoteId ? 'Edit Quotation' : 'Create Quotation';
+  const subtitle = projectId
+    ? 'Update the project name, dates and client.'
+    : forProjectId
+      ? `A follow-up quotation for ${projectSummary?.project_name || 'this project'}; it adds to the project's budget.`
+      : quoteId
+        ? `Quotation #${quoteId}${isConfirmedQuote ? ' · a project exists, so its client and dates are locked' : ''}`
+        : 'Add the client, line items and pricing. New quotations are saved as Confirmed.';
+  const saveLabel = projectId ? 'Save Project' : quoteId ? 'Update Quotation' : 'Save Quotation';
+  const pricedLines = items.filter(item => item.product).length;
+  const nameError = errors.quote_name || errors.project_name;
+  const issueError = errors.date_of_issue || errors.start_date;
+  const dueError = errors.due_date || errors.end_date;
+  const pricingError = errors.discount_percentage || errors.tax_percentage;
+
   return (
     <Layout userRole="admin" currentPage="pipeline" onNavigate={() => { }}>
-      <div className="px-2 sm:px-4 md:px-6 lg:px-8">
-        <div className="max-w-[1600px] mx-auto py-4 sm:py-6 md:py-8">
-          <div className="flex items-center gap-2 text-xs sm:text-sm mb-4 sm:mb-6">
+      <div className="mx-auto w-full max-w-[1360px]">
+        <header className="mb-6">
+          <div className="flex items-start gap-3">
             <button
-              onClick={() => navigate(
-                projectId ? `/projects/${projectId}` :
-                  forProjectId ? `/projects/${forProjectId}?tab=Finances` :
-                    '/pipeline'
-              )}
-              className="text-teal-700 hover:text-teal-800 font-semibold transition-colors flex items-center gap-1"
+              type="button"
+              onClick={requestLeave}
+              aria-label={`Back to ${backLabel}`}
+              title={`Back to ${backLabel}`}
+              className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
             >
-              <ArrowLeft size={16} className="hidden sm:block" />
-              <ArrowLeft size={14} className="sm:hidden" />
-              {projectId || forProjectId ? 'Project Details' : 'Pipeline'}
+              <ArrowLeft size={16} />
             </button>
-            <span className="text-gray-400 dark:text-gray-600">/</span>
-            <span className="text-gray-700 font-medium dark:text-gray-300">{isEditMode ? 'Edit' : 'Add'} {projectId ? 'Project' : 'Quote'} Details</span>
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold text-gray-900 dark:text-white">{pageTitle}</h1>
+              <p className="mt-0.5 text-[13px] text-gray-500 dark:text-gray-400">{subtitle}</p>
+            </div>
           </div>
+        </header>
 
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden relative dark:bg-gray-900 dark:border-gray-800">
-            {isLoadingData && (
-              <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-20 flex items-center justify-center dark:bg-gray-900/70">
-                <div className="text-center">
-                  <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-teal-600 mb-4 dark:border-gray-700"></div>
-                  <p className="text-gray-600 font-medium dark:text-gray-300">Loading {projectId ? 'project' : 'quote'} data...</p>
-                </div>
-              </div>
-            )}
-
-            <div className="p-4 sm:p-6 md:p-8 border-b border-gray-100 dark:border-gray-800">
-              <h1 className="text-lg sm:text-xl font-bold text-gray-800 mb-6 sm:mb-8 dark:text-white">{isEditMode ? 'Edit' : 'Add'} {projectId ? 'Project' : 'Quote'} Details</h1>
-
-              {forProjectId && (
-                <div className="mb-6 sm:mb-8 border border-gray-200 rounded-lg bg-gray-50 p-4 sm:p-5 dark:border-gray-800 dark:bg-gray-800">
-                  <p className="text-sm font-semibold text-gray-700 mb-3 dark:text-gray-300">
-                    Current budget for {projectSummary?.project_name || 'this project'}
-                  </p>
-                  {isLoadingProjectSummary ? (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Loading project budget...</p>
-                  ) : projectSummary ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-                      <div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Total budget</p>
-                        <p className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">
-                          {projectTotalBudget.toLocaleString()} {projectCurrency}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Used budget</p>
-                        <p className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">
-                          {projectUsedBudget.toLocaleString()} {projectCurrency}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Remaining budget</p>
-                        <p className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">
-                          {projectRemainingBudget.toLocaleString()} {projectCurrency}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Total hours</p>
-                        <p className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">{projectTotalHours}h</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Remaining hours</p>
-                        <p className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">{projectRemainingHours.toFixed(2)}h</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">No budget set for this project yet.</p>
-                  )}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 lg:gap-x-24 gap-y-4 sm:gap-y-6">
-                <div className="space-y-4 sm:space-y-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                    <label className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-300">Date of Issue</label>
-                    <input
-                      type="date"
-                      value={quoteDetails.dateOfIssue}
-                      onChange={(e) => handleDetailChange('dateOfIssue', e.target.value)}
-                      disabled={isConfirmedQuote}
-                      className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-gray-100 disabled:cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500 dark:disabled:bg-gray-800/50"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                    <label className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-300">Client</label>
-                    <div className="flex gap-2 items-center">
-                      <div className="relative flex-1">
-                        <select
-                          value={quoteDetails.client}
-                          onChange={(e) => handleDetailChange('client', e.target.value)}
-                          className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-gray-100 disabled:cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500 dark:disabled:bg-gray-800/50"
-                          disabled={isLoadingData || isConfirmedQuote}
-                        >
-                          <option value="">
-                            {isLoadingData ? 'Loading clients...' : 'Enter Client Name'}
-                          </option>
-                          {clients.map(client => (
-                            <option key={client.id} value={client.company_name}>
-                              {client.company_name}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsAddClientModalOpen(true)}
-                        disabled={isConfirmedQuote}
-                        className="flex-shrink-0 flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-teal-700"
-                        title="Add New Client"
-                      >
-                        <Plus size={20} strokeWidth={2.5} />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                    <label className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-300">POC</label>
-                    <div className="flex gap-2 items-center">
-                      <div className="relative flex-1">
-                        <select
-                          value={quoteDetails.poc}
-                          onChange={(e) => handleDetailChange('poc', e.target.value)}
-                          className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-gray-100 disabled:cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500 dark:disabled:bg-gray-800/50"
-                          disabled={!quoteDetails.client || isLoadingData || isConfirmedQuote}
-                        >
-                          <option value="">
-                            {!quoteDetails.client ? 'Select client first' : 'Select POC'}
-                          </option>
-                          {quoteDetails.client && clients
-                            .find(c => c.company_name === quoteDetails.client)
-                            ?.pocs.map(poc => (
-                              <option key={poc.id} value={poc.poc_name}>
-                                {poc.poc_name} - {poc.designation}
-                              </option>
-                            ))}
-                        </select>
-                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsAddPOCModalOpen(true)}
-                        disabled={!quoteDetails.client || isConfirmedQuote}
-                        className="flex-shrink-0 flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Add New POC"
-                      >
-                        <Plus size={20} strokeWidth={2.5} />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                    <label className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-300">{projectId ? 'Project' : 'Quote'} Name</label>
-                    <div className="flex-1">
-                      <input
-                        type="text"
-                        placeholder={`Enter ${projectId ? 'Project' : 'Quote'} Name`}
-                        value={quoteDetails.quoteName}
-                        onChange={(e) => handleDetailChange('quoteName', e.target.value)}
-                        maxLength={25}
-                        disabled={isConfirmedQuote}
-                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-gray-100 disabled:cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500 dark:disabled:bg-gray-800/50"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">{quoteDetails.quoteName.length}/25 characters (alphabets only)</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4 sm:space-y-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                    <label className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-300">End Date</label>
-                    <input
-                      type="date"
-                      value={quoteDetails.dueDate}
-                      onChange={(e) => handleDetailChange('dueDate', e.target.value)}
-                      disabled={isConfirmedQuote}
-                      className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 disabled:bg-gray-100 disabled:cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500 dark:disabled:bg-gray-800/50"
-                    />
-                  </div>
-                  {/* No status on create - a new quote is saved as Confirmed */}
-                  {isEditMode && (
-                    <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] items-start sm:items-center gap-2 sm:gap-6">
-                      <label className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-300">Status</label>
-                      <div className="relative">
-                        <select
-                          value={quoteDetails.status}
-                          onChange={(e) => handleDetailChange('status', e.target.value)}
-                          className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-gray-300 rounded text-sm sm:text-base appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 cursor-pointer dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                          disabled={isLoadingData || statusChoices.length === 0}
-                        >
-                          <option value="" disabled>Select Status</option>
-                          {statusChoices.map(choice => (
-                            <option key={choice.value} value={choice.value}>
-                              {choice.label}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none dark:text-gray-500" />
-                      </div>
-                    </div>
-                  )}
-                </div>
+        <div className="relative space-y-6">
+          {isLoadingData && (
+            <div role="status" className="absolute inset-0 z-20 flex items-start justify-center rounded-lg bg-white/70 pt-24 backdrop-blur-sm dark:bg-gray-950/70">
+              <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <LoaderIcon className="h-5 w-5 animate-spin text-teal-700 dark:text-violet-300" />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Loading {projectId ? 'project' : 'quotation'}…</span>
               </div>
             </div>
+          )}
 
-            <div className="p-4 sm:p-6 md:p-8 pb-0">
-              <div className="hidden lg:block border border-gray-200 rounded-lg overflow-hidden dark:border-gray-800">
-                <div className="grid grid-cols-[50px_150px_2fr_200px_140px_140px_50px] gap-4 bg-gray-50 border-b border-gray-200 px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">
-                  <div></div>
-                  <div>Group</div>
-                  <div>Product | Description</div>
-                  <div>Quantity | Unit</div>
-                  <div className="text-right">Unit Price</div>
-                  <div className="text-right">Amount</div>
-                  <div></div>
-                </div>
-
-                <div className="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-900">
-                  {items.map((item) => (
-                    <div key={item.id} className="px-4 py-4 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
-                      <div className="grid grid-cols-[50px_150px_2fr_200px_140px_140px_50px] gap-4 items-start">
-                        <div className="flex justify-center self-center cursor-move text-gray-400 hover:text-gray-600">
-                          <GripVertical size={18} />
-                        </div>
-                        <div>
-                          <div className="relative">
-                            <select
-                              value={rowKind(item)}
-                              onChange={(e) => handleItemChange(item.id, 'group', e.target.value)}
-                              aria-label="Group"
-                              className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                            >
-                              {groupOptions}
-                            </select>
-                            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex gap-2 items-center">
-                            <div className="relative flex-1">
-                              <select
-                                value={item.product}
-                                onChange={(e) => handleItemChange(item.id, 'product', e.target.value)}
-                                disabled={!rowKind(item) && !item.product}
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white font-medium disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                              >
-                                {productOptions(item.product, rowKind(item))}
-                              </select>
-                              <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
-                            </div>
-                            {catalogPermissions.can_manage && (
-                              <button
-                                type="button"
-                                onClick={() => { setQuickAddKind(rowKind(item) || 'service'); setIsAddServiceModalOpen(true); }}
-                                className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors shadow-sm"
-                              >
-                                <Plus size={16} strokeWidth={2.5} />
-                              </button>
-                            )}
-                          </div>
-                          <textarea
-                            value={item.description}
-                            onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
-                            placeholder="Product or service description"
-                            className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm text-gray-600 h-20 resize-none focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:placeholder-gray-500"
-                          />
-                        </div>
-                        <div className="flex space-x-2">
-                          <input
-                            type="number"
-                            value={item.quantity}
-                            onChange={(e) => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                            className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
-                          />
-                          <div className="relative w-24 shrink-0">
-                            <select
-                              value={item.unit}
-                              onChange={(e) => handleItemChange(item.id, 'unit', e.target.value)}
-                              className="w-full px-2 py-2.5 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                              disabled={isLoadingData || unitChoices.length === 0}
-                            >
-                              {unitChoices.map(choice => (
-                                <option key={choice.value} value={choice.value}>
-                                  {choice.label}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown size={14} className="absolute right-1 top-3 text-gray-400 pointer-events-none dark:text-gray-500" />
-                          </div>
-                        </div>
-                        <div>
-                          <input
-                            type="number"
-                            placeholder="Price"
-                            value={item.unit_price || ''}
-                            onChange={(e) => handleItemChange(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                            className="w-full px-3 py-2.5 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 placeholder-gray-400 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
-                          />
-                        </div>
-                        <div className="self-center text-right text-sm font-bold text-gray-900 dark:text-white">
-                          {calculateRowTotal(item).toFixed(2)}
-                        </div>
-                        <button
-                          onClick={() => removeRow(item.id)}
-                          className="self-center flex justify-center p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                          aria-label="Remove row"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+          {forProjectId && (
+            <section aria-labelledby="project-budget-heading" className={SECTION}>
+              <h2 id="project-budget-heading" className={SECTION_TITLE}>
+                Current budget · {projectSummary?.project_name || 'this project'}
+              </h2>
+              {isLoadingProjectSummary ? (
+                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Loading project budget…</p>
+              ) : projectSummary ? (
+                <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+                  {[
+                    ['Total budget', `${money(projectTotalBudget)} ${projectCurrency}`],
+                    ['Used budget', `${money(projectUsedBudget)} ${projectCurrency}`],
+                    ['Remaining budget', `${money(projectRemainingBudget)} ${projectCurrency}`],
+                    ['Total hours', `${projectTotalHours}h`],
+                    ['Remaining hours', `${projectRemainingHours.toFixed(2)}h`],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <dt className="text-xs text-gray-500 dark:text-gray-400">{label}</dt>
+                      <dd className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900 dark:text-white">{value}</dd>
                     </div>
                   ))}
-                </div>
+                </dl>
+              ) : (
+                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">No budget set for this project yet.</p>
+              )}
+            </section>
+          )}
+
+          <section aria-labelledby="quote-details-heading" className={SECTION}>
+            <h2 id="quote-details-heading" className={SECTION_TITLE}>{projectId ? 'Project Details' : 'Quotation Details'}</h2>
+            {/* min-[768px] rather than md: Tailwind orders arbitrary min-[] variants only among
+                themselves, so md:grid-cols-2 would override the 1200px three-column rule. */}
+            <div className="mt-4 grid grid-cols-1 gap-4 min-[768px]:grid-cols-2 min-[1200px]:grid-cols-3">
+              <div>
+                <label htmlFor="quote-date-of-issue" className={LABEL}>
+                  Date of Issue <span className="text-red-600" aria-hidden="true">*</span>
+                </label>
+                <input
+                  id="quote-date-of-issue"
+                  type="date"
+                  value={quoteDetails.dateOfIssue}
+                  onChange={(e) => handleDetailChange('dateOfIssue', e.target.value)}
+                  disabled={isConfirmedQuote}
+                  aria-required="true"
+                  aria-invalid={!!issueError}
+                  aria-describedby={issueError ? 'quote-date-of-issue-error' : undefined}
+                  className={fieldClass(!!issueError)}
+                />
+                <FieldError id="quote-date-of-issue-error" message={issueError} />
+              </div>
+              <div>
+                <label htmlFor="quote-due-date" className={LABEL}>
+                  End Date <span className="text-red-600" aria-hidden="true">*</span>
+                </label>
+                <input
+                  id="quote-due-date"
+                  type="date"
+                  value={quoteDetails.dueDate}
+                  onChange={(e) => handleDetailChange('dueDate', e.target.value)}
+                  disabled={isConfirmedQuote}
+                  aria-required="true"
+                  aria-invalid={!!dueError}
+                  aria-describedby={dueError ? 'quote-due-date-error' : undefined}
+                  className={fieldClass(!!dueError)}
+                />
+                <FieldError id="quote-due-date-error" message={dueError} />
+              </div>
+              <div className="min-[768px]:col-span-2 min-[1200px]:col-span-1">
+                <label htmlFor="quote-name" className={LABEL}>
+                  {projectId ? 'Project' : 'Quote'} Name <span className="text-red-600" aria-hidden="true">*</span>
+                </label>
+                <input
+                  id="quote-name"
+                  type="text"
+                  placeholder={`Enter ${projectId ? 'project' : 'quote'} name`}
+                  value={quoteDetails.quoteName}
+                  onChange={(e) => handleDetailChange('quoteName', e.target.value)}
+                  maxLength={25}
+                  disabled={isConfirmedQuote}
+                  aria-required="true"
+                  aria-invalid={!!nameError}
+                  aria-describedby={nameError ? 'quote-name-error' : 'quote-name-hint'}
+                  className={fieldClass(!!nameError)}
+                />
+                {nameError ? (
+                  <FieldError id="quote-name-error" message={nameError} />
+                ) : (
+                  <p id="quote-name-hint" className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {quoteDetails.quoteName.length}/25 characters, letters and spaces only
+                  </p>
+                )}
               </div>
 
-              <div className="lg:hidden space-y-4">
-                {items.map((item, index) => (
-                  <div key={item.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3 dark:bg-gray-800 dark:border-gray-700">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <GripVertical size={16} className="text-gray-400 dark:text-gray-500" />
-                        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Item #{index + 1}</span>
-                      </div>
-                      <button
-                        onClick={() => removeRow(item.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-500 transition-colors dark:text-gray-500 dark:hover:text-red-400"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">Group</label>
-                      <div className="relative">
-                        <select
-                          value={rowKind(item)}
-                          onChange={(e) => handleItemChange(item.id, 'group', e.target.value)}
-                          aria-label="Group"
-                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                        >
-                          {groupOptions}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">Product/Service</label>
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <select
-                            value={item.product}
-                            onChange={(e) => handleItemChange(item.id, 'product', e.target.value)}
-                            disabled={!rowKind(item) && !item.product}
-                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm appearance-none bg-white disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
+              <div>
+                <label htmlFor="quote-client" className={LABEL}>
+                  Client {!projectId && <span className="text-red-600" aria-hidden="true">*</span>}
+                </label>
+                <div className="flex gap-2">
+                  <div className="min-w-0 flex-1">
+                    <SearchableSelect
+                      id="quote-client"
+                      size="md"
+                      options={clientChoices}
+                      value={clientValue}
+                      onChange={(option) => handleDetailChange('client', option?.label ?? '')}
+                      placeholder={isLoadingData ? 'Loading clients…' : 'Search clients'}
+                      emptyMessage="No clients match"
+                      disabled={isLoadingData || isConfirmedQuote}
+                      invalid={!!errors.client}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddClientModalOpen(true)}
+                    disabled={isConfirmedQuote}
+                    aria-label="Add new client"
+                    title="Add new client"
+                    className={`${ICON_BUTTON} h-10 w-10`}
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
+                <FieldError id="quote-client-error" message={errors.client} />
+              </div>
+              <div>
+                <label htmlFor="quote-poc" className={LABEL}>POC</label>
+                <div className="flex gap-2">
+                  <div className="min-w-0 flex-1">
+                    <SearchableSelect
+                      id="quote-poc"
+                      size="md"
+                      options={pocChoices}
+                      value={pocValue}
+                      onChange={(option) => handleDetailChange('poc', option?.label ?? '')}
+                      placeholder={!quoteDetails.client ? 'Select a client first' : pocChoices.length ? 'Search contacts' : 'No contacts yet, add one'}
+                      emptyMessage="No contacts match"
+                      disabled={!quoteDetails.client || isLoadingData || isConfirmedQuote}
+                      invalid={!!errors.poc}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddPOCModalOpen(true)}
+                    disabled={!quoteDetails.client || isConfirmedQuote}
+                    aria-label="Add new contact"
+                    title={quoteDetails.client ? 'Add new contact' : 'Select a client first'}
+                    className={`${ICON_BUTTON} h-10 w-10`}
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
+                <FieldError id="quote-poc-error" message={errors.poc} />
+              </div>
+              {/* No status on create - a new quote is saved as Confirmed */}
+              {isEditMode && (
+                <div>
+                  <label htmlFor="quote-status" className={LABEL}>Status</label>
+                  <div className="relative">
+                    <select
+                      id="quote-status"
+                      value={quoteDetails.status}
+                      onChange={(e) => handleDetailChange('status', e.target.value)}
+                      disabled={isLoadingData || statusChoices.length === 0}
+                      aria-invalid={!!errors.status}
+                      className={`${fieldClass(!!errors.status, 'h-10 pl-3 pr-9')} appearance-none`}
+                    >
+                      <option value="" disabled>Select status</option>
+                      {statusChoices.map(choice => (
+                        <option key={choice.value} value={choice.value}>{choice.label}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                  </div>
+                  <FieldError id="quote-status-error" message={errors.status} />
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* A project edit saves only the details above - lines and pricing belong to its quotes. */}
+          {!projectId && (
+            <section aria-labelledby="quote-items-heading" className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-5 pt-5 pb-4">
+                <h2 id="quote-items-heading" className={SECTION_TITLE}>Line Items</h2>
+                <p className="text-[13px] text-gray-500 dark:text-gray-400">
+                  {items.length} {items.length === 1 ? 'line' : 'lines'}{items.length > 1 ? ' · drag the handle to reorder' : ''}
+                </p>
+              </div>
+
+              {items.length === 0 ? (
+                <div className="mx-5 flex flex-col items-center rounded-lg border border-dashed border-gray-300 px-6 py-10 text-center dark:border-gray-700">
+                  <ListPlus size={28} aria-hidden="true" className="text-gray-400 dark:text-gray-500" />
+                  <p className="mt-3 text-sm font-medium text-gray-900 dark:text-white">No line items yet</p>
+                  <p className="mt-1 max-w-sm text-[13px] text-gray-500 dark:text-gray-400">
+                    Add a line, then pick its group and product or service. The description, unit and price fill in from the catalog.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={addNewRow}
+                    className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-md bg-teal-700 px-3.5 text-sm font-semibold text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+                  >
+                    <Plus size={16} aria-hidden="true" /> Add first line
+                  </button>
+                </div>
+              ) : (
+                // relative: the sr-only header text is absolutely positioned and would otherwise
+                // escape this scroll box and widen the whole page.
+                <div className="relative overflow-x-auto border-y border-gray-200 dark:border-gray-800">
+                  <table className="w-full min-w-[1080px] table-fixed border-collapse text-sm">
+                    <colgroup>
+                      <col className="w-10" />
+                      <col className="w-[136px]" />
+                      <col className="w-[220px]" />
+                      <col />
+                      <col className="w-[88px]" />
+                      <col className="w-[116px]" />
+                      <col className="w-[124px]" />
+                      <col className="w-[124px]" />
+                      <col className="w-12" />
+                    </colgroup>
+                    <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
+                      <tr>
+                        <th scope="col" className="px-2 py-2.5"><span className="sr-only">Reorder</span></th>
+                        <th scope="col" className="px-2 py-2.5 text-left">Group</th>
+                        <th scope="col" className="px-2 py-2.5 text-left">Product / Service</th>
+                        <th scope="col" className="px-2 py-2.5 text-left">Description</th>
+                        <th scope="col" className="px-2 py-2.5 text-right">Quantity</th>
+                        <th scope="col" className="px-2 py-2.5 text-left">Unit</th>
+                        <th scope="col" className="px-2 py-2.5 text-right">Unit Price</th>
+                        <th scope="col" className="px-2 py-2.5 text-right">Amount</th>
+                        <th scope="col" className="px-2 py-2.5"><span className="sr-only">Actions</span></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                      {items.map((item, index) => {
+                        const kind = rowKind(item);
+                        const line = `line ${index + 1}`;
+                        const quantityError = errors[`item:${item.id}:quantity`];
+                        const priceError = errors[`item:${item.id}:unit_price`];
+                        return (
+                          <tr
+                            key={item.id}
+                            onDragOver={(e) => { if (dragIndex !== null) e.preventDefault(); }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              if (dragIndex !== null) moveRow(dragIndex, index);
+                              setDragIndex(null);
+                            }}
+                            className={`align-top transition-colors hover:bg-gray-50/70 dark:hover:bg-gray-800/40 ${dragIndex === index ? 'opacity-50' : ''}`}
                           >
-                            {productOptions(item.product, rowKind(item))}
-                          </select>
-                          <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
-                        </div>
-                        {catalogPermissions.can_manage && (
-                          <button
-                            type="button"
-                            onClick={() => { setQuickAddKind(rowKind(item) || 'service'); setIsAddServiceModalOpen(true); }}
-                            className="flex-shrink-0 flex items-center justify-center w-9 h-9 bg-teal-700 hover:bg-teal-800 text-white rounded transition-colors"
-                          >
-                            <Plus size={16} strokeWidth={2.5} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">Description</label>
-                      <textarea
-                        value={item.description}
-                        onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
-                        placeholder="Product or service description"
-                        className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 h-16 resize-none focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:placeholder-gray-500"
+                            <td className="px-2 py-2">
+                              <button
+                                id={`quote-line-handle-${item.id}`}
+                                type="button"
+                                draggable
+                                onDragStart={(e) => {
+                                  setDragIndex(index);
+                                  e.dataTransfer.effectAllowed = 'move';
+                                  e.dataTransfer.setData('text/plain', String(index));
+                                }}
+                                onDragEnd={() => setDragIndex(null)}
+                                onKeyDown={(e) => {
+                                  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                                  e.preventDefault();
+                                  moveRow(index, e.key === 'ArrowUp' ? index - 1 : index + 1);
+                                  // Moving the row re-inserts it; keep focus on its handle.
+                                  requestAnimationFrame(() => document.getElementById(`quote-line-handle-${item.id}`)?.focus());
+                                }}
+                                aria-label={`Reorder ${line}: drag, or press the up and down arrow keys`}
+                                title="Drag to reorder (or focus and use the arrow keys)"
+                                className="flex h-9 w-6 cursor-grab items-center justify-center rounded text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-teal-600 active:cursor-grabbing dark:text-gray-500 dark:hover:text-gray-300"
+                              >
+                                <GripVertical size={16} aria-hidden="true" />
+                              </button>
+                            </td>
+                            <td className="px-2 py-2">
+                              <div className="relative">
+                                <select
+                                  value={kind}
+                                  onChange={(e) => handleItemChange(item.id, 'group', e.target.value)}
+                                  aria-label={`Group, ${line}`}
+                                  className={`${fieldClass(false, 'h-9 pl-2.5 pr-7')} appearance-none`}
+                                >
+                                  {groupOptions}
+                                </select>
+                                <ChevronDown size={14} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                              </div>
+                            </td>
+                            <td className="px-2 py-2">
+                              <div className="flex gap-1.5">
+                                <div className="min-w-0 flex-1">
+                                  <SearchableSelect
+                                    size="sm"
+                                    portal
+                                    options={productChoices(kind)}
+                                    value={productValue(item.product)}
+                                    onChange={(option) => option && handleItemChange(item.id, 'product', option.label)}
+                                    placeholder={!kind ? 'Select group first' : kind === 'service' ? 'Search services' : 'Search products'}
+                                    emptyMessage={`No ${kind === 'product' ? 'products' : 'services'} match`}
+                                    disabled={!kind && !item.product}
+                                    ariaLabel={`Product or service, ${line}`}
+                                  />
+                                </div>
+                                {catalogPermissions.can_manage && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { setQuickAddKind(kind || 'service'); setIsAddServiceModalOpen(true); }}
+                                    aria-label={`Add a new ${kind === 'product' ? 'product' : 'service'} to the catalog`}
+                                    title={`Add a new ${kind === 'product' ? 'product' : 'service'} to the catalog`}
+                                    className={`${ICON_BUTTON} h-9 w-9`}
+                                  >
+                                    <PackagePlus size={16} aria-hidden="true" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-2 py-2">
+                              <textarea
+                                rows={1}
+                                value={item.description}
+                                onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
+                                placeholder="Description"
+                                aria-label={`Description, ${line}`}
+                                className={`${fieldClass(false, 'min-h-9 px-2.5 py-[7px]')} block max-h-32 resize-y leading-5 field-sizing-content`}
+                              />
+                            </td>
+                            <td className="px-2 py-2">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                min={1}
+                                step="any"
+                                placeholder="Qty"
+                                value={item.quantity || ''}
+                                onChange={(e) => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)}
+                                aria-label={`Quantity, ${line}`}
+                                aria-invalid={!!quantityError}
+                                className={`${fieldClass(!!quantityError, 'h-9 px-2.5')} text-right tabular-nums`}
+                              />
+                              {quantityError && <p className="mt-1 text-right text-[11px] leading-4 text-red-600 dark:text-red-400">{quantityError}</p>}
+                            </td>
+                            <td className="px-2 py-2">
+                              <div className="relative">
+                                <select
+                                  value={item.unit}
+                                  onChange={(e) => handleItemChange(item.id, 'unit', e.target.value)}
+                                  disabled={isLoadingData || unitChoices.length === 0}
+                                  aria-label={`Unit, ${line}`}
+                                  className={`${fieldClass(false, 'h-9 pl-2.5 pr-7')} appearance-none`}
+                                >
+                                  {unitChoices.map(choice => (
+                                    <option key={choice.value} value={choice.value}>{choice.label}</option>
+                                  ))}
+                                </select>
+                                <ChevronDown size={14} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                              </div>
+                            </td>
+                            <td className="px-2 py-2">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                min={0}
+                                step="0.01"
+                                placeholder="0.00"
+                                value={item.unit_price || ''}
+                                onChange={(e) => handleItemChange(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                                aria-label={`Unit price, ${line}`}
+                                aria-invalid={!!priceError}
+                                className={`${fieldClass(!!priceError, 'h-9 px-2.5')} text-right tabular-nums`}
+                              />
+                              {priceError && <p className="mt-1 text-right text-[11px] leading-4 text-red-600 dark:text-red-400">{priceError}</p>}
+                            </td>
+                            <td className="px-2 py-2 text-right">
+                              <span className="inline-flex h-9 items-center font-semibold tabular-nums text-gray-900 dark:text-white">
+                                {money(calculateRowTotal(item))}
+                              </span>
+                            </td>
+                            <td className="px-2 py-2">
+                              <button
+                                type="button"
+                                onClick={() => removeRow(item.id)}
+                                aria-label={`Delete ${line}`}
+                                title="Delete line"
+                                className="flex h-9 w-9 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 dark:text-gray-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                              >
+                                <Trash2 size={16} aria-hidden="true" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-6 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  {items.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={addNewRow}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-teal-700 hover:border-teal-600 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-600 dark:border-gray-700 dark:bg-gray-800 dark:text-violet-300 dark:hover:bg-gray-700"
+                    >
+                      <Plus size={16} aria-hidden="true" /> Add row
+                    </button>
+                  )}
+                  <FieldError id="quote-items-error" message={errors.items} />
+                </div>
+
+                <div role="group" aria-labelledby="quote-pricing-heading" className="w-full lg:max-w-sm">
+                  <h3 id="quote-pricing-heading" className="sr-only">Pricing summary</h3>
+                  {/* Discount comes off the Subtotal first; tax is on the amount after it. */}
+                  <div className="grid grid-cols-[1fr_auto_8.5rem] items-center gap-x-3 gap-y-2.5 text-sm">
+                    <span className="col-span-2 text-gray-600 dark:text-gray-400">Subtotal</span>
+                    <span className="text-right tabular-nums text-gray-900 dark:text-gray-100">{money(subTotal)}</span>
+
+                    <label htmlFor="quote-discount" className="text-gray-600 dark:text-gray-400">Discount</label>
+                    <div className="relative w-20">
+                      <input
+                        id="quote-discount"
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        placeholder="0"
+                        value={discountPercentage || ''}
+                        onChange={(e) => {
+                          setDiscountPercentage(Math.min(Math.max(parseFloat(e.target.value) || 0, 0), 100));
+                          setIsDirty(true);
+                          clearErrors('discount_percentage');
+                        }}
+                        className={`${fieldClass(!!errors.discount_percentage, 'h-9 pl-2 pr-6')} text-right tabular-nums`}
                       />
+                      <span aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-gray-500 dark:text-gray-400">%</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">Quantity</label>
-                        <input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">Unit</label>
-                        <div className="relative">
-                          <select
-                            value={item.unit}
-                            onChange={(e) => handleItemChange(item.id, 'unit', e.target.value)}
-                            className="w-full px-2 py-2 border border-gray-300 rounded text-sm appearance-none bg-white focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                            disabled={isLoadingData || unitChoices.length === 0}
-                          >
-                            {unitChoices.map(choice => (
-                              <option key={choice.value} value={choice.value}>
-                                {choice.label}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown size={14} className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none dark:text-gray-500" />
-                        </div>
-                      </div>
+                    <span className="text-right tabular-nums text-gray-900 dark:text-gray-100">{discountAmount > 0 ? '−' : ''}{money(discountAmount)}</span>
+
+                    <span className="col-span-2 font-medium text-gray-900 dark:text-gray-100">Amount After Discount</span>
+                    <span className="text-right font-medium tabular-nums text-gray-900 dark:text-gray-100">{money(taxableAmount)}</span>
+
+                    <label htmlFor="quote-tax" className="text-gray-600 dark:text-gray-400">Tax</label>
+                    <div className="relative w-20">
+                      <select
+                        id="quote-tax"
+                        value={taxPercentage}
+                        onChange={(e) => {
+                          setTaxPercentage(parseFloat(e.target.value));
+                          setIsDirty(true);
+                          clearErrors('tax_percentage');
+                        }}
+                        className={`${fieldClass(!!errors.tax_percentage, 'h-9 pl-2 pr-6')} appearance-none`}
+                      >
+                        <option value="0">0 %</option>
+                        <option value="5">5 %</option>
+                        <option value="10">10 %</option>
+                        <option value="18">18 %</option>
+                      </select>
+                      <ChevronDown size={14} aria-hidden="true" className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">Unit Price</label>
-                        <input
-                          type="number"
-                          placeholder="0.00"
-                          value={item.unit_price || ''}
-                          onChange={(e) => handleItemChange(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-right focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1 dark:text-gray-300">Amount</label>
-                        <div className="px-3 py-2 bg-gray-100 border border-gray-200 rounded text-sm text-right font-bold text-gray-800 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200">
-                          {calculateRowTotal(item).toFixed(2)}
-                        </div>
-                      </div>
+                    <span className="text-right tabular-nums text-gray-900 dark:text-gray-100">{money(taxAmount)}</span>
+
+                    {pricingError && (
+                      <p className="col-span-3 text-xs text-red-600 dark:text-red-400">{pricingError}</p>
+                    )}
+
+                    <div className="col-span-3 -mx-3 mt-1 flex items-baseline justify-between gap-3 rounded-md bg-teal-50 px-3 py-2.5 dark:bg-violet-500/10">
+                      <span className="font-semibold text-gray-900 dark:text-white">Total Quotation Amount</span>
+                      <span className="text-lg font-bold tabular-nums text-teal-800 dark:text-violet-200">
+                        {currency && <span className="mr-1 text-xs font-semibold text-gray-500 dark:text-gray-400">{currency}</span>}
+                        {money(total)}
+                      </span>
                     </div>
                   </div>
-                ))}
+                </div>
               </div>
+            </section>
+          )}
 
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-6 mb-6 sm:mb-8">
+          <div className="sticky bottom-4 z-10 rounded-lg border border-gray-200 bg-white/95 px-5 py-3 shadow-[0_-4px_16px_-8px_rgba(15,23,42,0.18)] backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 [@media(max-height:649px)]:static">
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[13px] text-gray-500 dark:text-gray-400">
+                {!projectId && (
+                  <>
+                    Total{' '}
+                    <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{currency ? `${currency} ` : ''}{money(total)}</span>
+                    {' · '}{pricedLines} {pricedLines === 1 ? 'line' : 'lines'}
+                  </>
+                )}
+                {isDirty && <span className="font-medium text-amber-700 dark:text-amber-400">{projectId ? '' : ' · '}Unsaved changes</span>}
+              </p>
+              <div className="flex gap-2 sm:gap-3">
                 <button
-                  onClick={addNewRow}
-                  className="px-4 sm:px-5 py-2 sm:py-2.5 bg-teal-700 text-white text-sm font-semibold rounded hover:bg-teal-800 transition-colors shadow-sm"
+                  type="button"
+                  onClick={requestLeave}
+                  disabled={isSaving}
+                  className="h-10 flex-1 rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:opacity-60 disabled:cursor-not-allowed sm:flex-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
                 >
-                  Add New Row
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={isSaving || isLoadingData}
+                  aria-busy={isSaving}
+                  className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-teal-700 px-5 text-sm font-semibold text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed sm:flex-none dark:focus:ring-offset-gray-900"
+                >
+                  {isSaving && <LoaderIcon className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                  {isSaving ? 'Saving…' : saveLabel}
                 </button>
               </div>
-            </div>
-
-            <div className="bg-white px-4 sm:px-6 md:px-8 py-4 sm:py-6 mb-8 sm:mb-12 dark:bg-gray-900">
-              <div className="flex flex-col lg:flex-row justify-end items-start gap-8 lg:gap-12">
-                <div className="w-full lg:w-80 space-y-3">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="font-semibold text-gray-800 dark:text-gray-200">Sub Total</span>
-                    <span className="text-gray-700 dark:text-gray-300">{subTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="font-semibold text-gray-800 dark:text-gray-200">Tax</span>
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-20">
-                        <select
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm appearance-none bg-white pr-6 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                          value={taxPercentage}
-                          onChange={(e) => setTaxPercentage(parseFloat(e.target.value))}
-                        >
-                          <option value="0">0 %</option>
-                          <option value="5">5 %</option>
-                          <option value="10">10 %</option>
-                          <option value="18">18 %</option>
-                        </select>
-                        <ChevronDown size={14} className="absolute right-1 top-2 text-gray-500 pointer-events-none dark:text-gray-400" />
-                      </div>
-                      <span className="text-gray-700 w-20 text-right dark:text-gray-300">{taxAmount.toFixed(2)}</span>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center text-sm pt-3 border-t border-gray-200 dark:border-gray-800">
-                    <span className="font-bold text-gray-800 dark:text-gray-100">Total</span>
-                    <span className="text-gray-800 font-bold dark:text-gray-100">{total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                  </div>
-                </div>
-
-                <div className="w-full lg:w-64 space-y-4 lg:border-l border-gray-200 lg:pl-8 dark:border-gray-800">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="font-semibold text-gray-800 dark:text-gray-200">Total Cost</span>
-                    <div className="text-right">
-                      <div className="font-bold text-gray-800 dark:text-gray-100">{totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 sm:p-6 bg-white border-t border-gray-200 flex justify-center sticky bottom-0 z-10 dark:bg-gray-900 dark:border-gray-800">
-              <button
-                onClick={handleSubmit}
-                disabled={isSaving}
-                className="w-full sm:w-auto bg-teal-700 hover:bg-teal-800 text-white font-semibold py-2.5 px-8 sm:px-12 rounded shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSaving ? 'Saving...' : (isEditMode ? 'Update' : 'Save')} {projectId ? 'Project' : 'Quote'}
-              </button>
             </div>
           </div>
         </div>
@@ -1111,17 +1314,14 @@ export default function AddQuotePage() {
         onClientAdded={handleClientAdded}
       />
 
-      {isAddPOCModalOpen && quoteDetails.client && (() => {
-        const selectedClient = clients.find(c => c.company_name === quoteDetails.client);
-        return selectedClient ? (
-          <AddPOCModal
-            companyId={selectedClient.id}
-            companyName={selectedClient.company_name}
-            onSave={handlePOCAdded}
-            onClose={() => setIsAddPOCModalOpen(false)}
-          />
-        ) : null;
-      })()}
+      {isAddPOCModalOpen && selectedClient && (
+        <AddPOCModal
+          companyId={selectedClient.id}
+          companyName={selectedClient.company_name}
+          onSave={handlePOCAdded}
+          onClose={() => setIsAddPOCModalOpen(false)}
+        />
+      )}
 
       <ProductServiceDrawer
         isOpen={isAddServiceModalOpen}
@@ -1130,6 +1330,20 @@ export default function AddQuotePage() {
         permissions={catalogPermissions}
         onClose={() => setIsAddServiceModalOpen(false)}
         onSaved={handleServiceAdded}
+      />
+
+      <ConfirmDialog
+        isOpen={isLeaveConfirmOpen}
+        onClose={() => setIsLeaveConfirmOpen(false)}
+        onConfirm={() => {
+          setIsLeaveConfirmOpen(false);
+          setIsDirty(false);
+          navigate(backPath);
+        }}
+        title="Discard unsaved changes?"
+        message="You have changes on this quotation that haven't been saved. If you leave now, they'll be lost."
+        confirmLabel="Discard changes"
+        cancelLabel="Keep editing"
       />
     </Layout>
   );

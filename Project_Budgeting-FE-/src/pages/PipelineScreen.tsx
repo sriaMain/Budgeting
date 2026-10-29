@@ -1,15 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { Plus, SlidersHorizontal } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { DragDropContext, Droppable, type DropResult } from '@hello-pangea/dnd';
+import { DragDropContext, type DropResult } from '@hello-pangea/dnd';
 import { Layout } from '../components/Layout';
 import { PipelineStatistics } from '../components/PipelineStatistics';
 import { PipelineStage } from '../components/PipelineStage';
-import { QuoteCard } from '../components/QuoteCard';
+import { ErrorState } from '../components/ErrorState';
 import type { PipelineData, Quote, PipelineStage as StageType } from '../types/pipeline.types';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
 import { parseApiErrors } from '../utils/parseApiErrors';
+import { stageLabel } from '../utils/pipelineStages';
 
 interface PipelineScreenProps {
   userRole?: 'admin' | 'user' | 'manager';
@@ -17,15 +18,8 @@ interface PipelineScreenProps {
   onNavigate?: (page: string) => void;
 }
 
-const STAGE_COLORS = {
-  oppurtunity: 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700',
-  scoping: 'bg-blue-50 border-blue-200 dark:bg-blue-500/10 dark:border-blue-900',
-  proposal: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-500/10 dark:border-yellow-900',
-  confirmed: 'bg-green-50 border-green-200 dark:bg-green-500/10 dark:border-green-900',
-  rejected: 'bg-red-50 border-red-200 dark:bg-red-500/10 dark:border-red-900',
-  closed: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-900',
-  cancelled: 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700'
-};
+// Cards rendered per stage before "Show more" (keeps very long stages fast to draw and drag).
+const PAGE_SIZE = 25;
 
 export default function PipelineScreen({
   userRole = 'admin',
@@ -36,17 +30,17 @@ export default function PipelineScreen({
   const [pipelineData, setPipelineData] = useState<PipelineData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set());
+  const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({});
 
   // Filter state
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
 
-  useEffect(() => {
-    loadPipelineData();
-  }, []);
+  // The board fills the screen below the header + KPIs and owns the only scrollbars.
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [boardTop, setBoardTop] = useState(0);
 
-  // Close filter dropdown when clicking outside
+  // Close filter dropdown when clicking outside or pressing Escape
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
@@ -54,10 +48,26 @@ export default function PipelineScreen({
         setShowFilterDropdown(false);
       }
     };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowFilterDropdown(false);
+    };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, [showFilterDropdown]);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (boardRef.current) setBoardTop(boardRef.current.getBoundingClientRect().top + window.scrollY);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [pipelineData, selectedStatuses.length]);
 
   const loadPipelineData = async () => {
     try {
@@ -73,7 +83,8 @@ export default function PipelineScreen({
           total_quotes: rawStats.total_quotes ?? 0,
           average_quote: rawStats.average_quote ?? 0,
           total_sum: rawStats.total_sum ?? rawStats.revenue ?? 0,
-          total_margin: rawStats.total_margin ?? rawStats.expected_profit ?? 0
+          total_margin: rawStats.total_margin ?? rawStats.expected_profit ?? 0,
+          avg_margin_percentage: rawStats.avg_margin_percentage,
         };
 
         const normalizedData = {
@@ -85,13 +96,17 @@ export default function PipelineScreen({
       } else {
         throw new Error('Invalid response from server');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load pipeline data:', err);
       setError('Failed to load pipeline data. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadPipelineData();
+  }, []);
 
   const handleQuoteClick = (quote: Quote) => {
     navigate(`/pipeline/quote/${quote.quote_no}`);
@@ -118,15 +133,6 @@ export default function PipelineScreen({
   };
 
   const activeFilterCount = selectedStatuses.length;
-
-  const toggleStage = (stageName: string) => {
-    setExpandedStages(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(stageName)) newSet.delete(stageName);
-      else newSet.add(stageName);
-      return newSet;
-    });
-  };
 
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId } = result;
@@ -197,6 +203,8 @@ export default function PipelineScreen({
         }
         return stage;
       });
+      // A dropped card joins the shown cards rather than pushing the last one behind "Show more".
+      setVisibleCounts(prev => ({ ...prev, [destStageId]: (prev[destStageId] ?? PAGE_SIZE) + 1 }));
     }
 
     const oldData = { ...pipelineData };
@@ -213,7 +221,7 @@ export default function PipelineScreen({
           throw new Error('Failed to update quote status');
         }
 
-        toast.success(`Quote #${movedQuote.quote_no} moved to ${destStage.title}`);
+        toast.success(`Quote #${movedQuote.quote_no} moved to ${stageLabel(destStage.title)}`);
       } catch (err) {
         console.error('Failed to update quote status:', err);
         const apiErrors = parseApiErrors(err);
@@ -223,106 +231,64 @@ export default function PipelineScreen({
     }
   };
 
-  if (isLoading) {
-    return (
-      <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
-      </Layout>
-    );
-  }
-
-  if (error) {
-    return (
-      <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
-        <div className="flex flex-col items-center justify-center min-h-[400px]">
-          <div className="text-red-600 mb-4 dark:text-red-400">{error}</div>
-          <button
-            onClick={loadPipelineData}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Retry
-          </button>
-        </div>
-      </Layout>
-    );
-  }
-
-  if (!pipelineData) {
-    return null;
-  }
-
-  // Apply filters to pipeline data
-  const filteredPipelineData = {
-    ...pipelineData,
-    stages: pipelineData.stages.map(stage => {
-      if (selectedStatuses.length === 0) {
-        return stage; // No filters applied
-      }
-
-      // Filter quotes based on selected statuses
-      const filteredQuotes = stage.quotes.filter(quote =>
-        selectedStatuses.includes(stage.title)
-      );
-
-      return {
-        ...stage,
-        quotes: selectedStatuses.includes(stage.title) ? stage.quotes : [],
-        count: selectedStatuses.includes(stage.title) ? stage.count : 0
-      };
-    })
-  };
+  // Filtering shows only the chosen stages (the summary always covers every quote).
+  const visibleStages = pipelineData
+    ? pipelineData.stages.filter(stage => selectedStatuses.length === 0 || selectedStatuses.includes(stage.title))
+    : [];
 
   return (
     <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
-      <div className="space-y-4 sm:space-y-6">
+      <div className="min-w-0 space-y-6">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Pipeline</h1>
 
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Pipeline</h1>
-
-          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2">
             <div className="relative filter-dropdown-container">
               <button
+                type="button"
                 onClick={handleFilterClick}
-                className="flex items-center gap-2 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium text-sm sm:text-base relative dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                disabled={!pipelineData}
+                aria-haspopup="true"
+                aria-expanded={showFilterDropdown}
+                aria-controls="pipeline-filter-menu"
+                className="relative inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
               >
+                <SlidersHorizontal size={16} aria-hidden="true" />
                 <span>Filter</span>
-                <SlidersHorizontal size={18} className="sm:w-5 sm:h-5" />
                 {activeFilterCount > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-teal-700 px-1.5 text-xs font-semibold text-white" aria-label={`${activeFilterCount} stages selected`}>
                     {activeFilterCount}
                   </span>
                 )}
               </button>
 
-              {/* Filter Dropdown */}
-              {showFilterDropdown && (
-                <div className="absolute top-full mt-2 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-64 dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
-                  <div className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold text-gray-900 dark:text-white">Filter by Status</h3>
+              {showFilterDropdown && pipelineData && (
+                <div id="pipeline-filter-menu" className="absolute right-0 top-full z-30 mt-2 w-64 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:shadow-black/40">
+                  <div className="p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Filter by stage</h3>
                       {activeFilterCount > 0 && (
                         <button
+                          type="button"
                           onClick={clearFilters}
-                          className="text-xs text-blue-600 hover:text-blue-700 font-medium dark:text-blue-400 dark:hover:text-blue-300"
+                          className="text-xs font-medium text-teal-700 hover:text-teal-800 dark:text-violet-300"
                         >
-                          Clear All
+                          Clear all
                         </button>
                       )}
                     </div>
 
-                    <div className="space-y-2">
-                      {['Oppurtunity', 'Scoping', 'Proposal', 'Confirmed'].map(status => (
-                        <label key={status} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded dark:hover:bg-gray-700">
+                    <div className="space-y-0.5">
+                      {pipelineData.stages.map(stage => (
+                        <label key={stage.stage} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700">
                           <input
                             type="checkbox"
-                            checked={selectedStatuses.includes(status)}
-                            onChange={() => toggleStatusFilter(status)}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                            checked={selectedStatuses.includes(stage.title)}
+                            onChange={() => toggleStatusFilter(stage.title)}
+                            className="h-4 w-4 rounded border-gray-300 accent-teal-700 dark:border-gray-600"
                           />
-                          <span className="text-sm text-gray-700 dark:text-gray-300">{status}</span>
+                          <span className="flex-1 text-sm text-gray-700 dark:text-gray-300">{stageLabel(stage.title)}</span>
+                          <span className="text-xs tabular-nums text-gray-400">{stage.count}</span>
                         </label>
                       ))}
                     </div>
@@ -332,101 +298,68 @@ export default function PipelineScreen({
             </div>
 
             <button
+              type="button"
               onClick={handleNewQuote}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-5 py-2 rounded-lg font-semibold transition-colors shadow-md hover:shadow-lg text-sm sm:text-base flex-1 sm:flex-initial justify-center"
+              className="inline-flex h-10 items-center gap-1.5 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-teal-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
             >
-              <Plus size={18} className="sm:w-5 sm:h-5" />
+              <Plus size={16} aria-hidden="true" />
               <span>New</span>
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Statistics */}
-        <PipelineStatistics stats={filteredPipelineData.stats} />
-
-        {/* Desktop View - Board with Drag and Drop */}
-        <div className="hidden md:block overflow-x-auto pb-4">
-          <DragDropContext onDragEnd={onDragEnd}>
-            <div className="flex gap-4 min-w-max">
-              {filteredPipelineData.stages.map(stage => (
-                <PipelineStage
-                  key={stage.stage}
-                  stage={stage}
-                  onQuoteClick={handleQuoteClick}
-                />
-              ))}
+        {isLoading && !pipelineData ? (
+          <div role="status" aria-label="Loading pipeline" className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 min-[360px]:grid-cols-2 min-[1024px]:grid-cols-4">
+              {[0, 1, 2, 3].map(i => <div key={i} className="h-[104px] animate-pulse rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" />)}
             </div>
-          </DragDropContext>
-        </div>
+            <div className="flex gap-3 overflow-hidden">
+              {[0, 1, 2, 3, 4].map(i => <div key={i} className="h-80 w-[272px] shrink-0 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800/60" />)}
+            </div>
+          </div>
+        ) : error || !pipelineData ? (
+          <ErrorState message={error || 'Failed to load pipeline data. Please try again.'} onRetry={loadPipelineData} />
+        ) : (
+          <>
+            <PipelineStatistics stats={pipelineData.stats} stageCount={pipelineData.stages.length} />
 
-        {/* Mobile View */}
-        <div className="md:hidden space-y-3">
-          {filteredPipelineData.stages.map(stage => {
-            const isExpanded = expandedStages.has(stage.stage);
-            const colorClass = STAGE_COLORS[stage.stage] || 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700';
-
-            return (
-              <div key={stage.stage} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm dark:bg-gray-900 dark:border-gray-800">
-
-                {/* Accordion Header */}
-                <button
-                  onClick={() => toggleStage(stage.stage)}
-                  className={`w-full ${colorClass} p-4 flex items-center justify-between transition-colors hover:opacity-90`}
-                >
-                  <div className="flex-1 text-left">
-                    <h3 className="font-bold text-gray-900 text-base mb-1 dark:text-white">{stage.title}</h3>
-                    <div className="flex items-baseline gap-2 text-xs text-gray-600 dark:text-gray-400">
-                      <span className="font-semibold">{stage.count} quotes</span>
-                      <span>
-                        ₹{stage.total_sum.toLocaleString('en-IN', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2
-                        })}
-                      </span>
-                    </div>
+            <div className="space-y-2">
+              {activeFilterCount > 0 && (
+                <p className="text-[13px] text-gray-500 dark:text-gray-400">
+                  Showing {visibleStages.length} of {pipelineData.stages.length} stages: {visibleStages.map(s => stageLabel(s.title)).join(', ')} ·{' '}
+                  <button type="button" onClick={clearFilters} className="font-medium text-teal-700 hover:underline dark:text-violet-300">Show all</button>
+                </p>
+              )}
+              {/* One scroll container for the whole board (both directions): stage headers stick to
+                  its top, its own horizontal scrollbar sits at the bottom of the screen, and drag
+                  auto-scroll keeps working (no nested scroll areas). */}
+              <div
+                ref={boardRef}
+                role="region"
+                aria-label="Pipeline board"
+                tabIndex={0}
+                style={{ height: `max(26rem, calc(100dvh - ${boardTop}px - 2rem))` }}
+                // relative: keeps absolutely positioned (sr-only) card text inside this scroll box,
+                // otherwise it escapes and the whole page scrolls sideways.
+                className="relative overflow-auto overscroll-x-contain rounded-lg border border-gray-200 bg-white [scrollbar-width:thin] focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:border-gray-800 dark:bg-gray-900"
+              >
+                <DragDropContext onDragEnd={onDragEnd}>
+                  <div className="flex min-h-full w-max items-stretch gap-3 p-3">
+                    {visibleStages.map(stage => (
+                      <PipelineStage
+                        key={stage.stage}
+                        stage={stage}
+                        visibleCount={visibleCounts[stage.stage] ?? PAGE_SIZE}
+                        onShowMore={() => setVisibleCounts(prev => ({ ...prev, [stage.stage]: (prev[stage.stage] ?? PAGE_SIZE) + PAGE_SIZE }))}
+                        onQuoteClick={handleQuoteClick}
+                      />
+                    ))}
                   </div>
-
-                  <div className="ml-3">
-                    {isExpanded ? (
-                      <ChevronUp size={20} className="text-gray-600 dark:text-gray-400" />
-                    ) : (
-                      <ChevronDown size={20} className="text-gray-600 dark:text-gray-400" />
-                    )}
-                  </div>
-                </button>
-
-                {/* Accordion Content */}
-                {isExpanded && (
-                  <Droppable droppableId={`mobile-${stage.stage}`} isDropDisabled={true}>
-                    {(provided) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
-                        className={`${colorClass} p-3 space-y-3 border-t border-gray-300 dark:border-gray-700`}
-                      >
-                        {stage.quotes.length > 0 ? (
-                          stage.quotes.map((quote, index) => (
-                            <QuoteCard
-                              key={quote.quote_no}
-                              quote={quote}
-                              index={index}
-                              onClick={handleQuoteClick}
-                            />
-                          ))
-                        ) : (
-                          <div className="text-center text-gray-400 text-sm py-8 dark:text-gray-500">
-                            No quotes in this stage
-                          </div>
-                        )}
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-                )}
+                </DragDropContext>
               </div>
-            );
-          })}
-        </div>
+            </div>
+          </>
+        )}
       </div>
     </Layout>
   );
