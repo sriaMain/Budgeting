@@ -17,8 +17,18 @@ interface StatCardProps {
   statusLabel?: string;
   /** Dense dashboard variant (~100px tall): 16px padding, smaller icon, flat card. */
   compact?: boolean;
+  /** Neutral supporting line under the value, e.g. "12:30 consumed · 40%". */
+  caption?: React.ReactNode;
+  /** Icon tint: blue (default), red for problems, amber for warnings. */
+  iconTone?: 'blue' | 'risk' | 'amber';
   className?: string;
 }
+
+const ICON_TONES = {
+  blue: 'bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400',
+  risk: 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400',
+  amber: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+};
 
 export const StatCard: React.FC<StatCardProps> = ({
   label,
@@ -31,6 +41,8 @@ export const StatCard: React.FC<StatCardProps> = ({
   status,
   statusLabel,
   compact = false,
+  caption,
+  iconTone = 'blue',
   className = '',
 }) => {
   // compact cards are size containers: a very narrow one drops its decorative icon so the label fits.
@@ -60,7 +72,7 @@ export const StatCard: React.FC<StatCardProps> = ({
       <div className={`flex items-center justify-between gap-2 ${compact ? 'mb-2' : 'mb-3'}`}>
         <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</span>
         {icon && (
-          <div className={`${compact ? 'w-7 h-7 rounded-md @max-[11rem]:hidden' : 'w-9 h-9 rounded-lg'} shrink-0 bg-blue-50 text-blue-600 flex items-center justify-center dark:bg-blue-500/10 dark:text-blue-400`}>
+          <div className={`${compact ? 'w-6 h-6 rounded-md @max-[11rem]:hidden' : 'w-9 h-9 rounded-lg'} shrink-0 ${ICON_TONES[iconTone]} flex items-center justify-center`}>
             {icon}
           </div>
         )}
@@ -92,6 +104,7 @@ export const StatCard: React.FC<StatCardProps> = ({
           {statusLabel}
         </p>
       )}
+      {caption && <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{caption}</p>}
     </div>
   );
 };

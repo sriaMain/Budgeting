@@ -26,8 +26,8 @@ export const AppShell: React.FC<AppShellProps> = ({ children, breadcrumb, title,
   return (
     <div className="min-h-screen bg-surface w-full font-sans text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <Navbar userRole={userRole} />
-      {/* 24px side padding from sm up lines content up with the navbar's px-6. */}
-      <main className="min-w-0 max-w-[1600px] mx-auto px-4 pt-20 pb-8 sm:px-6">
+      {/* 16px side padding (24px from lg) - lines content up with the navbar (px-4 / lg:px-6). */}
+      <main className="min-w-0 max-w-[1600px] mx-auto px-4 pt-20 pb-8 lg:px-6">
         {(breadcrumb || title || actions) && (
           <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
             <div className="min-w-0">

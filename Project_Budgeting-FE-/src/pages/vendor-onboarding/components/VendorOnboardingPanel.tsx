@@ -24,20 +24,15 @@ interface VendorOnboardingPanelProps {
   onStepClick?: (vendor: VendorOnboardingDetail, step: VendorOnboardingStepKey) => void;
 }
 
-/** "Vendor onboarding process" panel - the selected vendor's 5 steps, or the generic flow when none is selected. */
+/** "Vendor onboarding process" panel - like the client list's: a one-line prompt until a vendor is
+ * selected, then that vendor's 7 steps as status cards (a step click opens the drawer there). */
 export const VendorOnboardingPanel: React.FC<VendorOnboardingPanelProps> = ({ vendor, onStepClick }) => {
-  const steps = useMemo(
-    () =>
-      vendor
-        ? resolveVendorSteps(vendor)
-        : VENDOR_ONBOARDING_STEPS.map((s) => ({ key: s.key, title: s.title, description: s.description, status: 'pending' as const, isCurrent: false })),
-    [vendor]
-  );
+  const steps = useMemo(() => (vendor ? resolveVendorSteps(vendor) : []), [vendor]);
   const current = steps.find((s) => s.isCurrent);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-900 dark:border-gray-800">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-4 px-4 sm:px-5 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+      <div className={`flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-4 px-4 sm:px-5 pt-4 pb-3 ${vendor ? 'border-b border-gray-100 dark:border-gray-800' : ''}`}>
         <div className="min-w-0">
           <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">Vendor onboarding process</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -47,7 +42,7 @@ export const VendorOnboardingPanel: React.FC<VendorOnboardingPanelProps> = ({ ve
                 {' '}&middot; {current ? `Pending at ${current.title}` : 'All steps complete'} &middot; {vendorOnboarding(vendor).percent}% complete
               </>
             ) : (
-              <>Basic information &rarr; identity &amp; KYC &rarr; address &rarr; banking &rarr; commercial &rarr; documents &rarr; approved</>
+              'Click a vendor card to see its onboarding progress here.'
             )}
           </p>
         </div>
@@ -56,8 +51,8 @@ export const VendorOnboardingPanel: React.FC<VendorOnboardingPanelProps> = ({ ve
         </p>
       </div>
 
-      <div className="px-4 sm:px-5 py-4 space-y-3">
-        {vendor ? (
+      {vendor && (
+        <div className="px-4 sm:px-5 py-4 space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             <StatusBadge status={vendor.status} label={vendorStatusLabel(vendor)} />
             <span className="inline-flex items-center gap-1" title={vendor.onboarding_profile?.rating ? `Rated ${vendor.onboarding_profile.rating} out of 5` : 'Not rated yet'}>
@@ -68,17 +63,14 @@ export const VendorOnboardingPanel: React.FC<VendorOnboardingPanelProps> = ({ ve
             <span>{vendor.vendor_type_display}</span>
             {vendor.current_approval_stage?.level_name && <span>&middot; Approval: {vendor.current_approval_stage.level_name}</span>}
           </div>
-        ) : (
-          <p className="text-xs text-gray-500 dark:text-gray-400">Select a vendor below to see where its onboarding is, then click a step to open it.</p>
-        )}
-        <OnboardingStepCards
-          steps={steps}
-          showStatus={!!vendor}
-          scrollKey={vendor?.id ?? null}
-          onStepClick={vendor && onStepClick ? (key) => onStepClick(vendor, key as VendorOnboardingStepKey) : undefined}
-          clickHint={(step) => (vendor && isVendorEditable(vendor) && step.key !== 'approved' ? `Edit ${step.title}` : `View ${step.title}`)}
-        />
-      </div>
+          <OnboardingStepCards
+            steps={steps}
+            scrollKey={vendor.id}
+            onStepClick={onStepClick ? (key) => onStepClick(vendor, key as VendorOnboardingStepKey) : undefined}
+            clickHint={(step) => (isVendorEditable(vendor) && step.key !== 'approved' ? `Edit ${step.title}` : `View ${step.title}`)}
+          />
+        </div>
+      )}
     </div>
   );
 };

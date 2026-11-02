@@ -10,6 +10,7 @@ import { MetricCard } from '../components/StatCard';
 import { EmptyState } from '../components/EmptyState';
 import axiosInstance from '../utils/axiosInstance';
 import { formatMoney } from '../utils/format';
+import { DEFAULT_PROJECT_STATUS_STYLE, PROJECT_STATUS_STYLES } from '../utils/projectMeta';
 import { toast } from 'react-hot-toast';
 
 interface Project {
@@ -64,16 +65,6 @@ interface CompanyGroup {
 	projects: Project[];
 }
 
-const STATUS_STYLES: Record<string, string> = {
-	planning: 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-500/30',
-	development: 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/30',
-	testing: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30',
-	uat: 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30',
-	ready_for_deployment: 'bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-500/30',
-	deployed: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30',
-	on_hold: 'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-500/30',
-};
-
 const StatusSelect = ({
 	project,
 	statusChoices,
@@ -83,7 +74,7 @@ const StatusSelect = ({
 	statusChoices: { value: string; label: string }[];
 	onChange: (project: Project, status: string) => void;
 }) => {
-	const activeStyle = STATUS_STYLES[project.status] || 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800';
+	const activeStyle = PROJECT_STATUS_STYLES[project.status] || DEFAULT_PROJECT_STATUS_STYLE;
 	// Make sure the project's current status always has a matching <option>,
 	// even if it hasn't loaded into statusChoices yet.
 	const options = statusChoices.some(choice => choice.value === project.status)

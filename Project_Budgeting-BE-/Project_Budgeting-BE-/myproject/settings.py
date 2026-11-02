@@ -230,6 +230,8 @@ REST_FRAMEWORK = {
         "aira_project_assignments": "3000/hour",
         # AIRA HRMS reading every project resource (employees, freelancers, vendors, external).
         "aira_resource_assignments": "600/hour",
+        # The helpdesk application reading the project list (server-to-server, API key).
+        "helpdesk_projects": "1200/hour",
     },
 }
 
@@ -327,6 +329,9 @@ HRMS_API_KEY = os.environ.get("HRMS_API_KEY", "")
 # Keys AIRA HRMS sends (X-API-Key) to read project assignments - GET /api/v1/project-assignments/.
 # Comma-separated so a key can be rotated without downtime. Empty = the endpoint refuses every call.
 AIRA_INBOUND_API_KEYS = [k.strip() for k in os.environ.get("AIRA_INBOUND_API_KEYS", "").split(",") if k.strip()]
+# Keys the helpdesk application sends (X-API-Key) to read GET /api/v1/projects/ - separate from
+# AIRA's so either can be rotated or revoked alone. Comma-separated; empty = every call refused.
+HELPDESK_INBOUND_API_KEYS = [k.strip() for k in os.environ.get("HELPDESK_INBOUND_API_KEYS", "").split(",") if k.strip()]
 # Push to AIRA: when an employee's projects change (Resources tab, or a project / milestone they
 # are on), POST that employee's complete project list to AIRA_WEBHOOK_URL with X-API-Key:
 # AIRA_PUSH_API_KEY (hrms_integration.tasks). Either empty = no push; AIRA can still pull

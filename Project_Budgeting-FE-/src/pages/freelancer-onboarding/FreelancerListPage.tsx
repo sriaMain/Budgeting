@@ -188,7 +188,8 @@ export function FreelancerListContent() {
                 <StatCard label="Archived" value={statValue(archivedCount)} icon={<Archive className="w-4 h-4" />} loading={archivedCount === null} onClick={() => setTab(ARCHIVED_TAB)} />
             </div>
 
-            <div ref={panelRef} className="scroll-mt-4">
+            {/* scroll-mt clears the fixed 64px app header. */}
+            <div ref={panelRef} className="scroll-mt-20">
                 <FreelancerOnboardingPanel
                     freelancer={activeFreelancer}
                     statusLabel={statusLabel}

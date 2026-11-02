@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Search, UserPlus, Filter, X, Users, AlertCircle, CheckCircle2, Archive } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Layout } from '../../components/Layout';
@@ -57,7 +56,6 @@ function summaryCardValues(summary: VendorRequestSummary | null) {
  * Vendors tab (which supplies its own Layout), the same way ClientListPage is embedded.
  */
 export function VendorListContent() {
-  const navigate = useNavigate();
   const [vendors, setVendors] = useState<VendorOnboardingDetail[]>([]);
   const [summary, setSummary] = useState<VendorRequestSummary | null>(null);
   const [choices, setChoices] = useState<VendorOnboardingChoices | null>(null);
@@ -69,7 +67,7 @@ export function VendorListContent() {
   const panelRef = useRef<HTMLDivElement>(null);
   const [filters, setFilters] = useState<VendorListFilters>({});
   const [appliedFilters, setAppliedFilters] = useState<VendorListFilters>({});
-  // Card last clicked - drives the onboarding panel.
+  // Card last clicked - drives the onboarding panel (its steps show only once one is selected).
   const [activeVendorId, setActiveVendorId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -128,11 +126,6 @@ export function VendorListContent() {
 
   const openStep = (vendor: VendorOnboardingDetail, step: VendorOnboardingStepKey) => {
     setActiveVendorId(vendor.id);
-    // An approved vendor's record lives on its details page.
-    if (step === 'approved' && vendor.status === 'approved') {
-      navigate(`/vendors/${vendor.id}`);
-      return;
-    }
     setDrawer({ open: true, vendorId: vendor.id, section: step });
   };
 
@@ -161,23 +154,19 @@ export function VendorListContent() {
   };
 
   /** Card click (like the client list's row click) only selects the vendor - the onboarding panel
-   * above then shows where it is stuck, and clicking a step there opens the form at that step. */
+   * above then shows its steps, and clicking a step there opens the form at that step. */
   const selectVendor = (vendor: VendorOnboardingDetail) => {
     setActiveVendorId(vendor.id);
     panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  /** Edit opens the onboarding form - editable while the backend accepts edits, otherwise
-   * read-only with the reviewer's verification and approval actions. */
+  /** Edit opens the same onboarding drawer as "Onboard Vendor" - editable while the backend accepts
+   * edits, otherwise read-only with the reviewer's verification and approval actions. */
   const openVendor = (vendor: VendorOnboardingDetail) => {
     setActiveVendorId(vendor.id);
-    // Approved vendors have finished onboarding - open their details page instead of the
-    // onboarding form, which would start at step 1 (Intake).
-    if (vendor.status === 'approved') {
-      navigate(`/vendors/${vendor.id}`);
-      return;
-    }
-    setDrawer({ open: true, vendorId: vendor.id });
+    // Approved vendors have finished onboarding - open at Review & Submit (the whole record and its
+    // approval history) rather than step 1, where their current step would otherwise land.
+    setDrawer({ open: true, vendorId: vendor.id, section: vendor.status === 'approved' ? 'approved' : undefined });
   };
 
   const upsertVendor = (saved: VendorOnboardingDetail) =>
@@ -243,7 +232,8 @@ export function VendorListContent() {
         })()}
       </div>
 
-      <div ref={panelRef} className="scroll-mt-4">
+      {/* scroll-mt clears the fixed 64px app header. */}
+      <div ref={panelRef} className="scroll-mt-20">
         <VendorOnboardingPanel vendor={activeVendor} onStepClick={openStep} />
       </div>
 

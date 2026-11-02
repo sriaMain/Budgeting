@@ -1,8 +1,9 @@
-import { formatDate as toDMY, formatDateTime as toDMYTime } from '../utils/date';
+import { formatDate as toDMY, formatDateTime as toDMYTime, toDate } from '../utils/date';
 import React, { useState, useEffect } from 'react';
 import {
-  Plus, Search, Filter, Play, Pause, Square,
-  ChevronLeft, ChevronRight, Calendar, ArrowLeft, X, Edit2
+  Plus, Search, Play, Pause, Square,
+  ChevronLeft, ChevronRight, Calendar, ArrowLeft, X, Edit2,
+  AlertTriangle, ArrowUpDown, Check, ChevronDown, ChevronUp, FolderKanban, ListChecks, RefreshCw, UserX
 } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import axiosInstance from '../utils/axiosInstance';
@@ -11,6 +12,12 @@ import { toast } from 'react-hot-toast';
 import { AddTaskModal } from '../components/AddTaskModal';
 import { RequestExtraHoursModal } from '../components/RequestExtraHoursModal';
 import { useAppSelector } from '../hooks/useAppSelector';
+import { AssignTaskModal } from '../components/AssignTaskModal';
+import { ActionMenu, type ActionMenuItem } from '../components/ActionMenu';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { SearchableSelect } from '../components/SearchableSelect';
+import { MetricCard } from '../components/StatCard';
+import { StatusBadge as Badge } from '../components/StatusBadge';
 
 // Type Definitions
 interface Task {
@@ -28,6 +35,9 @@ interface Task {
     id: number;
     username: string;
   } | null;
+  // Freelancer assignee (Task.assigned_to stays employee-only on the backend).
+  assigned_freelancer?: { id?: number; name: string } | null;
+  milestone_name?: string | null;
   project: number | null;
   project_name: string | null;
   start_date: string | null;
@@ -42,11 +52,6 @@ interface Task {
   stop_reason?: 'AUTO' | 'COMPLETED' | null;
   task_id?: number;
   has_extra_hours_request?: boolean;
-}
-
-interface TaskGroup {
-  project: string;
-  tasks: Task[];
 }
 
 // Timesheet Types
@@ -80,31 +85,27 @@ interface TaskManagementProps {
   onNavigate: (page: string) => void;
 }
 
-// Status Badge Component
-const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
-  const statusStyles: Record<string, string> = {
-    'in_progress': 'bg-emerald-600 text-white',
-    'planned': 'bg-gray-600 text-white',
-    'completed': 'bg-blue-600 text-white',
-    'needs_attention': 'bg-red-600 text-white',
-  };
-
-  const statusLabels: Record<string, string> = {
-    'in_progress': 'In Progress',
-    'planned': 'Planned',
-    'completed': 'Completed',
-    'needs_attention': 'Needs attention',
-  };
-
-  return (
-    <span
-      className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${statusStyles[status] || statusStyles['planned']
-        }`}
-    >
-      {statusLabels[status] || status}
-    </span>
-  );
+// Status Badge Component - the shared badge's tones (same as Project Details)
+const TASK_STATUS_LABELS: Record<string, string> = {
+  planned: 'Planned',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+  needs_attention: 'Needs Attention',
 };
+const TASK_STATUS_TONES: Record<string, 'neutral' | 'info' | 'success' | 'danger'> = {
+  planned: 'neutral',
+  in_progress: 'info',
+  completed: 'success',
+  needs_attention: 'danger',
+};
+const StatusBadge: React.FC<{ status: string }> = ({ status }) => (
+  <Badge
+    status={status}
+    label={TASK_STATUS_LABELS[status] || status}
+    variant={TASK_STATUS_TONES[status] ?? 'neutral'}
+    className="!px-2 !py-0.5 whitespace-nowrap"
+  />
+);
 
 // Timesheet Status Dot Component
 const TimesheetStatusBadge: React.FC<{ status: TimesheetRecord['status'] }> = ({ status }) => {
@@ -131,6 +132,38 @@ const formatElapsedTime = (totalSeconds: number): string => {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
 
+// ---- Task List helpers ----
+type TaskSortKey = 'task' | 'assignee' | 'status' | 'allocated' | 'due';
+const TASK_STATUS_ORDER: Record<string, number> = { planned: 0, in_progress: 1, needs_attention: 2, completed: 3 };
+// Rows (project headers + tasks) per page of the Task List.
+const LIST_PAGE_SIZE = 50;
+
+const hoursOf = (value: string | number | null | undefined) => Number(value) || 0;
+
+// Decimal hours -> "HH:MM" (never negative), the one time format the Task List uses.
+const formatHM = (hours: number) => {
+  const total = Math.max(0, Math.round(hours * 60));
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+};
+
+const assigneeName = (task: Task) => task.assigned_to?.username || task.assigned_freelancer?.name || '';
+
+// "priya.sharma" / "Priya Sharma" -> "PS"; a single word -> its first two letters.
+const initialsOf = (name: string) => {
+  const parts = name.replace(/[._-]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return (parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[1][0]).toUpperCase();
+};
+
+// Overdue = due before today (not counting today) and not completed.
+const isTaskOverdue = (task: Task) => {
+  const due = toDate(task.due_date);
+  if (!due || task.status === 'completed') return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return due < today;
+};
+
 // Main TaskManagement Component
 export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, currentPage, onNavigate }) => {
   const currentUsername = useAppSelector((state) => state.auth.username);
@@ -140,7 +173,6 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
   const [isLoadingTasks, setIsLoadingTasks] = React.useState(false);
   const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [editingStatusTaskId, setEditingStatusTaskId] = useState<number | null>(null);
   const [editingConsumedTaskId, setEditingConsumedTaskId] = useState<number | null>(null);
   const [consumedInput, setConsumedInput] = useState<string>('');
   const [users, setUsers] = useState<any[]>([]);
@@ -415,6 +447,8 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
                 remaining_formatted_hms: task.remaining_formatted_hms,
                 exceeded_formatted: task.exceeded_formatted,
                 assigned_to: task.assigned_to,
+                assigned_freelancer: task.assigned_freelancer || null,
+                milestone_name: task.milestone_name || null,
                 project: task.project || task.project_no,
                 project_name: task.project_name || projectGroup.project_name,
                 start_date: task.start_date || null,
@@ -444,11 +478,9 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
         setElapsedTimes(initialElapsedTimes);
 
         // Calculate stats from tasks
-        const unassigned = allTasks.filter(t => !t.assigned_to).length;
-        const overdue = allTasks.filter(t => {
-          if (!t.due_date) return false;
-          return new Date(t.due_date) < new Date() && t.status !== 'completed';
-        }).length;
+        // A freelancer assignee counts as assigned; a task due today isn't overdue yet.
+        const unassigned = allTasks.filter(t => !t.assigned_to && !t.assigned_freelancer).length;
+        const overdue = allTasks.filter(isTaskOverdue).length;
 
         setProjectStats(prev => ({ ...prev, overdueTasks: overdue, unassignedTasks: unassigned }));
       }
@@ -468,9 +500,10 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
         let totalProjects = 0;
         response.data.Projects.forEach((company: any) => {
           if (company.project_details && Array.isArray(company.project_details)) {
-            // Count projects that are not completed
+            // Count projects that are not completed - a finished project's status is
+            // 'deployed' (there is no 'completed' project status), as on the Projects page.
             const activeProjects = company.project_details.filter(
-              (p: any) => p.status !== 'completed'
+              (p: any) => p.status !== 'deployed'
             );
             totalProjects += activeProjects.length;
           }
@@ -508,14 +541,15 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
       const response = await axiosInstance.patch(`tasks/${taskId}/`, { status: newStatus });
       if (response.status === 200) {
         toast.success('Task status updated');
-        setEditingStatusTaskId(null);
         // Refresh both list and board data
         fetchTasks();
         fetchGroupedTasks();
       }
     } catch (error) {
       console.error('Failed to update status:', error);
-      toast.error('Failed to update status');
+      // Show the backend's reason (e.g. "Stop the timer before changing status back to planned").
+      const data = (error as { response?: { data?: { message?: string; error?: string } } })?.response?.data;
+      toast.error(data?.message || data?.error || 'Failed to update status');
     }
   };
 
@@ -718,33 +752,6 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     }
   };
 
-  // Group tasks by project
-  const groupTasksByProject = (): TaskGroup[] => {
-    const grouped: Record<string, Task[]> = {};
-
-    tasks.forEach(task => {
-      const projectName = task.project_name || 'Unspecified';
-      if (!grouped[projectName]) {
-        grouped[projectName] = [];
-      }
-      grouped[projectName].push(task);
-    });
-
-    return Object.entries(grouped).map(([project, tasks]) => ({
-      project,
-      tasks
-    }));
-  };
-
-  const taskGroups = groupTasksByProject();
-
-  // Stat Cards Data - now using real data from API
-  const stats = [
-    { title: 'Total active projects', value: projectStats.totalActiveProjects },
-    { title: 'Overdue Tasks', value: projectStats.overdueTasks },
-    { title: 'Unassigned Tasks', value: projectStats.unassignedTasks },
-  ];
-
   // Timesheet Mock Data
   const timesheetSummaryData: TimesheetRecord[] = [
     { id: '1', employeeName: 'John Doe', employeeHandle: 'j-doe-1234', totalHours: '40.00', status: 'Submitted', lastUpdated: 'Nov 3, 9:35 AM' },
@@ -781,14 +788,6 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     if (activeTab === 'board') fetchGroupedTasks();
     setIsAddTaskModalOpen(false);
     setEditingTask(null);
-  };
-
-  const handleTaskClick = (task: Task) => {
-    // Only allow admins to edit tasks
-    if (userRole === 'admin') {
-      setEditingTask(task);
-      setIsAddTaskModalOpen(true);
-    }
   };
 
   const handleCloseModal = () => {
@@ -914,399 +913,564 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     }
   };
 
+  // ---- Task List: project / search filters, sorting, collapsible project groups and paging.
+  // All of it works on the tasks already loaded (assignee + status still filter on the server).
+  const [projectFilter, setProjectFilter] = useState('');
+  const [taskSearch, setTaskSearch] = useState('');
+  const [sortKey, setSortKey] = useState<TaskSortKey | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
+  const [listPage, setListPage] = useState(1);
+  const [assigningTask, setAssigningTask] = useState<Task | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+
+  const isStaff = userRole === 'admin' || userRole === 'manager';
+  // The employee's name from the HRMS employee list (same names as the Assignee filter);
+  // the task payload itself only carries the login username.
+  const userNames = new Map<number, string>(users.map(u => [u.id, u.username || u.first_name || u.email]));
+  const displayAssignee = (t: Task) => (t.assigned_to && userNames.get(t.assigned_to.id)) || assigneeName(t);
+  const searchLower = taskSearch.trim().toLowerCase();
+  const projectNames = Array.from(new Set(tasks.map(t => t.project_name || 'Unspecified'))).sort((a, b) => a.localeCompare(b));
+  const visibleTasks = tasks.filter(t =>
+    (!projectFilter || (t.project_name || 'Unspecified') === projectFilter) &&
+    (!searchLower
+      || t.title.toLowerCase().includes(searchLower)
+      || displayAssignee(t).toLowerCase().includes(searchLower)
+      || (t.project_name || '').toLowerCase().includes(searchLower)));
+
+  const sortValue = (t: Task, key: TaskSortKey): string | number => {
+    if (key === 'task') return t.title.toLowerCase();
+    if (key === 'assignee') return displayAssignee(t).toLowerCase() || '￿'; // unassigned last
+    if (key === 'status') return TASK_STATUS_ORDER[t.status] ?? 9;
+    if (key === 'allocated') return hoursOf(t.allocated_hours);
+    return t.due_date || '9999-12-31'; // no due date last
+  };
+  const sortTasks = (list: Task[]) => {
+    if (!sortKey) return list;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      const x = sortValue(a, sortKey), y = sortValue(b, sortKey);
+      return (x < y ? -1 : x > y ? 1 : 0) * dir;
+    });
+  };
+  const toggleSort = (key: TaskSortKey) => {
+    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+    setListPage(1);
+  };
+
+  // One flat row list (group headers + their tasks) so every group shares the table's columns;
+  // a page that starts mid-group repeats that group's header.
+  type ListRow = { kind: 'group'; project: string; count: number; continued?: boolean } | { kind: 'task'; project: string; task: Task };
+  const listRows: ListRow[] = [];
+  const byProject = new Map<string, Task[]>();
+  visibleTasks.forEach(t => {
+    const key = t.project_name || 'Unspecified';
+    byProject.set(key, [...(byProject.get(key) || []), t]);
+  });
+  byProject.forEach((groupTasks, project) => {
+    listRows.push({ kind: 'group', project, count: groupTasks.length });
+    if (!collapsedProjects.has(project)) sortTasks(groupTasks).forEach(task => listRows.push({ kind: 'task', project, task }));
+  });
+  const listPageCount = Math.max(1, Math.ceil(listRows.length / LIST_PAGE_SIZE));
+  const currentListPage = Math.min(listPage, listPageCount);
+  const pageRows = listRows.slice((currentListPage - 1) * LIST_PAGE_SIZE, currentListPage * LIST_PAGE_SIZE);
+  if (pageRows[0]?.kind === 'task') {
+    const project = pageRows[0].project;
+    pageRows.unshift({ kind: 'group', project, count: byProject.get(project)?.length ?? 0, continued: true });
+  }
+  const toggleProject = (project: string) => {
+    setCollapsedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(project)) next.delete(project); else next.add(project);
+      return next;
+    });
+  };
+
+  const hasListFilters = !!(selectedAssigneeId || selectedStatus || projectFilter || taskSearch);
+  const clearListFilters = () => {
+    setSelectedAssigneeId('');
+    setSelectedStatus('');
+    setProjectFilter('');
+    setTaskSearch('');
+    setListPage(1);
+  };
+
+  const assigneeOptions = [
+    { id: '', label: 'All assignees' },
+    ...users.map(u => ({ id: String(u.id), label: u.username || u.first_name || u.email })),
+  ];
+  const assigneeValue = selectedAssigneeId ? assigneeOptions.find(o => o.id === selectedAssigneeId) ?? null : null;
+  const projectOptions = [{ id: '', label: 'All projects' }, ...projectNames.map(name => ({ id: name, label: name }))];
+  const projectValue = projectFilter ? { id: projectFilter, label: projectFilter } : null;
+
+  // Same permissions as before: admins edit, admins/managers assign and correct time,
+  // admins and the assignee (employee) change status; only admins delete.
+  const taskMenuItems = (task: Task): ActionMenuItem[] => {
+    const items: ActionMenuItem[] = [{ label: 'View task', onSelect: () => fetchTaskDetails(task.id) }];
+    if (userRole === 'admin') items.push({ label: 'Edit task', onSelect: () => { setEditingTask(task); setIsAddTaskModalOpen(true); } });
+    if (isStaff) items.push({ label: displayAssignee(task) ? 'Reassign employee' : 'Assign employee', onSelect: () => setAssigningTask(task) });
+    if (userRole === 'admin' || userRole === 'user') {
+      // The backend only lets an In Progress task go back to Planned once its hours are used up
+      // (and never while its timer runs) - don't offer what it would refuse.
+      const canReturnToPlanned = task.status !== 'in_progress' || (!task.running && hoursOf(task.consumed_hours) > hoursOf(task.allocated_hours));
+      Object.entries(TASK_STATUS_LABELS)
+        .filter(([value]) => value !== task.status && (value !== 'planned' || canReturnToPlanned))
+        .forEach(([value, label], i) =>
+        items.push({ label: `Mark as ${label}`, onSelect: () => updateTaskStatus(task.id, value), separatorBefore: i === 0 }));
+    }
+    if (userRole === 'admin') items.push({ label: 'Delete task', danger: true, separatorBefore: true, onSelect: () => setTaskToDelete(task) });
+    return items;
+  };
+
+  const deleteTask = async () => {
+    if (!taskToDelete) return;
+    try {
+      await axiosInstance.delete(`tasks/${taskToDelete.id}/`);
+      toast.success(`"${taskToDelete.title}" deleted`);
+      setTaskToDelete(null);
+      fetchTasks();
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+      toast.error('Failed to delete task');
+    }
+  };
+
+  const selectTab = (tab: typeof activeTab) => {
+    setActiveTab(tab);
+    if (tab === 'timesheet') {
+      if (userRole === 'admin' || userRole === 'manager') {
+        fetchWeeklySummary();
+        setTimesheetStep('summary');
+      } else {
+        fetchTimesheet();
+      }
+    }
+    if (tab === 'requests') {
+      fetchPendingRequests();
+      fetchRequestHistory();
+    }
+  };
+  const tabs: { id: typeof activeTab; label: string }[] = [
+    { id: 'list', label: 'Task List' },
+    { id: 'board', label: 'Task Board' },
+    { id: 'timesheet', label: 'Timesheet' },
+    // Additional Time Requests - only for admin and manager
+    ...(isStaff ? [{ id: 'requests' as const, label: 'Additional Time Requests' }] : []),
+  ];
+
+  const sortHeader = (key: TaskSortKey, label: string, align: 'left' | 'right' = 'left') => (
+    <th
+      scope="col"
+      aria-sort={sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className={`px-4 ${align === 'right' ? 'text-right' : 'text-left'}`}
+    >
+      <button
+        type="button"
+        onClick={() => toggleSort(key)}
+        className={`inline-flex items-center gap-1 uppercase tracking-wide hover:text-gray-800 focus:outline-none focus-visible:underline dark:hover:text-gray-200 ${align === 'right' ? 'flex-row-reverse' : ''}`}
+      >
+        {label}
+        {sortKey === key
+          ? (sortDir === 'asc' ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />)
+          : <ArrowUpDown size={12} aria-hidden="true" className="opacity-40" />}
+      </button>
+    </th>
+  );
+
+  const CONTROL = 'h-10 rounded-md border border-gray-300 bg-white text-sm text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200';
+
   return (
     <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
-      <div className="min-h-screen bg-gray-50 p-6 dark:bg-gray-950">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Task Management</h1>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          {stats.map((stat, index) => (
-            <div
-              key={index}
-              className="bg-white rounded-lg border border-gray-200 p-5 dark:bg-gray-900 dark:border-gray-800"
+      <div className="space-y-5">
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Task Management</h1>
+            <p className="mt-0.5 text-[13px] text-gray-500 dark:text-gray-400">Manage project tasks, assignments, and working hours.</p>
+          </div>
+          {/* New Task - admin only, as before */}
+          {userRole === 'admin' && (
+            <button
+              type="button"
+              onClick={() => setIsAddTaskModalOpen(true)}
+              className="inline-flex h-10 items-center gap-1.5 rounded-md bg-navy-900 px-4 text-sm font-semibold text-white hover:bg-navy-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-950"
             >
-              <p className="text-xs text-gray-600 mb-1 dark:text-gray-400">{stat.title}</p>
-              <p
-                className={`text-3xl font-bold ${stat.title === 'Overdue Tasks' ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'
-                  }`}
-              >
-                {stat.value}
-              </p>
-            </div>
+              <Plus size={16} aria-hidden="true" />
+              New Task
+            </button>
+          )}
+        </header>
+
+        {/* KPIs - from the loaded tasks and the projects list */}
+        <section aria-label="Task overview" className="grid grid-cols-1 gap-3 sm:gap-4 min-[360px]:grid-cols-2 min-[768px]:grid-cols-3">
+          <MetricCard compact label="Total Active Projects" value={projectStats.totalActiveProjects.toLocaleString('en-IN')} icon={<FolderKanban size={16} />} iconTone="blue" />
+          <MetricCard compact label="Overdue Tasks" value={projectStats.overdueTasks.toLocaleString('en-IN')} icon={<AlertTriangle size={16} />} iconTone="risk" />
+          <MetricCard compact className="min-[360px]:max-[767px]:col-span-2" label="Unassigned Tasks" value={projectStats.unassignedTasks.toLocaleString('en-IN')} icon={<UserX size={16} />} iconTone="amber" />
+        </section>
+
+        <div
+          role="tablist"
+          aria-label="Task views"
+          className="flex overflow-x-auto border-b border-gray-200 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-gray-800"
+          onKeyDown={(e) => {
+            if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+            const at = tabs.findIndex(t => t.id === activeTab);
+            const next = tabs[(at + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length].id;
+            selectTab(next);
+            requestAnimationFrame(() => document.getElementById(`task-tab-${next}`)?.focus());
+          }}
+        >
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              id={`task-tab-${tab.id}`}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              tabIndex={activeTab === tab.id ? 0 : -1}
+              onClick={() => selectTab(tab.id)}
+              className={`-mb-px h-12 shrink-0 whitespace-nowrap border-b-2 px-4 text-sm font-medium transition-colors focus:outline-none focus-visible:bg-gray-100 dark:focus-visible:bg-gray-800 ${activeTab === tab.id
+                ? 'border-teal-600 text-gray-900 dark:border-violet-400 dark:text-white'
+                : 'border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}
+            >
+              {tab.label}
+            </button>
           ))}
         </div>
 
-        {/* Tabs and Actions Container */}
-        <div className="bg-white rounded-lg border border-gray-200 mb-6 dark:bg-gray-900 dark:border-gray-800">
-          {/* Tabs */}
-          <div className="flex gap-6 px-6 pt-4 border-b border-gray-200 dark:border-gray-800">
-            {(['list', 'board', 'timesheet'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => {
-                  setActiveTab(tab);
-                  if (tab === 'timesheet') {
-                    if (userRole === 'admin' || userRole === 'manager') {
-                      fetchWeeklySummary();
-                      setTimesheetStep('summary');
-                    } else {
-                      fetchTimesheet();
-                    }
-                  }
-                }}
-                className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${activeTab === tab
-                  ? 'text-gray-900 border-b-2 border-gray-900 dark:text-white dark:border-white'
-                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                  }`}
+        {/* Toolbar - assignee / status filter the list and the board; project + search are list-only */}
+        {(activeTab === 'list' || activeTab === 'board') && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="w-full min-[480px]:w-48">
+              <SearchableSelect
+                size="md"
+                options={assigneeOptions}
+                value={assigneeValue}
+                onChange={(option) => { setSelectedAssigneeId(option ? String(option.id) : ''); setListPage(1); }}
+                placeholder="All assignees"
+                ariaLabel="Filter by assignee"
+                emptyMessage="No employees match"
+              />
+            </div>
+            <div className="relative">
+              <select
+                value={selectedStatus}
+                onChange={(e) => { setSelectedStatus(e.target.value); setListPage(1); }}
+                aria-label="Filter by status"
+                className={`${CONTROL} appearance-none pl-3 pr-9 cursor-pointer`}
               >
-                {tab === 'list' ? 'Task List' : tab === 'board' ? 'Task Board' : 'Timesheet'}
-              </button>
-            ))}
-
-            {/* Additional Time Requests tab - only for admin and manager */}
-            {(userRole === 'admin' || userRole === 'manager') && (
-              <button
-                onClick={() => {
-                  setActiveTab('requests');
-                  fetchPendingRequests();
-                  fetchRequestHistory();
-                }}
-                className={`pb-3 px-1 font-semibold text-sm transition-colors relative ${activeTab === 'requests'
-                  ? 'text-gray-900 border-b-2 border-gray-900 dark:text-white dark:border-white'
-                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                  }`}
-              >
-                Additional Time Requests
-              </button>
+                <option value="">All statuses</option>
+                {statusChoices.map(s => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+              <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            </div>
+            {activeTab === 'list' && (
+              <div className="w-full min-[480px]:w-52">
+                <SearchableSelect
+                  size="md"
+                  options={projectOptions}
+                  value={projectValue}
+                  onChange={(option) => { setProjectFilter(option ? String(option.id) : ''); setListPage(1); }}
+                  placeholder="All projects"
+                  ariaLabel="Filter by project"
+                  emptyMessage="No projects match"
+                />
+              </div>
             )}
+            <div className="ml-auto flex w-full items-center gap-2 min-[768px]:w-auto">
+              {activeTab === 'list' && (
+                <div className="relative min-w-0 flex-1 min-[768px]:w-64 min-[768px]:flex-none">
+                  <Search size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="search"
+                    value={taskSearch}
+                    onChange={(e) => { setTaskSearch(e.target.value); setListPage(1); }}
+                    placeholder="Search tasks…"
+                    aria-label="Search tasks"
+                    className={`${CONTROL} w-full pl-9 pr-3 placeholder:text-gray-400`}
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab === 'list') { fetchTasks(); fetchProjectStats(); } else { fetchGroupedTasks(); }
+                }}
+                aria-label="Refresh tasks"
+                title="Refresh"
+                className={`${CONTROL} flex w-10 shrink-0 items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-800`}
+              >
+                <RefreshCw size={16} aria-hidden="true" className={(isLoadingTasks || isLoadingBoard) ? 'animate-spin' : ''} />
+              </button>
+            </div>
           </div>
+        )}
 
-          {/* Action Bar */}
-          {activeTab !== 'timesheet' && (
-            <div className="flex items-center justify-between gap-4 px-6 py-4">
-              <div className="flex items-center justify-start gap-2">
-                {/* New button - only visible for admin users */}
-                {activeTab === 'list' && userRole === 'admin' && (
-                  <button
-                    onClick={() => setIsAddTaskModalOpen(true)}
-                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
-                  >
-                    <Plus size={16} />
-                    New
+        {/* List View - one table, tasks grouped by project */}
+        {activeTab === 'list' && (
+          <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            {!isLoadingTasks && visibleTasks.length === 0 ? (
+              <div className="flex flex-col items-center px-6 py-12 text-center">
+                <ListChecks size={28} aria-hidden="true" className="text-gray-400 dark:text-gray-500" />
+                <p className="mt-3 text-sm font-medium text-gray-900 dark:text-white">
+                  {hasListFilters ? 'No tasks match these filters' : userRole === 'admin' ? 'No tasks yet' : 'No tasks assigned to you yet'}
+                </p>
+                <p className="mt-1 max-w-sm text-[13px] text-gray-500 dark:text-gray-400">
+                  {hasListFilters ? 'Try another assignee, status or project, or clear the filters.' : userRole === 'admin' ? 'Create a task to start planning and tracking project hours.' : 'Tasks your manager assigns to you will appear here.'}
+                </p>
+                {hasListFilters ? (
+                  <button type="button" onClick={clearListFilters} className={`${CONTROL} mt-4 px-4 font-medium hover:bg-gray-50 dark:hover:bg-gray-800`}>Clear filters</button>
+                ) : userRole === 'admin' && (
+                  <button type="button" onClick={() => setIsAddTaskModalOpen(true)} className="mt-4 inline-flex h-10 items-center gap-1.5 rounded-md bg-navy-900 px-4 text-sm font-semibold text-white hover:bg-navy-800">
+                    <Plus size={16} aria-hidden="true" /> New Task
                   </button>
                 )}
-
-                {/* <button className="flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors">
-                  <Search size={16} />
-                  View All Tasks
-                </button> */}
-
-                <div className="relative">
-                  <select
-                    value={selectedAssigneeId}
-                    onChange={(e) => setSelectedAssigneeId(e.target.value)}
-                    className="flex items-center gap-2 border border-gray-300 text-gray-700 pl-8 pr-8 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors appearance-none bg-white cursor-pointer dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/70"
-                  >
-                    <option value="">All Assignees</option>
-                    {users.map(u => (
-                      <option key={u.id} value={u.id}>{u.username || u.first_name || u.email}</option>
-                    ))}
-                  </select>
-                  <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none dark:text-gray-400" />
-                </div>
-
-                <div className="relative">
-                  <select
-                    value={selectedStatus}
-                    onChange={(e) => setSelectedStatus(e.target.value)}
-                    className="flex items-center gap-2 border border-gray-300 text-gray-700 pl-8 pr-8 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors appearance-none bg-white cursor-pointer dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/70"
-                  >
-                    <option value="">All Statuses</option>
-                    {statusChoices.map(s => (
-                      <option key={s.value} value={s.value}>{s.label}</option>
-                    ))}
-                  </select>
-                  <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none dark:text-gray-400" />
-                </div>
-
-                {/* <button className="border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors">
-                  Group By Project
-                </button> */}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* List View */}
-        {activeTab === 'list' && (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto dark:bg-gray-900 dark:border-gray-800">
-            {isLoadingTasks ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
               </div>
             ) : (
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-800">
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
-                      Task/Description
-                    </th>
-                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
-                      Allocated Time
-                    </th>
-                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
-                      Consumed Hours
-                    </th>
-                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
-                      Remaining
-                    </th>
-                    {/* Actions column - hidden for admin and manager users */}
-                    {userRole !== 'admin' && userRole !== 'manager' && (
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
-                        Actions
-                      </th>
-                    )}
-
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-100 dark:bg-gray-900 dark:divide-gray-800">
-                  {taskGroups.map((group) => (
-                    <React.Fragment key={group.project}>
-                      {/* Project Name Row */}
-                      <tr className="bg-white border-b border-gray-200 border-t-4 border-t-blue-800 dark:bg-gray-900 dark:border-gray-800">
-                        <td colSpan={userRole === 'admin' || userRole === 'manager' ? 5 : 6} className="px-6 py-3">
-                          <span className="text-base font-bold text-gray-900 dark:text-white">{group.project}</span>
-                        </td>
+              <>
+                {/* relative: keeps sr-only header text inside this scroll box */}
+                <div className="relative overflow-x-auto">
+                  <table className={`w-full table-fixed text-sm ${isStaff ? 'min-w-[1040px]' : 'min-w-[1200px]'}`}>
+                    <colgroup>
+                      <col />
+                      <col className="w-[180px]" />
+                      <col className="w-[152px]" />
+                      <col className="w-[104px]" />
+                      <col className="w-[112px]" />
+                      <col className="w-[120px]" />
+                      <col className="w-[112px]" />
+                      <col className={isStaff ? 'w-[64px]' : 'w-[320px]'} />
+                    </colgroup>
+                    <thead className="bg-gray-50 text-xs font-semibold text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
+                      <tr className="h-11 border-b border-gray-200 dark:border-gray-800">
+                        {sortHeader('task', 'Task')}
+                        {sortHeader('assignee', 'Assignee')}
+                        {sortHeader('status', 'Status')}
+                        {sortHeader('allocated', 'Allocated', 'right')}
+                        <th scope="col" className="px-4 text-right uppercase tracking-wide">Consumed</th>
+                        <th scope="col" className="px-4 text-right uppercase tracking-wide">Remaining</th>
+                        {sortHeader('due', 'Due Date')}
+                        <th scope="col" className={`px-4 uppercase tracking-wide ${isStaff ? '' : 'text-left'}`}>
+                          {isStaff ? <span className="sr-only">Actions</span> : 'Timer & actions'}
+                        </th>
                       </tr>
-                      {/* Task Rows for this project */}
-                      {group.tasks.map((task) => (
-                        <tr
-                          key={task.id}
-                          onClick={() => handleTaskClick(task)}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer group dark:hover:bg-gray-800"
-                        >
-                          <td className="px-6 py-4">
-                            <div className="relative flex items-center gap-2 group/status">
-                              <StatusBadge status={task.status} />
-                              {userRole === 'user' && (
-                                <>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingStatusTaskId(editingStatusTaskId === task.id ? null : task.id);
-                                    }}
-                                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors opacity-0 group-hover/status:opacity-100 dark:text-gray-500"
-                                    title="Change Status"
-                                  >
-                                    <Edit2 size={14} />
-                                  </button>
-
-                                  {editingStatusTaskId === task.id && (
-                                    <>
-                                      <div
-                                        className="fixed inset-0 z-10 cursor-default"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setEditingStatusTaskId(null);
-                                        }}
-                                      />
-                                      <div className="absolute top-full left-0 mt-1 bg-white shadow-xl rounded-md border border-gray-200 z-20 w-44 overflow-hidden dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
-                                        {['planned', 'in_progress', 'completed', 'needs_attention'].map((choice) => (
-                                          <button
-                                            key={choice}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              updateTaskStatus(task.id, choice);
-                                            }}
-                                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 capitalize transition-colors border-b border-gray-50 last:border-0 dark:hover:bg-gray-700 dark:border-gray-700 ${task.status === choice ? 'bg-blue-50 text-blue-700 font-medium dark:bg-blue-500/15 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'
-                                              }`}
-                                          >
-                                            {choice.replace('_', ' ')}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col">
-                              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{task.title}</span>
-                              {task.assigned_to && (
-                                <span className="text-xs text-gray-500 mt-1 dark:text-gray-400">
-                                  Assigned to: {task.assigned_to.username}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <span className="text-sm text-gray-900 font-mono dark:text-gray-100">
-                              {task.allocated_formatted || parseFloat(task.allocated_hours || '0').toFixed(2) + 'h'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            {editingConsumedTaskId === task.id ? (
-                              <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                <input
-                                  type="text"
-                                  value={consumedInput}
-                                  onChange={(e) => setConsumedInput(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') saveConsumedHours(task.id);
-                                    if (e.key === 'Escape') setEditingConsumedTaskId(null);
-                                  }}
-                                  placeholder="HH:MM"
-                                  autoFocus
-                                  className="w-20 px-2 py-1 text-sm font-mono border border-gray-300 rounded dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
-                                />
+                    </thead>
+                    <tbody>
+                      {isLoadingTasks ? (
+                        [0, 1, 2, 3].map(i => (
+                          <tr key={i} className="h-14 border-b border-gray-100 dark:border-gray-800">
+                            <td colSpan={8} className="px-4"><div className="h-4 animate-pulse rounded bg-gray-100 dark:bg-gray-800" /></td>
+                          </tr>
+                        ))
+                      ) : pageRows.map(row => {
+                        if (row.kind === 'group') {
+                          const collapsed = collapsedProjects.has(row.project);
+                          return (
+                            <tr key={`group-${row.project}${row.continued ? '-cont' : ''}`} className="border-b border-gray-200 bg-gray-50/80 dark:border-gray-800 dark:bg-gray-800/40">
+                              <td colSpan={8} className="px-4 py-2">
                                 <button
-                                  onClick={() => saveConsumedHours(task.id)}
-                                  className="px-2 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                                  type="button"
+                                  onClick={() => toggleProject(row.project)}
+                                  aria-expanded={!collapsed}
+                                  className="flex max-w-full items-center gap-2 text-left text-sm font-semibold text-gray-900 focus:outline-none focus-visible:underline dark:text-white"
                                 >
-                                  Save
+                                  <ChevronDown size={16} aria-hidden="true" className={`shrink-0 text-gray-400 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
+                                  <span className="truncate" title={row.project}>{row.project}</span>
+                                  <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-medium tabular-nums text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
+                                    {row.count} {row.count === 1 ? 'task' : 'tasks'}
+                                  </span>
+                                  {row.continued && <span className="shrink-0 text-xs font-normal text-gray-500 dark:text-gray-400">(continued)</span>}
                                 </button>
-                                <button
-                                  onClick={() => setEditingConsumedTaskId(null)}
-                                  className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500"
-                                  title="Cancel"
+                              </td>
+                            </tr>
+                          );
+                        }
+                        const task = row.task;
+                        const allocated = hoursOf(task.allocated_hours);
+                        const consumed = hoursOf(task.consumed_hours);
+                        const overBy = Math.max(0, consumed - allocated);
+                        const overdue = isTaskOverdue(task);
+                        const who = displayAssignee(task);
+                        return (
+                          <tr
+                            key={task.id}
+                            onClick={() => fetchTaskDetails(task.id)}
+                            className="group h-[58px] cursor-pointer border-b border-gray-100 transition-colors last:border-b-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/40"
+                          >
+                            <td className="px-4 py-3">
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); fetchTaskDetails(task.id); }}
+                                title={task.title}
+                                className="block max-w-full truncate text-left font-medium text-gray-900 hover:text-teal-700 focus:outline-none focus-visible:underline dark:text-white dark:hover:text-violet-300"
+                              >
+                                {task.title}
+                              </button>
+                              {task.milestone_name && <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" title={task.milestone_name}>Milestone: {task.milestone_name}</p>}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex min-w-0 items-center gap-2" title={who || 'Unassigned'}>
+                                <span
+                                  aria-hidden="true"
+                                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${who
+                                    ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-500/20'
+                                    : 'border border-dashed border-gray-300 text-gray-400 dark:border-gray-600 dark:text-gray-500'}`}
                                 >
-                                  <X size={14} />
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center justify-center gap-2 group/consumed">
-                                <span className="text-sm text-gray-900 font-mono dark:text-gray-100">
-                                  {task.consumed_formatted || (task.consumed_hours || 0).toFixed(2) + 'h'}
+                                  {who ? initialsOf(who) : '?'}
                                 </span>
-                                {(userRole === 'admin' || userRole === 'manager') && !task.running && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      startEditingConsumed(task);
-                                    }}
-                                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors opacity-0 group-hover/consumed:opacity-100 dark:text-gray-500"
-                                    title="Edit Consumed Hours"
-                                  >
-                                    <Edit2 size={14} />
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <span className={`text-sm font-medium font-mono ${(task.remaining_hours || 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                              {task.remaining_formatted_hms || (task.remaining_hours || 0).toFixed(2) + 'h'}
-                            </span>
-                          </td>
-                          {/* Actions column - hidden for admin and manager users */}
-                          {userRole !== 'admin' && userRole !== 'manager' && (
-                            <td className="px-4 py-4">
-                              <div className="flex items-center justify-center gap-2">
-                                {/* Control Buttons Group - Only hidden when needs extra hours or has pending approval */}
-                                {!task.needs_extra_hours && !task.has_extra_hours_request && (
-                                  <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 dark:bg-gray-800 dark:border-gray-700">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (!task.running) handleStartTimer(task.id);
-                                      }}
-                                      className={`p-1.5 rounded-md transition-all ${task.running
-                                        ? 'text-gray-300 cursor-not-allowed dark:text-gray-600'
-                                        : 'text-green-600 hover:bg-white hover:shadow-sm dark:text-green-400 dark:hover:bg-gray-700'
-                                        }`}
-                                      disabled={task.running}
-                                      title="Play"
-                                    >
-                                      <Play size={14} fill={!task.running ? "currentColor" : "none"} />
-                                    </button>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (task.running) handlePauseTimer(task.id);
-                                      }}
-                                      className={`p-1.5 rounded-md transition-all ${!task.running
-                                        ? 'text-gray-300 cursor-not-allowed dark:text-gray-600'
-                                        : 'text-orange-600 hover:bg-white hover:shadow-sm dark:text-orange-400 dark:hover:bg-gray-700'
-                                        }`}
-                                      disabled={!task.running}
-                                      title="Pause"
-                                    >
-                                      <Pause size={14} fill={task.running ? "currentColor" : "none"} />
-                                    </button>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (task.running) handleStopTimer(task.id);
-                                      }}
-                                      className={`p-1.5 rounded-md transition-all ${!task.running
-                                        ? 'text-gray-300 cursor-not-allowed dark:text-gray-600'
-                                        : 'text-red-600 hover:bg-white hover:shadow-sm dark:text-red-400 dark:hover:bg-gray-700'
-                                        }`}
-                                      disabled={!task.running}
-                                      title="Stop"
-                                    >
-                                      <Square size={14} fill={task.running ? "currentColor" : "none"} />
-                                    </button>
-                                  </div>
-                                )}
-
-                                {/* Timer Field (Dynamic elapsed time) - Hidden when needs extra hours or pending approval */}
-                                {!task.needs_extra_hours && !task.has_extra_hours_request && (
-                                  <div className={`px-2 py-1.5 rounded-lg border text-xs font-mono min-w-[70px] text-center transition-all ${task.is_stopped
-                                      ? 'bg-red-50 border-red-200 text-red-600 font-semibold dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400'
-                                      : task.running
-                                        ? 'bg-green-50 border-green-200 text-green-700 font-bold dark:bg-green-500/10 dark:border-green-500/30 dark:text-green-300'
-                                        : 'bg-gray-50 border-gray-200 text-gray-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
-                                    }`}>
-                                    {formatElapsedTime(elapsedTimes[task.id] || task.total_seconds || 0)}
-                                    {task.is_stopped && <span className="ml-1 text-[10px]">(Stopped)</span>}
-                                  </div>
-                                )}
-
-                                {/* Request Additional Time Button or Pending Approval Badge */}
-                                {(
-                                  // Show for running tasks that exceeded allocated time
-                                  (!task.is_stopped && task.consumed_hours > parseFloat(task.allocated_hours)) ||
-                                  // Show for tasks that were auto-stopped by the system (time ran out)
-                                  (task.is_stopped && task.stop_reason === 'AUTO')
-                                ) && (
-                                    task.has_extra_hours_request ? (
-                                      // Show "Pending Approval" badge if request already sent
-                                      <div className="px-3 py-1.5 bg-yellow-100 border border-yellow-300 text-yellow-800 text-xs font-medium rounded-lg whitespace-nowrap dark:bg-amber-500/15 dark:border-amber-500/30 dark:text-amber-300">
-                                        Pending Approval
-                                      </div>
-                                    ) : (
-                                      // Show "Request Additional Time" button if no request sent yet
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setExceededTaskId(task.id);
-                                        }}
-                                        className="px-3 py-1.5 bg-orange-600 text-white text-xs font-medium rounded-lg hover:bg-orange-700 transition-colors whitespace-nowrap"
-                                        title="Request additional time for this task"
-                                      >
-                                        Timer Consumed - Request Additional Time
-                                      </button>
-                                    )
-                                  )}
+                                <span className={`truncate ${who ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'}`}>{who || 'Unassigned'}</span>
                               </div>
                             </td>
-                          )}
-                        </tr>
-                      ))}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
+                            <td className="px-4 py-3">
+                              <StatusBadge status={task.status} />
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-gray-900 dark:text-white">{formatHM(allocated)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums text-gray-900 dark:text-white">
+                              {editingConsumedTaskId === task.id ? (
+                                <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="text"
+                                    value={consumedInput}
+                                    onChange={(e) => setConsumedInput(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') saveConsumedHours(task.id);
+                                      if (e.key === 'Escape') setEditingConsumedTaskId(null);
+                                    }}
+                                    placeholder="HH:MM"
+                                    aria-label={`Consumed time for ${task.title} (HH:MM)`}
+                                    autoFocus
+                                    className="h-8 w-16 rounded border border-gray-300 px-1.5 text-right font-mono text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                                  />
+                                  <button type="button" onClick={() => saveConsumedHours(task.id)} aria-label="Save consumed time" title="Save" className="flex h-8 w-8 items-center justify-center rounded bg-navy-900 text-white hover:bg-navy-800">
+                                    <Check size={14} />
+                                  </button>
+                                  <button type="button" onClick={() => setEditingConsumedTaskId(null)} aria-label="Cancel" title="Cancel" className="flex h-8 w-6 items-center justify-center text-gray-400 hover:text-gray-600 dark:text-gray-500">
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-end gap-1">
+                                  {isStaff && !task.running && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); startEditingConsumed(task); }}
+                                      aria-label={`Edit consumed time for ${task.title}`}
+                                      title="Edit consumed time"
+                                      className="p-1 text-gray-400 opacity-0 transition-opacity hover:text-teal-700 focus:opacity-100 group-hover:opacity-100 dark:text-gray-500"
+                                    >
+                                      <Edit2 size={14} />
+                                    </button>
+                                  )}
+                                  <span>{formatHM(consumed)}</span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums">
+                              {overBy > 0 ? (
+                                <>
+                                  <span className="font-medium text-risk-600 dark:text-red-400">00:00</span>
+                                  <div className="text-[11px] font-medium text-risk-600 dark:text-red-400">+{formatHM(overBy)} over</div>
+                                </>
+                              ) : (
+                                <span className="font-medium text-green-700 dark:text-green-400">{formatHM(allocated - consumed)}</span>
+                              )}
+                            </td>
+                            <td className={`px-4 py-3 tabular-nums ${overdue ? 'font-medium text-risk-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                              {toDMY(task.due_date, '—')}
+                              {overdue && <span className="sr-only"> (overdue)</span>}
+                            </td>
+                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                              <div className={`flex items-center gap-2 ${isStaff ? 'justify-end' : ''}`}>
+                                {/* Employees: the existing timer controls, unchanged */}
+                                {!isStaff && !task.needs_extra_hours && !task.has_extra_hours_request && (
+                                  <>
+                                    <div className="flex items-center rounded-md border border-gray-200 bg-gray-50 p-0.5 dark:border-gray-700 dark:bg-gray-800">
+                                      <button
+                                        type="button"
+                                        onClick={() => { if (!task.running) handleStartTimer(task.id); }}
+                                        disabled={task.running}
+                                        aria-label={`Start timer for ${task.title}`}
+                                        title="Start"
+                                        className={`rounded p-1.5 transition-colors ${task.running ? 'cursor-not-allowed text-gray-300 dark:text-gray-600' : 'text-green-600 hover:bg-white dark:text-green-400 dark:hover:bg-gray-700'}`}
+                                      >
+                                        <Play size={14} fill={!task.running ? 'currentColor' : 'none'} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => { if (task.running) handlePauseTimer(task.id); }}
+                                        disabled={!task.running}
+                                        aria-label={`Pause timer for ${task.title}`}
+                                        title="Pause"
+                                        className={`rounded p-1.5 transition-colors ${!task.running ? 'cursor-not-allowed text-gray-300 dark:text-gray-600' : 'text-orange-600 hover:bg-white dark:text-orange-400 dark:hover:bg-gray-700'}`}
+                                      >
+                                        <Pause size={14} fill={task.running ? 'currentColor' : 'none'} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => { if (task.running) handleStopTimer(task.id); }}
+                                        disabled={!task.running}
+                                        aria-label={`Stop timer for ${task.title}`}
+                                        title="Stop"
+                                        className={`rounded p-1.5 transition-colors ${!task.running ? 'cursor-not-allowed text-gray-300 dark:text-gray-600' : 'text-red-600 hover:bg-white dark:text-red-400 dark:hover:bg-gray-700'}`}
+                                      >
+                                        <Square size={14} fill={task.running ? 'currentColor' : 'none'} />
+                                      </button>
+                                    </div>
+                                    <span className={`min-w-[72px] rounded-md border px-2 py-1 text-center font-mono text-xs ${task.is_stopped
+                                      ? 'border-red-200 bg-red-50 font-semibold text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400'
+                                      : task.running
+                                        ? 'border-green-200 bg-green-50 font-semibold text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300'
+                                        : 'border-gray-200 bg-gray-50 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>
+                                      {formatElapsedTime(elapsedTimes[task.id] || task.total_seconds || 0)}
+                                    </span>
+                                  </>
+                                )}
+                                {!isStaff && (
+                                  // Request additional time once the allocation is used up (or the timer auto-stopped)
+                                  ((!task.is_stopped && task.consumed_hours > parseFloat(task.allocated_hours)) || (task.is_stopped && task.stop_reason === 'AUTO')) && (
+                                    task.has_extra_hours_request ? (
+                                      <span className="whitespace-nowrap rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300">
+                                        Pending approval
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setExceededTaskId(task.id)}
+                                        title="Request additional time for this task"
+                                        className="whitespace-nowrap rounded-md bg-orange-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-orange-700"
+                                      >
+                                        Request more time
+                                      </button>
+                                    )
+                                  )
+                                )}
+                                <ActionMenu label={`Actions for ${task.title}`} items={taskMenuItems(task)} />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {!isLoadingTasks && listRows.length > LIST_PAGE_SIZE && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 px-4 py-3 text-[13px] text-gray-600 dark:border-gray-800 dark:text-gray-400">
+                    <span>
+                      {visibleTasks.length} tasks in {byProject.size} {byProject.size === 1 ? 'project' : 'projects'} · page {currentListPage} of {listPageCount}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => setListPage(p => Math.max(1, p - 1))} disabled={currentListPage === 1} className={`${CONTROL} inline-flex h-9 items-center gap-1 px-3 disabled:opacity-50`}>
+                        <ChevronLeft size={16} aria-hidden="true" /> Previous
+                      </button>
+                      <button type="button" onClick={() => setListPage(p => Math.min(listPageCount, p + 1))} disabled={currentListPage === listPageCount} className={`${CONTROL} inline-flex h-9 items-center gap-1 px-3 disabled:opacity-50`}>
+                        Next <ChevronRight size={16} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -2755,6 +2919,24 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
           />
         );
       })()}
+
+      {assigningTask && (
+        <AssignTaskModal
+          isOpen
+          onClose={() => setAssigningTask(null)}
+          onAssignmentSuccess={() => { setAssigningTask(null); fetchTasks(); }}
+          task={{ id: String(assigningTask.id), title: assigningTask.title, assignee: displayAssignee(assigningTask) || undefined, project: assigningTask.project ?? undefined }}
+        />
+      )}
+
+      <ConfirmDialog
+        isOpen={!!taskToDelete}
+        onClose={() => setTaskToDelete(null)}
+        onConfirm={deleteTask}
+        title="Delete task?"
+        message={taskToDelete ? `"${taskToDelete.title}" and its ${formatHM(hoursOf(taskToDelete.consumed_hours))} of logged time will be permanently deleted. This can't be undone.` : ''}
+        confirmLabel="Delete task"
+      />
 
       {/* Task Details Modal for Request Review */}
       {showTaskDetailsModal && selectedTaskDetails && (

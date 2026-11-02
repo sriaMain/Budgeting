@@ -33,6 +33,8 @@ urlpatterns = [
     path('api/hrms/', include('hrms_integration.urls')),
     # APIs AIRA HRMS calls on Project Budgeting (X-API-Key, server-to-server).
     path('api/v1/', include('hrms_integration.external_urls')),
+    # API the helpdesk application calls (its own X-API-Key).
+    path('api/v1/', include('Project.external_urls')),
 ]
 
 from django.conf import settings

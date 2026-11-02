@@ -2,10 +2,13 @@ import { formatDate as toDMY } from '../utils/date';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Layout } from '../components/Layout';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Filter, Edit2, X } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, X, ArrowLeft, Building2, Check, Clock, Hourglass, Wallet, AlertTriangle, ListChecks, Pencil, UserPlus } from 'lucide-react';
 import axiosInstance from '../utils/axiosInstance';
 import { ReusableTable, type Column } from '../components/ReusableTable';
 import { StatusBadge } from '../components/StatusBadge';
+import { MetricCard } from '../components/StatCard';
+import { formatMoney } from '../utils/format';
+import { DEFAULT_ENGAGEMENT_STYLE, DEFAULT_PROJECT_STATUS_STYLE, ENGAGEMENT_META, PROJECT_STATUS_STYLES } from '../utils/projectMeta';
 import { AddTaskModal } from '../components/AddTaskModal';
 import { AssignTaskModal } from '../components/AssignTaskModal';
 import { ProjectCostEntriesPanel } from '../components/ProjectCostEntriesPanel';
@@ -38,6 +41,21 @@ interface Task {
     consumedHoursNum: number;
     remainingHoursNum: number;
 }
+
+// Task status -> shared badge tone (status is always text + colour, never colour alone).
+const TASK_STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'success' | 'danger'> = {
+    Planned: 'neutral',
+    'In Progress': 'info',
+    Completed: 'success',
+    'Needs Attention': 'danger',
+};
+
+// "nithin.kumar" / "Nithin Kumar" -> "NK"; a single word -> its first two letters.
+const initialsOf = (name: string) => {
+    const parts = name.replace(/[._-]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    return (parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[1][0]).toUpperCase();
+};
 
 interface ProjectDetailsPageProps {
     userRole: 'admin' | 'user' | 'manager';
@@ -77,6 +95,14 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const [isLoadingPayments, setIsLoadingPayments] = useState(false);
     const [paymentSummary, setPaymentSummary] = useState<any>(null);
     const [outgoingPayments, setOutgoingPayments] = useState<any[]>([]);
+    // Labels for the header's status badge (same source as the Projects list).
+    const [statusChoices, setStatusChoices] = useState<{ value: string; label: string }[]>([]);
+
+    useEffect(() => {
+        axiosInstance.get('project-status-choices/')
+            .then(response => setStatusChoices(response.data?.status_choices || []))
+            .catch(error => console.error('Error fetching status choices:', error));
+    }, []);
 
     // Handle tab query parameter
     useEffect(() => {
@@ -111,7 +137,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         return {
             id: task.id?.toString() || '',
             assignee: assigneeName || 'Unassigned',
-            assigneeAvatar: assigneeName?.substring(0, 2).toUpperCase() || '○',
+            assigneeAvatar: assigneeName ? initialsOf(assigneeName) : '?',
             title: task.title || 'Untitled Task',
             status: normalizedStatus as Task['status'],
             activityType: task.activity_type || 'Development',
@@ -395,21 +421,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         }
     };
 
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'Planned':
-                return 'bg-purple-500 text-white';
-            case 'In Progress':
-                return 'bg-green-500 text-white';
-            case 'Completed':
-                return 'bg-blue-500 text-white';
-            case 'Needs Attention':
-                return 'bg-red-500 text-white';
-            default:
-                return 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-300';
-        }
-    };
-
     // Converts a backend "HH:MM:SS" string (e.g. remaining_billable_hours) to decimal hours.
     const parseHmsToHours = (hms?: string | null): number => {
         if (!hms) return 0;
@@ -423,7 +434,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         const totalMinutes = Math.max(0, Math.round(hours * 60));
         const h = Math.floor(totalMinutes / 60);
         const m = totalMinutes % 60;
-        return `${h}:${String(m).padStart(2, '0')}`;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
 
     // Real budget/hours figures for the KPI cards, sourced from project.budget
@@ -499,11 +510,29 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         return new Date(t.dueDateRaw) < new Date(new Date().toDateString());
     }).length;
 
+    const statusLabel = statusChoices.find(choice => choice.value === project?.status)?.label
+        ?? (project?.status ? String(project.status).replace(/_/g, ' ') : '');
+    const statusStyle = PROJECT_STATUS_STYLES[project?.status] || DEFAULT_PROJECT_STATUS_STYLE;
+    const engagement = ENGAGEMENT_META[engagementType];
+    const canEditProject = userRole === 'admin' || userRole === 'manager';
+
+    // Billable hours beyond the plan: the backend floors remaining at 0, so an overrun only shows
+    // in the tasks' own consumed hours.
+    const consumedFromTasks = tasks.reduce((sum, t) => sum + t.consumedHoursNum, 0);
+    const billableOverrun = budgetTotalHours > 0 ? Math.max(0, consumedFromTasks - budgetTotalHours) : 0;
+    const consumedShown = billableOverrun > 0 ? consumedFromTasks : budgetConsumedHours;
+    const consumedShownPercent = budgetTotalHours > 0 ? Math.round((consumedShown / budgetTotalHours) * 100) : 0;
+    const openTasksCount = tasks.filter(t => t.status !== 'Completed').length;
+
     if (loading) {
         return (
             <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
-                <div className="flex items-center justify-center h-screen">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                <div role="status" aria-label="Loading project" className="space-y-5">
+                    <div className="h-[104px] animate-pulse rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" />
+                    <div className="grid grid-cols-1 gap-3 sm:gap-4 min-[360px]:grid-cols-2 min-[1280px]:grid-cols-4">
+                        {[0, 1, 2, 3].map(i => <MetricCard key={i} compact loading label="" value="" />)}
+                    </div>
+                    <div className="h-72 animate-pulse rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" />
                 </div>
             </Layout>
         );
@@ -512,17 +541,16 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     if (!project) {
         return (
             <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
-                <div className="flex items-center justify-center h-screen">
-                    <div className="text-center">
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Project Not Found</h2>
-                        <p className="text-gray-600 dark:text-gray-400 mb-4">The project you are looking for does not exist or you don't have permission to view it.</p>
-                        <button
-                            onClick={() => navigate('/projects')}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                            Back to Projects
-                        </button>
-                    </div>
+                <div className="rounded-lg border border-gray-200 bg-white px-6 py-16 text-center dark:border-gray-800 dark:bg-gray-900">
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Project not found</h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">The project you are looking for does not exist or you don't have permission to view it.</p>
+                    <button
+                        type="button"
+                        onClick={() => navigate('/projects')}
+                        className="h-10 px-4 rounded-md bg-navy-900 text-sm font-semibold text-white hover:bg-navy-800"
+                    >
+                        Back to Projects
+                    </button>
                 </div>
             </Layout>
         );
@@ -530,166 +558,238 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
     return (
         <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
-            <div className="w-full space-y-6">{/* full page width, same as the Projects list */}
-                {/* Header Section */}
-                <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-6">
-                    {/* Top Row: Project # + Status Badge + Action Buttons */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-                        <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">#{project.project_no || projectId}</span>
-                            <span className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-semibold ${getStatusColor(project.status || 'In Progress')}`}>
-                                {project.status || 'In Progress'}
-                            </span>
+            <div className="w-full space-y-5">{/* full page width, same as the Projects list */}
+                {/* Header - number, status and type on one line, then the name and client */}
+                <header className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+                    <div className="flex items-start gap-3">
+                        <button
+                            type="button"
+                            onClick={() => navigate('/projects')}
+                            aria-label="Back to Projects"
+                            title="Back to Projects"
+                            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                        >
+                            <ArrowLeft size={16} />
+                        </button>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                                <span className="font-medium tabular-nums text-gray-500 dark:text-gray-400">#{project.project_no || projectId}</span>
+                                {statusLabel && (
+                                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold capitalize ${statusStyle}`}>
+                                        {statusLabel}
+                                    </span>
+                                )}
+                                <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${engagement?.className ?? DEFAULT_ENGAGEMENT_STYLE}`}>
+                                    {engagement?.label ?? engagementType}
+                                </span>
+                            </div>
+                            <h1 className="mt-1 line-clamp-2 break-words text-[22px] font-semibold leading-7 text-gray-900 dark:text-white" title={project.project_name}>
+                                {project.project_name}
+                            </h1>
+                            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-gray-500 dark:text-gray-400">
+                                {project.company_name && (
+                                    <span className="inline-flex min-w-0 items-center gap-1">
+                                        <Building2 size={13} aria-hidden="true" className="shrink-0" />
+                                        <span className="truncate" title={project.company_name}>{project.company_name}</span>
+                                    </span>
+                                )}
+                                {project.company_name && (project.start_date || project.end_date) && <span aria-hidden="true">·</span>}
+                                {(project.start_date || project.end_date) && (
+                                    <span className="tabular-nums">{toDMY(project.start_date, 'Not set')} – {toDMY(project.end_date, 'Not set')}</span>
+                                )}
+                            </p>
                         </div>
+                        {canEditProject && (
+                            <button
+                                type="button"
+                                onClick={() => navigate(`/projects/edit/${project.project_no || projectId}`)}
+                                className="hidden h-9 shrink-0 items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 sm:inline-flex dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                            >
+                                <Pencil size={14} aria-hidden="true" />
+                                Edit details
+                            </button>
+                        )}
                     </div>
+                </header>
 
-                    {/* Project Title */}
-                    <h1 className="text-xl font-bold text-gray-900 dark:text-white">{project.project_name}</h1>
-                </div>
-
-                {/* Stats Section */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Billable hours</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{formatHoursHM(budgetTotalHours)}</p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400">h</p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">{formatHoursHM(budgetConsumedHours)}h consumed ({consumedHoursPercent}%)</p>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Remaining Billable hours</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{formatHoursHM(budgetRemainingHours)}</p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400">h</p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">{remainingHoursPercent}% of total</p>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Total Budget</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{totalBudgetAmount.toLocaleString()} {project?.budget?.currency || 'INR'}</p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                            Used: {usedBudgetAmount.toLocaleString()} {project?.budget?.currency || 'INR'} ({budgetUsedPercent}%)
-                        </p>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Overdue tasks</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white">{overdueTasksCount}</p>
-                    </div>
-                </div>
+                {/* KPIs - every value from project.budget and the task list */}
+                <section aria-label="Project overview" className="grid grid-cols-1 gap-3 sm:gap-4 min-[360px]:grid-cols-2 min-[1280px]:grid-cols-4">
+                    <MetricCard
+                        compact
+                        label="Billable Hours"
+                        value={formatHoursHM(budgetTotalHours)}
+                        icon={<Clock size={16} />}
+                        caption={budgetTotalHours > 0 ? `${formatHoursHM(consumedShown)} consumed · ${consumedShownPercent}%` : 'No billable hours set'}
+                    />
+                    <MetricCard
+                        compact
+                        label="Remaining Billable Hours"
+                        value={formatHoursHM(budgetRemainingHours)}
+                        icon={<Hourglass size={16} />}
+                        caption={billableOverrun > 0
+                            ? <span className="font-medium text-risk-600 dark:text-red-400">Over by {formatHoursHM(billableOverrun)}</span>
+                            : budgetTotalHours > 0 ? `${remainingHoursPercent}% left` : '—'}
+                    />
+                    <MetricCard
+                        compact
+                        className="min-[360px]:max-[479px]:col-span-2"
+                        label="Total Budget"
+                        value={formatMoney(totalBudgetAmount, budgetCurrency)}
+                        icon={<Wallet size={16} />}
+                        caption={totalBudgetAmount > 0
+                            ? <span className={budgetUsedPercent >= 100 ? 'font-medium text-risk-600 dark:text-red-400' : ''}>{formatMoney(usedBudgetAmount, budgetCurrency)} used · {budgetUsedPercent}%</span>
+                            : 'No budget set'}
+                    />
+                    <MetricCard
+                        compact
+                        className="min-[360px]:max-[479px]:col-span-2"
+                        label="Overdue Tasks"
+                        value={overdueTasksCount.toLocaleString('en-IN')}
+                        icon={<AlertTriangle size={16} />}
+                        caption={overdueTasksCount > 0
+                            ? <span className="font-medium text-risk-600 dark:text-red-400">of {openTasksCount} open {openTasksCount === 1 ? 'task' : 'tasks'}</span>
+                            : openTasksCount > 0 ? 'Nothing overdue' : 'No open tasks'}
+                    />
+                </section>
 
                 {/* Tabs Section */}
-                <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
-                    {/* Main Tabs */}
-                    <div className="border-b border-gray-200 dark:border-gray-800 px-6">
-                        <div className="flex gap-8 overflow-x-auto">
-                            {mainTabs.map((tab) => (
-                                <button
-                                    type="button"
-                                    key={tab}
-                                    onClick={() => setActiveTab(tab)}
-                                    className={`py-4 px-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab
-                                        ? 'text-gray-900 dark:text-white border-blue-600'
-                                        : 'text-gray-600 dark:text-gray-400 border-transparent hover:text-gray-900 dark:hover:text-white'
-                                        }`}
-                                >
-                                    {tab}
-                                </button>
-                            ))}
-                        </div>
+                <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                    {/* Main Tabs - scroll sideways on small screens */}
+                    <div
+                        role="tablist"
+                        aria-label="Project sections"
+                        className="flex overflow-x-auto border-b border-gray-200 px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-gray-800"
+                        onKeyDown={(e) => {
+                            if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                            const next = mainTabs[(mainTabs.indexOf(activeTab) + (e.key === 'ArrowRight' ? 1 : mainTabs.length - 1)) % mainTabs.length];
+                            setActiveTab(next);
+                            requestAnimationFrame(() => document.getElementById(`project-tab-${next}`)?.focus());
+                        }}
+                    >
+                        {mainTabs.map((tab) => (
+                            <button
+                                type="button"
+                                key={tab}
+                                id={`project-tab-${tab}`}
+                                role="tab"
+                                aria-selected={activeTab === tab}
+                                aria-controls="project-tab-panel"
+                                tabIndex={activeTab === tab ? 0 : -1}
+                                onClick={() => setActiveTab(tab)}
+                                className={`-mb-px h-12 shrink-0 whitespace-nowrap border-b-2 px-4 text-sm font-medium transition-colors focus:outline-none focus-visible:bg-gray-50 dark:focus-visible:bg-gray-800 ${activeTab === tab
+                                    ? 'border-teal-600 text-gray-900 dark:border-violet-400 dark:text-white'
+                                    : 'border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                                    }`}
+                            >
+                                {tab}
+                            </button>
+                        ))}
                     </div>
 
                     {/* Tab Content */}
-                    <div className="p-6">
+                    <div id="project-tab-panel" role="tabpanel" aria-labelledby={`project-tab-${activeTab}`} className="p-4 sm:p-5">
                         {activeTab === 'Tasks' && (
-                            <div className="space-y-4">
-                                        {/* Header - same layout as the Expenses tab */}
-                                        <div className="flex flex-wrap items-center justify-between gap-3">
-                                            <div>
-                                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Tasks</h3>
-                                                {!isLoadingTasks && (
-                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                                        {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <button
-                                                onClick={() => setIsAddTaskModalOpen(true)}
-                                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                                            >
-                                                <Plus className="w-4 h-4" />
-                                                Add Task
-                                            </button>
-                                        </div>
-                                        <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-                                            <table className="w-full">
-                                                <thead>
-                                                    <tr className="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-800/50">
-                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Assignee</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Task title</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Status</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Activity type</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Allocated hours</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Consumed hours</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Due date</th>
-                                                        <th className="text-left text-xs font-semibold text-gray-700 dark:text-gray-300 py-3 px-3">Remaining</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {isLoadingTasks ? (
-                                                        <tr>
-                                                            <td colSpan={8} className="py-12 text-center">
-                                                                <div className="flex flex-col items-center justify-center">
-                                                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
-                                                                    <p className="text-sm text-gray-500 dark:text-gray-400">Loading tasks...</p>
-                                                                </div>
-                                                            </td>
+                            <div className="space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-white">
+                                        Tasks
+                                        {!isLoadingTasks && (
+                                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium tabular-nums text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                                                {tasks.length}
+                                            </span>
+                                        )}
+                                    </h2>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsAddTaskModalOpen(true)}
+                                        className="inline-flex h-10 items-center gap-1.5 rounded-md bg-navy-900 px-4 text-sm font-semibold text-white hover:bg-navy-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
+                                    >
+                                        <Plus className="w-4 h-4" aria-hidden="true" />
+                                        Add Task
+                                    </button>
+                                </div>
+
+                                {!isLoadingTasks && tasks.length === 0 ? (
+                                    <div className="flex flex-col items-center rounded-lg border border-dashed border-gray-300 px-6 py-10 text-center dark:border-gray-700">
+                                        <ListChecks size={28} aria-hidden="true" className="text-gray-400 dark:text-gray-500" />
+                                        <p className="mt-3 text-sm font-medium text-gray-900 dark:text-white">No tasks yet</p>
+                                        <p className="mt-1 max-w-sm text-[13px] text-gray-500 dark:text-gray-400">
+                                            Add the first task to start tracking allocated and consumed hours on this project.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    // relative: keeps sr-only header text inside this scroll box.
+                                    <div className="relative overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
+                                        <table className="w-full min-w-[1136px] table-fixed text-sm">
+                                            <colgroup>
+                                                <col className="w-[200px]" />
+                                                <col />
+                                                <col className="w-[152px]" />
+                                                <col className="w-[132px]" />
+                                                <col className="w-[96px]" />
+                                                <col className="w-[112px]" />
+                                                <col className="w-[104px]" />
+                                                <col className="w-[112px]" />
+                                                <col className="w-[84px]" />
+                                            </colgroup>
+                                            <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
+                                                <tr className="h-11">
+                                                    <th scope="col" className="px-4 text-left">Assignee</th>
+                                                    <th scope="col" className="px-4 text-left">Task Title</th>
+                                                    <th scope="col" className="px-4 text-left">Status</th>
+                                                    <th scope="col" className="px-4 text-left">Activity Type</th>
+                                                    <th scope="col" className="px-4 text-right">Allocated</th>
+                                                    <th scope="col" className="px-4 text-right">Consumed</th>
+                                                    <th scope="col" className="px-4 text-left">Due Date</th>
+                                                    <th scope="col" className="px-4 text-right">Remaining</th>
+                                                    <th scope="col" className="px-4 text-right"><span className="sr-only">Actions</span></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                                {isLoadingTasks ? (
+                                                    [0, 1, 2].map(i => (
+                                                        <tr key={i} className="h-14">
+                                                            <td colSpan={9} className="px-4"><div className="h-4 animate-pulse rounded bg-gray-100 dark:bg-gray-800" /></td>
                                                         </tr>
-                                                    ) : tasks.length === 0 ? (
-                                                        <tr>
-                                                            <td colSpan={8} className="py-12 text-center">
-                                                                <p className="text-sm text-gray-500 dark:text-gray-400">No tasks yet. Use “+ Add Task” to create one.</p>
-                                                            </td>
-                                                        </tr>
-                                                    ) : (
-                                                        tasks.map((task) => (
-                                                            <tr key={task.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
-                                                                <td className="py-4 px-3">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${task.assignee !== 'Unassigned'
-                                                                            ? 'bg-blue-600 text-white'
-                                                                            : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border-2 border-dashed border-gray-300 dark:border-gray-700'
-                                                                            }`}
-                                                                            title={task.assignee}
+                                                    ))
+                                                ) : (
+                                                    tasks.map((task) => {
+                                                        const assigned = task.assignee !== 'Unassigned';
+                                                        const overBy = Math.max(0, task.consumedHoursNum - task.allocatedHoursNum);
+                                                        const overdue = !!task.dueDateRaw && task.status !== 'Completed' && new Date(task.dueDateRaw) < new Date(new Date().toDateString());
+                                                        return (
+                                                            <tr key={task.id} className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/40">
+                                                                <td className="px-4 py-3">
+                                                                    <div className="flex min-w-0 items-center gap-2.5" title={task.assignee}>
+                                                                        <span
+                                                                            aria-hidden="true"
+                                                                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${assigned
+                                                                                ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-500/20'
+                                                                                : 'border border-dashed border-gray-300 text-gray-400 dark:border-gray-600 dark:text-gray-500'}`}
                                                                         >
                                                                             {task.assigneeAvatar}
-                                                                        </div>
-                                                                        <span className="text-sm text-gray-900 dark:text-white">&gt;</span>
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                setSelectedTaskForAssignment(task);
-                                                                                setIsAssignTaskModalOpen(true);
-                                                                            }}
-                                                                            className="w-6 h-6 rounded-full border-2 border-dotted border-gray-400 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/15 transition-all cursor-pointer flex items-center justify-center"
-                                                                            title={task.assignee !== 'Unassigned' ? 'Reassign task' : 'Assign task'}
-                                                                        >
-                                                                            <Plus className="w-3 h-3 text-gray-400 dark:text-gray-500 hover:text-blue-500" />
-                                                                        </button>
+                                                                        </span>
+                                                                        <span className={`truncate ${assigned ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'}`}>{task.assignee}</span>
                                                                     </div>
                                                                 </td>
-                                                                <td
-                                                                    onClick={() => openTaskForEdit(task.id)}
-                                                                    className="py-4 px-3 text-sm text-gray-900 dark:text-white cursor-pointer"
-                                                                >{task.title}</td>
-                                                                <td className="py-4 px-3">
-                                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
-                                                                        {task.status}
-                                                                    </span>
+                                                                <td className="px-4 py-3">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openTaskForEdit(task.id)}
+                                                                        title={task.title}
+                                                                        className="block max-w-full truncate text-left font-medium text-gray-900 hover:text-teal-700 focus:outline-none focus-visible:underline dark:text-white dark:hover:text-violet-300"
+                                                                    >
+                                                                        {task.title}
+                                                                    </button>
                                                                 </td>
-                                                                <td className="py-4 px-3 text-sm text-gray-600 dark:text-gray-400">{task.activityType}</td>
-                                                                <td className="py-4 px-3 text-sm text-gray-900 dark:text-white">{task.allocatedHours}</td>
-                                                                <td className="py-4 px-3 text-sm text-gray-900 dark:text-white">
+                                                                <td className="px-4 py-3">
+                                                                    <StatusBadge status={task.status} label={task.status} variant={TASK_STATUS_VARIANT[task.status] ?? 'neutral'} className="!px-2 !py-0.5 whitespace-nowrap" />
+                                                                </td>
+                                                                <td className="truncate px-4 py-3 text-gray-600 dark:text-gray-400" title={task.activityType}>{task.activityType}</td>
+                                                                <td className="px-4 py-3 text-right tabular-nums text-gray-900 dark:text-white">{formatHoursHM(task.allocatedHoursNum)}</td>
+                                                                <td className="px-4 py-3 text-right tabular-nums text-gray-900 dark:text-white">
                                                                     {editingConsumedTaskId === task.id ? (
-                                                                        <div className="flex items-center gap-1">
+                                                                        <div className="flex items-center justify-end gap-1">
                                                                             <input
                                                                                 type="text"
                                                                                 value={consumedInput}
@@ -699,46 +799,87 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                                                     if (e.key === 'Escape') setEditingConsumedTaskId(null);
                                                                                 }}
                                                                                 placeholder="HH:MM"
+                                                                                aria-label={`Consumed time for ${task.title} (HH:MM)`}
                                                                                 autoFocus
-                                                                                className="w-20 px-2 py-1 text-sm font-mono border border-gray-300 rounded dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+                                                                                className="h-8 w-16 rounded border border-gray-300 px-1.5 text-right font-mono text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
                                                                             />
                                                                             <button
+                                                                                type="button"
                                                                                 onClick={() => saveConsumedHours(task.id)}
-                                                                                className="px-2 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                                                                                aria-label="Save consumed time"
+                                                                                title="Save"
+                                                                                className="flex h-8 w-8 items-center justify-center rounded bg-navy-900 text-white hover:bg-navy-800"
                                                                             >
-                                                                                Save
+                                                                                <Check className="w-3.5 h-3.5" />
                                                                             </button>
                                                                             <button
+                                                                                type="button"
                                                                                 onClick={() => setEditingConsumedTaskId(null)}
-                                                                                className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500"
+                                                                                aria-label="Cancel"
                                                                                 title="Cancel"
+                                                                                className="flex h-8 w-6 items-center justify-center text-gray-400 hover:text-gray-600 dark:text-gray-500"
                                                                             >
                                                                                 <X className="w-3.5 h-3.5" />
                                                                             </button>
                                                                         </div>
                                                                     ) : (
-                                                                        <div className="flex items-center gap-2 group/consumed">
-                                                                            <span>{task.consumedHours}</span>
+                                                                        <div className="flex items-center justify-end gap-1">
                                                                             {(userRole === 'admin' || userRole === 'manager') && (
                                                                                 <button
+                                                                                    type="button"
                                                                                     onClick={() => startEditingConsumed(task)}
-                                                                                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors opacity-0 group-hover/consumed:opacity-100 dark:text-gray-500"
-                                                                                    title="Edit consumed hours"
+                                                                                    aria-label={`Edit consumed time for ${task.title}`}
+                                                                                    title="Edit consumed time"
+                                                                                    className="p-1 text-gray-400 opacity-0 transition-opacity hover:text-teal-700 focus:opacity-100 group-hover:opacity-100 dark:text-gray-500"
                                                                                 >
                                                                                     <Edit2 className="w-3.5 h-3.5" />
                                                                                 </button>
                                                                             )}
+                                                                            <span>{formatHoursHM(task.consumedHoursNum)}</span>
                                                                         </div>
                                                                     )}
                                                                 </td>
-                                                                <td className="py-4 px-3 text-sm text-gray-600 dark:text-gray-400">{task.dueDate}</td>
-                                                                <td className="py-4 px-3 text-sm text-gray-600 dark:text-gray-400">{task.remaining}</td>
+                                                                <td className={`px-4 py-3 tabular-nums ${overdue ? 'font-medium text-risk-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                                                                    {task.dueDate}
+                                                                    {overdue && <span className="sr-only"> (overdue)</span>}
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right tabular-nums text-gray-900 dark:text-white">
+                                                                    {formatHoursHM(task.remainingHoursNum)}
+                                                                    {overBy > 0 && <div className="text-[11px] font-medium text-risk-600 dark:text-red-400">+{formatHoursHM(overBy)} over</div>}
+                                                                </td>
+                                                                <td className="px-4 py-3">
+                                                                    <div className="flex justify-end gap-1">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => openTaskForEdit(task.id)}
+                                                                            aria-label={`Edit task ${task.title}`}
+                                                                            title="Edit task"
+                                                                            className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+                                                                        >
+                                                                            <Pencil className="w-4 h-4" />
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setSelectedTaskForAssignment(task);
+                                                                                setIsAssignTaskModalOpen(true);
+                                                                            }}
+                                                                            aria-label={`${assigned ? 'Reassign' : 'Assign'} task ${task.title}`}
+                                                                            title={assigned ? 'Reassign task' : 'Assign task'}
+                                                                            className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+                                                                        >
+                                                                            <UserPlus className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
                                                             </tr>
-                                                        ))
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                                        );
+                                                    })
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
                             </div>
                         )}
 

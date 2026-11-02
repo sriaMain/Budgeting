@@ -8,7 +8,7 @@ interface StageTheme {
   header: string;
   /** Coloured top edge of the column. */
   accent: string;
-  /** Status pill on a card. */
+  /** Status pill on a card. */ 
   pill: string;
 }
 

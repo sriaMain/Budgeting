@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MoreHorizontal } from 'lucide-react';
+import { ActionMenu, type ActionMenuItem } from './ActionMenu';
+import { DEFAULT_ENGAGEMENT_STYLE, ENGAGEMENT_META } from '../utils/projectMeta';
 
 export type ProjectHealth = 'healthy' | 'watch' | 'at_risk';
 
@@ -11,22 +12,7 @@ const HEALTH_META: Record<ProjectHealth, { bar: string; text: string }> = {
   at_risk: { bar: 'bg-risk-600', text: 'text-risk-600 dark:text-red-400' },
 };
 
-// Engagement model chosen when the project was created (Create Project modal)
-const ENGAGEMENT_META: Record<string, { label: string; className: string }> = {
-  fixed: {
-    label: 'Fixed Budget / Milestone',
-    className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30',
-  },
-  time_and_material: {
-    label: 'Time & Material (T&M)',
-    className: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30',
-  },
-};
-
-export interface ProjectCardAction {
-  label: string;
-  onSelect: () => void;
-}
+export type ProjectCardAction = ActionMenuItem;
 
 interface ProjectHealthCardProps {
   name: string;
@@ -50,60 +36,6 @@ interface ProjectHealthCardProps {
   statusControl?: React.ReactNode;
   actions?: ProjectCardAction[];
 }
-
-const CardMenu: React.FC<{ label: string; actions: ProjectCardAction[] }> = ({ label, actions }) => {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const escape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setOpen(false);
-        ref.current?.querySelector<HTMLButtonElement>('button')?.focus();
-      }
-    };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', escape);
-    ref.current?.querySelector<HTMLButtonElement>('[role=menuitem]')?.focus();
-    return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label={label}
-        title="More actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="flex h-7 w-7 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-      >
-        <MoreHorizontal size={16} aria-hidden="true" />
-      </button>
-      {open && (
-        <div role="menu" aria-label={label} className="absolute right-0 top-full z-20 mt-1 w-40 rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:shadow-black/40">
-          {actions.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              role="menuitem"
-              onClick={() => { setOpen(false); action.onSelect(); }}
-              className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:bg-gray-700"
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 export const ProjectHealthCard: React.FC<ProjectHealthCardProps> = ({
   name,
@@ -153,8 +85,7 @@ export const ProjectHealthCard: React.FC<ProjectHealthCardProps> = ({
           {engagementType && (
             <span
               title={engagement?.label ?? engagementType}
-              className={`mt-1 inline-block max-w-full truncate rounded-md border px-1.5 py-px align-top text-[11px] font-semibold ${engagement?.className ??
-                'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'}`}
+              className={`mt-1 inline-block max-w-full truncate rounded-md border px-1.5 py-px align-top text-[11px] font-semibold ${engagement?.className ?? DEFAULT_ENGAGEMENT_STYLE}`}
             >
               {engagement?.label ?? engagementType}
             </span>
@@ -162,7 +93,7 @@ export const ProjectHealthCard: React.FC<ProjectHealthCardProps> = ({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {statusControl}
-          {actions && actions.length > 0 && <CardMenu label={`More actions for ${name}`} actions={actions} />}
+          {actions && actions.length > 0 && <ActionMenu label={`More actions for ${name}`} items={actions} />}
         </div>
       </div>
 
