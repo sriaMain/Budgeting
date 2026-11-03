@@ -11,7 +11,8 @@ from .views import (ProjectAPIView, ProjectBudgetAPIView, BudgetLineListCreateAP
  TimesheetAPIView, TimesheetEntryAPIView, SubmitTimesheetAPIView, StartTaskTimerAPIView,
   PauseTaskTimerAPIView, PendingExtraHoursAPIView, ReviewExtraHoursAPIView, RequestExtraHoursAPIView, ExtraHoursHistoryAPIView,
   TaskStatusChoicesView, ServiceUsersAPIView, TaskGroupedByStatusAPIView, TimesheetWeeklySummaryAPIView, TimesheetEmployeeAPIView, ProjectStatusChoicesView, ProjectNamesAPIView,
-  MyTaskExtrasAPIView, MyActiveTimerAPIView, AdjustConsumedHoursAPIView, ProjectManagerOptionsAPIView, ProjectPOCOptionsAPIView)
+  MyTaskExtrasAPIView, MyActiveTimerAPIView, AdjustConsumedHoursAPIView, ProjectManagerOptionsAPIView, ProjectPOCOptionsAPIView,
+  ProjectHelpdeskTasksAPIView, HelpdeskTasksAPIView)
 
 
 urlpatterns = [
@@ -38,6 +39,8 @@ urlpatterns = [
     path('projects/<int:project_no>/periods/', ProjectPeriodListAPIView.as_view(), name='project-periods'),  # T&M monthly financials
     path('projects/<int:project_no>/periods/<int:period_id>/', ProjectPeriodDetailAPIView.as_view(), name='project-period-detail'),
     path('projects/<int:project_no>/financial-summary/', ProjectFinancialSummaryAPIView.as_view(), name='project-financial-summary'),
+    path('projects/<int:project_no>/helpdesk-tasks/', ProjectHelpdeskTasksAPIView.as_view(), name='project-helpdesk-tasks'),  # read-only, from the helpdesk
+    path('helpdesk-tasks/', HelpdeskTasksAPIView.as_view(), name='helpdesk-tasks'),  # Task Management, read-only
 
     path('tasks/<int:project_id>/tasks/', TaskAPIView.as_view(), name='project-tasks-list'),  #project related tasks
     path('tasks/', TaskAPIView.as_view(), name='task-list-create'),

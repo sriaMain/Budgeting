@@ -332,6 +332,12 @@ AIRA_INBOUND_API_KEYS = [k.strip() for k in os.environ.get("AIRA_INBOUND_API_KEY
 # Keys the helpdesk application sends (X-API-Key) to read GET /api/v1/projects/ - separate from
 # AIRA's so either can be rotated or revoked alone. Comma-separated; empty = every call refused.
 HELPDESK_INBOUND_API_KEYS = [k.strip() for k in os.environ.get("HELPDESK_INBOUND_API_KEYS", "").split(",") if k.strip()]
+# Project Details > Tasks reads the helpdesk's tasks for the project (Project/helpdesk_client.py):
+# GET HELPDESK_TASKS_API_URL?project_id=<project_no> with X-API-Key: HELPDESK_API_KEY - a secret
+# issued by the helpdesk team, set in .env, never committed. Either empty = the tab says not connected.
+HELPDESK_TASKS_API_URL = os.environ.get("HELPDESK_TASKS_API_URL", "").strip()
+HELPDESK_API_KEY = os.environ.get("HELPDESK_API_KEY", "").strip()
+HELPDESK_API_TIMEOUT_SECONDS = int(os.environ.get("HELPDESK_API_TIMEOUT_SECONDS", "10"))
 # Push to AIRA: when an employee's projects change (Resources tab, or a project / milestone they
 # are on), POST that employee's complete project list to AIRA_WEBHOOK_URL with X-API-Key:
 # AIRA_PUSH_API_KEY (hrms_integration.tasks). Either empty = no push; AIRA can still pull

@@ -2,15 +2,16 @@ import { formatDate as toDMY } from '../utils/date';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Layout } from '../components/Layout';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Filter, Edit2, X, ArrowLeft, Building2, Check, Clock, Hourglass, Wallet, AlertTriangle, ListChecks, Pencil, UserPlus } from 'lucide-react';
+import { Plus, Search, Filter, ArrowLeft, Building2, Clock, Hourglass, Wallet, AlertTriangle, Pencil } from 'lucide-react';
 import axiosInstance from '../utils/axiosInstance';
 import { ReusableTable, type Column } from '../components/ReusableTable';
 import { StatusBadge } from '../components/StatusBadge';
 import { MetricCard } from '../components/StatCard';
 import { formatMoney } from '../utils/format';
 import { DEFAULT_ENGAGEMENT_STYLE, DEFAULT_PROJECT_STATUS_STYLE, ENGAGEMENT_META, PROJECT_STATUS_STYLES } from '../utils/projectMeta';
-import { AddTaskModal } from '../components/AddTaskModal';
-import { AssignTaskModal } from '../components/AssignTaskModal';
+import { HelpdeskTasksPanel } from '../components/HelpdeskTasksPanel';
+import { useHelpdeskTasks } from '../hooks/useHelpdeskTasks';
+import { isTaskDone, isTaskOverdue } from '../utils/helpdeskTasks';
 import { ProjectCostEntriesPanel } from '../components/ProjectCostEntriesPanel';
 import { BudgetLinesPanel } from '../components/BudgetLinesPanel';
 import { MilestonesPanel } from '../components/MilestonesPanel';
@@ -22,40 +23,6 @@ import { paymentStatusVariant } from '../utils/paymentStatus';
 import { BillDrawer } from '../components/BillDrawer';
 import { ExpenseDrawer } from '../components/ExpenseDrawer';
 import { toast } from 'react-hot-toast';
-
-interface Task {
-    id: string;
-    assignee: string;
-    assigneeAvatar: string;
-    title: string;
-    status: 'Planned' | 'In Progress' | 'Completed' | 'Needs Attention';
-    activityType: string;
-    allocatedHours: string;
-    consumedHours: string;
-    dueDate: string;
-    dueDateRaw: string | null;
-    remaining: string;
-    // Clean numeric hours (decimal), used by the Time/Budget views instead of
-    // the inconsistently-formatted display strings above.
-    allocatedHoursNum: number;
-    consumedHoursNum: number;
-    remainingHoursNum: number;
-}
-
-// Task status -> shared badge tone (status is always text + colour, never colour alone).
-const TASK_STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'success' | 'danger'> = {
-    Planned: 'neutral',
-    'In Progress': 'info',
-    Completed: 'success',
-    'Needs Attention': 'danger',
-};
-
-// "nithin.kumar" / "Nithin Kumar" -> "NK"; a single word -> its first two letters.
-const initialsOf = (name: string) => {
-    const parts = name.replace(/[._-]+/g, ' ').trim().split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return '?';
-    return (parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[1][0]).toUpperCase();
-};
 
 interface ProjectDetailsPageProps {
     userRole: 'admin' | 'user' | 'manager';
@@ -81,14 +48,10 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const [openExpenseId, setOpenExpenseId] = useState<number | null>(null);
     const [project, setProject] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
-    const [selectedTaskForEdit, setSelectedTaskForEdit] = useState<any | null>(null);
-    const [isAssignTaskModalOpen, setIsAssignTaskModalOpen] = useState(false);
-    const [selectedTaskForAssignment, setSelectedTaskForAssignment] = useState<Task | null>(null);
-    const [tasks, setTasks] = useState<Task[]>([]);
-    const [editingConsumedTaskId, setEditingConsumedTaskId] = useState<string | null>(null);
-    const [consumedInput, setConsumedInput] = useState<string>('');
-    const [isLoadingTasks, setIsLoadingTasks] = useState(true);
+    // Tasks tab + Overdue Tasks KPI: the helpdesk's tasks on this project (created and assigned there).
+    const helpdeskTasks = useHelpdeskTasks(projectId ? `/projects/${projectId}/helpdesk-tasks/` : undefined);
+    // Hours already logged on Project Budgeting's own tasks - only for the billable-overrun KPI.
+    const [taskConsumedHours, setTaskConsumedHours] = useState(0);
     const [invoices, setInvoices] = useState<any[]>([]);
     const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
     const [payments, setPayments] = useState<any[]>([]);
@@ -117,41 +80,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
             setActiveTab(tabParam === 'Budget' || tabParam === 'Time' ? 'Tasks' : tabParam);
         }
     }, [searchParams]);
-
-    // Helper function to map API task data to component Task interface
-    const mapApiTaskToTask = (task: any): Task => {
-        // Normalize status: capitalize first letter
-        let normalizedStatus = task.status || 'planned';
-        if (normalizedStatus === 'planned') normalizedStatus = 'Planned';
-        else if (normalizedStatus === 'in_progress' || normalizedStatus === 'in progress') normalizedStatus = 'In Progress';
-        else if (normalizedStatus === 'completed') normalizedStatus = 'Completed';
-        else if (normalizedStatus === 'needs_attention' || normalizedStatus === 'needs attention') normalizedStatus = 'Needs Attention';
-
-        const allocatedHoursNum = Number(task.allocated_hours) || 0;
-        const consumedHoursNum = Number(task.consumed_hours) || 0;
-        const remainingHoursNum = task.remaining_hours != null ? Number(task.remaining_hours) : Math.max(0, allocatedHoursNum - consumedHoursNum);
-
-        // Employee (assigned_to) or freelancer (assigned_freelancer)
-        const assigneeName = task.assigned_to?.username || task.assigned_freelancer?.name;
-
-        return {
-            id: task.id?.toString() || '',
-            assignee: assigneeName || 'Unassigned',
-            assigneeAvatar: assigneeName ? initialsOf(assigneeName) : '?',
-            title: task.title || 'Untitled Task',
-            status: normalizedStatus as Task['status'],
-            activityType: task.activity_type || 'Development',
-            allocatedHours: task.allocated_formatted || (task.allocated_hours ? `${task.allocated_hours}h` : '0h'),
-            consumedHours: task.consumed_formatted || (task.consumed_hours ? `${task.consumed_hours}h` : '0h'),
-            dueDate: toDMY(task.due_date, 'TBD'),
-            dueDateRaw: task.due_date || null,
-            remaining: task.remaining_formatted_hms || (task.remaining_hours ? `${task.remaining_hours}h` : task.allocated_hours ? `${task.allocated_hours}h` : '0h'),
-            allocatedHoursNum,
-            consumedHoursNum,
-            remainingHoursNum,
-        };
-    };
-
 
     useEffect(() => {
         const fetchProjectDetails = async () => {
@@ -188,32 +116,21 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
             }
         };
 
-        const fetchProjectTasks = async () => {
+        const fetchTaskConsumedHours = async () => {
             if (!projectId) return;
-            setIsLoadingTasks(true);
             try {
-                // Fetch tasks from api/tasks/{projectId}/tasks/
                 const response = await axiosInstance.get(`/tasks/${projectId}/tasks/`);
-                console.log('Tasks API response:', response.data);
-
-                // Response is an array, get the first element which contains Tasks
-                if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-                    const projectTasksData = response.data[0];
-                    if (projectTasksData.Tasks && Array.isArray(projectTasksData.Tasks)) {
-                        console.log('Project tasks from API:', projectTasksData.Tasks);
-                        const mappedTasks: Task[] = projectTasksData.Tasks.map(mapApiTaskToTask);
-                        setTasks(mappedTasks);
-                    }
+                const projectTasks = Array.isArray(response.data) ? response.data[0]?.Tasks : null;
+                if (Array.isArray(projectTasks)) {
+                    setTaskConsumedHours(projectTasks.reduce((sum: number, t: any) => sum + (Number(t.consumed_hours) || 0), 0));
                 }
             } catch (error) {
-                console.error('Error fetching project tasks:', error);
-            } finally {
-                setIsLoadingTasks(false);
+                console.error('Error fetching project task hours:', error);
             }
         };
 
         fetchProjectDetails();
-        fetchProjectTasks();
+        fetchTaskConsumedHours();
     }, [projectId]);
 
     // Invoices are only ever populated from this one project-detail fetch,
@@ -312,115 +229,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         if (activeTab === 'Payment' || activeTab === 'Budget') fetchProjectPayments();
     };
 
-    const handleTaskAdded = async (newTask: any) => {
-        console.log('Task created for project:', newTask);
-
-        // Refetch tasks to get updated list
-        try {
-            const response = await axiosInstance.get(`/tasks/${projectId}/tasks/`);
-            if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-                const projectTasksData = response.data[0];
-                if (projectTasksData.Tasks && Array.isArray(projectTasksData.Tasks)) {
-                    const mappedTasks: Task[] = projectTasksData.Tasks.map(mapApiTaskToTask);
-                    setTasks(mappedTasks);
-                }
-            }
-        } catch (error) {
-            console.error('Error refetching tasks:', error);
-        }
-
-        // toast.success('Task added successfully!');
-    };
-
-    const handleUpdateTask = async (taskId: string, updates: any) => {
-        try {
-            const response = await axiosInstance.patch(`tasks/${taskId}/`, updates);
-            if (response.status === 200 || response.status === 204) {
-                toast.success('Task updated');
-                const updatedApiTask = response.data?.task || response.data;
-                setTasks(prev => prev.map(t => t.id === taskId ? mapApiTaskToTask(updatedApiTask) : t));
-            }
-        } catch (error) {
-            console.error('Failed to update task:', error);
-            toast.error('Failed to update task');
-        }
-    };
-
-    // Re-fetches a single task (e.g. after starting/pausing its timer, which
-    // flips status server-side) and merges it back into the tasks list.
-    const refreshTaskById = async (taskId: string) => {
-        try {
-            const resp = await axiosInstance.get(`tasks/${taskId}/`);
-            setTasks(prev => prev.map(t => t.id === taskId ? mapApiTaskToTask(resp.data) : t));
-        } catch (err) {
-            console.error('Failed to refresh task after timer change', err);
-        }
-    };
-
-    const startEditingConsumed = (task: Task) => {
-        const totalMinutes = Math.round((task.consumedHoursNum || 0) * 60);
-        const hh = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
-        const mm = String(totalMinutes % 60).padStart(2, '0');
-        setConsumedInput(`${hh}:${mm}`);
-        setEditingConsumedTaskId(task.id);
-    };
-
-    // Admin / manager correction of consumed hours (input as HH:MM)
-    const saveConsumedHours = async (taskId: string) => {
-        const match = consumedInput.trim().match(/^(\d{1,4}):([0-5]\d)$/);
-        if (!match) {
-            toast.error('Enter consumed time as HH:MM');
-            return;
-        }
-        const hours = parseInt(match[1], 10) + parseInt(match[2], 10) / 60;
-        try {
-            const response = await axiosInstance.post(`tasks/${taskId}/consumed-hours/`, { consumed_hours: hours });
-            if (response.status === 200) {
-                toast.success('Consumed hours updated');
-                setEditingConsumedTaskId(null);
-                await refreshTaskById(taskId);
-                // Refresh the KPI cards (billable hours consumed / remaining)
-                if (projectId) {
-                    const projectResp = await axiosInstance.get(`/projects/${projectId}/`);
-                    setProject(projectResp.data);
-                }
-            }
-        } catch (error: any) {
-            console.error('Failed to update consumed hours:', error);
-            toast.error(error?.response?.data?.error || 'Failed to update consumed hours');
-        }
-    };
-
-    // Opens a task in the edit modal from the Task list.
-    const openTaskForEdit = async (taskId: string) => {
-        try {
-            const resp = await axiosInstance.get(`tasks/${taskId}/`);
-            setSelectedTaskForEdit(resp.data);
-            setIsAddTaskModalOpen(true);
-        } catch (err) {
-            console.error('Failed to fetch task details', err);
-            toast.error('Failed to load task for editing');
-        }
-    };
-
-    const handleAssignmentSuccess = async (taskId: string, userId: number) => {
-        console.log('Task assigned:', taskId, 'to user:', userId);
-
-        // Refetch tasks to get updated assignee information
-        try {
-            const response = await axiosInstance.get(`/tasks/${projectId}/tasks/`);
-            if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-                const projectTasksData = response.data[0];
-                if (projectTasksData.Tasks && Array.isArray(projectTasksData.Tasks)) {
-                    const mappedTasks: Task[] = projectTasksData.Tasks.map(mapApiTaskToTask);
-                    setTasks(mappedTasks);
-                }
-            }
-        } catch (error) {
-            console.error('Error refetching tasks:', error);
-        }
-    };
-
     // Converts a backend "HH:MM:SS" string (e.g. remaining_billable_hours) to decimal hours.
     const parseHmsToHours = (hms?: string | null): number => {
         if (!hms) return 0;
@@ -505,10 +313,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
         ? Number(project.budget.forecasted_profit)
         : null;
 
-    const overdueTasksCount = tasks.filter(t => {
-        if (!t.dueDateRaw || t.status === 'Completed') return false;
-        return new Date(t.dueDateRaw) < new Date(new Date().toDateString());
-    }).length;
+    const overdueTasksCount = helpdeskTasks.tasks.filter(isTaskOverdue).length;
 
     const statusLabel = statusChoices.find(choice => choice.value === project?.status)?.label
         ?? (project?.status ? String(project.status).replace(/_/g, ' ') : '');
@@ -518,11 +323,11 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
     // Billable hours beyond the plan: the backend floors remaining at 0, so an overrun only shows
     // in the tasks' own consumed hours.
-    const consumedFromTasks = tasks.reduce((sum, t) => sum + t.consumedHoursNum, 0);
+    const consumedFromTasks = taskConsumedHours;
     const billableOverrun = budgetTotalHours > 0 ? Math.max(0, consumedFromTasks - budgetTotalHours) : 0;
     const consumedShown = billableOverrun > 0 ? consumedFromTasks : budgetConsumedHours;
     const consumedShownPercent = budgetTotalHours > 0 ? Math.round((consumedShown / budgetTotalHours) * 100) : 0;
-    const openTasksCount = tasks.filter(t => t.status !== 'Completed').length;
+    const openTasksCount = helpdeskTasks.tasks.filter(t => !isTaskDone(t)).length;
 
     if (loading) {
         return (
@@ -612,7 +417,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                     </div>
                 </header>
 
-                {/* KPIs - every value from project.budget and the task list */}
+                {/* KPIs - every value from project.budget and the helpdesk task list */}
                 <section aria-label="Project overview" className="grid grid-cols-1 gap-3 sm:gap-4 min-[360px]:grid-cols-2 min-[1280px]:grid-cols-4">
                     <MetricCard
                         compact
@@ -644,9 +449,10 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                         compact
                         className="min-[360px]:max-[479px]:col-span-2"
                         label="Overdue Tasks"
-                        value={overdueTasksCount.toLocaleString('en-IN')}
+                        value={helpdeskTasks.error ? '—' : overdueTasksCount.toLocaleString('en-IN')}
+                        loading={helpdeskTasks.loading}
                         icon={<AlertTriangle size={16} />}
-                        caption={overdueTasksCount > 0
+                        caption={helpdeskTasks.error ? 'Helpdesk unavailable' : overdueTasksCount > 0
                             ? <span className="font-medium text-risk-600 dark:text-red-400">of {openTasksCount} open {openTasksCount === 1 ? 'task' : 'tasks'}</span>
                             : openTasksCount > 0 ? 'Nothing overdue' : 'No open tasks'}
                     />
@@ -689,198 +495,13 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                     {/* Tab Content */}
                     <div id="project-tab-panel" role="tabpanel" aria-labelledby={`project-tab-${activeTab}`} className="p-4 sm:p-5">
                         {activeTab === 'Tasks' && (
-                            <div className="space-y-3">
-                                <div className="flex flex-wrap items-center justify-between gap-3">
-                                    <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-white">
-                                        Tasks
-                                        {!isLoadingTasks && (
-                                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium tabular-nums text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                                                {tasks.length}
-                                            </span>
-                                        )}
-                                    </h2>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsAddTaskModalOpen(true)}
-                                        className="inline-flex h-10 items-center gap-1.5 rounded-md bg-navy-900 px-4 text-sm font-semibold text-white hover:bg-navy-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
-                                    >
-                                        <Plus className="w-4 h-4" aria-hidden="true" />
-                                        Add Task
-                                    </button>
-                                </div>
-
-                                {!isLoadingTasks && tasks.length === 0 ? (
-                                    <div className="flex flex-col items-center rounded-lg border border-dashed border-gray-300 px-6 py-10 text-center dark:border-gray-700">
-                                        <ListChecks size={28} aria-hidden="true" className="text-gray-400 dark:text-gray-500" />
-                                        <p className="mt-3 text-sm font-medium text-gray-900 dark:text-white">No tasks yet</p>
-                                        <p className="mt-1 max-w-sm text-[13px] text-gray-500 dark:text-gray-400">
-                                            Add the first task to start tracking allocated and consumed hours on this project.
-                                        </p>
-                                    </div>
-                                ) : (
-                                    // relative: keeps sr-only header text inside this scroll box.
-                                    <div className="relative overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-                                        <table className="w-full min-w-[1136px] table-fixed text-sm">
-                                            <colgroup>
-                                                <col className="w-[200px]" />
-                                                <col />
-                                                <col className="w-[152px]" />
-                                                <col className="w-[132px]" />
-                                                <col className="w-[96px]" />
-                                                <col className="w-[112px]" />
-                                                <col className="w-[104px]" />
-                                                <col className="w-[112px]" />
-                                                <col className="w-[84px]" />
-                                            </colgroup>
-                                            <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
-                                                <tr className="h-11">
-                                                    <th scope="col" className="px-4 text-left">Assignee</th>
-                                                    <th scope="col" className="px-4 text-left">Task Title</th>
-                                                    <th scope="col" className="px-4 text-left">Status</th>
-                                                    <th scope="col" className="px-4 text-left">Activity Type</th>
-                                                    <th scope="col" className="px-4 text-right">Allocated</th>
-                                                    <th scope="col" className="px-4 text-right">Consumed</th>
-                                                    <th scope="col" className="px-4 text-left">Due Date</th>
-                                                    <th scope="col" className="px-4 text-right">Remaining</th>
-                                                    <th scope="col" className="px-4 text-right"><span className="sr-only">Actions</span></th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                                                {isLoadingTasks ? (
-                                                    [0, 1, 2].map(i => (
-                                                        <tr key={i} className="h-14">
-                                                            <td colSpan={9} className="px-4"><div className="h-4 animate-pulse rounded bg-gray-100 dark:bg-gray-800" /></td>
-                                                        </tr>
-                                                    ))
-                                                ) : (
-                                                    tasks.map((task) => {
-                                                        const assigned = task.assignee !== 'Unassigned';
-                                                        const overBy = Math.max(0, task.consumedHoursNum - task.allocatedHoursNum);
-                                                        const overdue = !!task.dueDateRaw && task.status !== 'Completed' && new Date(task.dueDateRaw) < new Date(new Date().toDateString());
-                                                        return (
-                                                            <tr key={task.id} className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/40">
-                                                                <td className="px-4 py-3">
-                                                                    <div className="flex min-w-0 items-center gap-2.5" title={task.assignee}>
-                                                                        <span
-                                                                            aria-hidden="true"
-                                                                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${assigned
-                                                                                ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-500/20'
-                                                                                : 'border border-dashed border-gray-300 text-gray-400 dark:border-gray-600 dark:text-gray-500'}`}
-                                                                        >
-                                                                            {task.assigneeAvatar}
-                                                                        </span>
-                                                                        <span className={`truncate ${assigned ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'}`}>{task.assignee}</span>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-4 py-3">
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => openTaskForEdit(task.id)}
-                                                                        title={task.title}
-                                                                        className="block max-w-full truncate text-left font-medium text-gray-900 hover:text-teal-700 focus:outline-none focus-visible:underline dark:text-white dark:hover:text-violet-300"
-                                                                    >
-                                                                        {task.title}
-                                                                    </button>
-                                                                </td>
-                                                                <td className="px-4 py-3">
-                                                                    <StatusBadge status={task.status} label={task.status} variant={TASK_STATUS_VARIANT[task.status] ?? 'neutral'} className="!px-2 !py-0.5 whitespace-nowrap" />
-                                                                </td>
-                                                                <td className="truncate px-4 py-3 text-gray-600 dark:text-gray-400" title={task.activityType}>{task.activityType}</td>
-                                                                <td className="px-4 py-3 text-right tabular-nums text-gray-900 dark:text-white">{formatHoursHM(task.allocatedHoursNum)}</td>
-                                                                <td className="px-4 py-3 text-right tabular-nums text-gray-900 dark:text-white">
-                                                                    {editingConsumedTaskId === task.id ? (
-                                                                        <div className="flex items-center justify-end gap-1">
-                                                                            <input
-                                                                                type="text"
-                                                                                value={consumedInput}
-                                                                                onChange={(e) => setConsumedInput(e.target.value)}
-                                                                                onKeyDown={(e) => {
-                                                                                    if (e.key === 'Enter') saveConsumedHours(task.id);
-                                                                                    if (e.key === 'Escape') setEditingConsumedTaskId(null);
-                                                                                }}
-                                                                                placeholder="HH:MM"
-                                                                                aria-label={`Consumed time for ${task.title} (HH:MM)`}
-                                                                                autoFocus
-                                                                                className="h-8 w-16 rounded border border-gray-300 px-1.5 text-right font-mono text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                                                                            />
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => saveConsumedHours(task.id)}
-                                                                                aria-label="Save consumed time"
-                                                                                title="Save"
-                                                                                className="flex h-8 w-8 items-center justify-center rounded bg-navy-900 text-white hover:bg-navy-800"
-                                                                            >
-                                                                                <Check className="w-3.5 h-3.5" />
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => setEditingConsumedTaskId(null)}
-                                                                                aria-label="Cancel"
-                                                                                title="Cancel"
-                                                                                className="flex h-8 w-6 items-center justify-center text-gray-400 hover:text-gray-600 dark:text-gray-500"
-                                                                            >
-                                                                                <X className="w-3.5 h-3.5" />
-                                                                            </button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="flex items-center justify-end gap-1">
-                                                                            {(userRole === 'admin' || userRole === 'manager') && (
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => startEditingConsumed(task)}
-                                                                                    aria-label={`Edit consumed time for ${task.title}`}
-                                                                                    title="Edit consumed time"
-                                                                                    className="p-1 text-gray-400 opacity-0 transition-opacity hover:text-teal-700 focus:opacity-100 group-hover:opacity-100 dark:text-gray-500"
-                                                                                >
-                                                                                    <Edit2 className="w-3.5 h-3.5" />
-                                                                                </button>
-                                                                            )}
-                                                                            <span>{formatHoursHM(task.consumedHoursNum)}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </td>
-                                                                <td className={`px-4 py-3 tabular-nums ${overdue ? 'font-medium text-risk-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                                                                    {task.dueDate}
-                                                                    {overdue && <span className="sr-only"> (overdue)</span>}
-                                                                </td>
-                                                                <td className="px-4 py-3 text-right tabular-nums text-gray-900 dark:text-white">
-                                                                    {formatHoursHM(task.remainingHoursNum)}
-                                                                    {overBy > 0 && <div className="text-[11px] font-medium text-risk-600 dark:text-red-400">+{formatHoursHM(overBy)} over</div>}
-                                                                </td>
-                                                                <td className="px-4 py-3">
-                                                                    <div className="flex justify-end gap-1">
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => openTaskForEdit(task.id)}
-                                                                            aria-label={`Edit task ${task.title}`}
-                                                                            title="Edit task"
-                                                                            className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-                                                                        >
-                                                                            <Pencil className="w-4 h-4" />
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                setSelectedTaskForAssignment(task);
-                                                                                setIsAssignTaskModalOpen(true);
-                                                                            }}
-                                                                            aria-label={`${assigned ? 'Reassign' : 'Assign'} task ${task.title}`}
-                                                                            title={assigned ? 'Reassign task' : 'Assign task'}
-                                                                            className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-                                                                        >
-                                                                            <UserPlus className="w-4 h-4" />
-                                                                        </button>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
-                            </div>
+                            <HelpdeskTasksPanel
+                                tasks={helpdeskTasks.tasks}
+                                loading={helpdeskTasks.loading}
+                                error={helpdeskTasks.error}
+                                fetchedAt={helpdeskTasks.fetchedAt}
+                                onRefresh={helpdeskTasks.refresh}
+                            />
                         )}
 
                         {activeTab === 'Budget' && (
@@ -1587,55 +1208,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
             <InvoiceDrawer invoiceId={openInvoiceId} onClose={() => setOpenInvoiceId(null)} onChanged={refreshFinancials} />
             <BillDrawer billId={openBillId} onClose={() => setOpenBillId(null)} onChanged={refreshFinancials} />
             <ExpenseDrawer expenseId={openExpenseId} onClose={() => setOpenExpenseId(null)} onChanged={refreshFinancials} />
-
-            {/* Add Task Modal */}
-            {
-                isAddTaskModalOpen && project && (
-                    <AddTaskModal
-                        isOpen={isAddTaskModalOpen}
-                        onClose={() => { setIsAddTaskModalOpen(false); setSelectedTaskForEdit(null); }}
-                        onTaskAdded={handleTaskAdded}
-                        prefilledProjectId={project.id || parseInt(projectId || '0')}
-                        prefilledProjectName={project.project_name || `Project #${projectId}`}
-                        editingTask={selectedTaskForEdit}
-                        onTaskUpdated={async (updatedApiTask: any) => {
-                            if (updatedApiTask && updatedApiTask.id) {
-                                const taskId = updatedApiTask.id.toString();
-                                setTasks(prev => prev.map(t => t.id === taskId ? mapApiTaskToTask(updatedApiTask) : t));
-                            } else {
-                                // fallback to refetch if no data returned
-                                try {
-                                    const response = await axiosInstance.get(`/tasks/${projectId}/tasks/`);
-                                    if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-                                        const projectTasksData = response.data[0];
-                                        if (projectTasksData.Tasks && Array.isArray(projectTasksData.Tasks)) {
-                                            const mappedTasks: Task[] = projectTasksData.Tasks.map(mapApiTaskToTask);
-                                            setTasks(mappedTasks);
-                                        }
-                                    }
-                                } catch (error) {
-                                    console.error('Error refetching tasks after update:', error);
-                                }
-                            }
-                        }}
-                    />
-                )
-            }
-
-            {/* Assign Task Modal */}
-            {
-                isAssignTaskModalOpen && selectedTaskForAssignment && (
-                    <AssignTaskModal
-                        isOpen={isAssignTaskModalOpen}
-                        onClose={() => {
-                            setIsAssignTaskModalOpen(false);
-                            setSelectedTaskForAssignment(null);
-                        }}
-                        onAssignmentSuccess={handleAssignmentSuccess}
-                        task={selectedTaskForAssignment}
-                    />
-                )
-            }
 
         </Layout >
     );

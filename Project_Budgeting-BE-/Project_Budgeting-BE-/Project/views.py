@@ -3399,3 +3399,60 @@ class AdjustConsumedHoursAPIView(APIView):
             "previous_consumed_hours": round(current_seconds / 3600, 4),
             "task": TaskSerializer(task).data,
         }, status=200)
+
+
+from .helpdesk_client import HelpdeskConfigError, HelpdeskError, fetch_tasks
+
+
+def _helpdesk_tasks_response(for_project=None, keep=None, **extra):
+    """The helpdesk's tasks as a response (only those `keep` accepts, when given). Helpdesk
+    failures are 502/503 - never 401, which would log the Budgeting user out."""
+    try:
+        tasks, time_zone = fetch_tasks(for_project)
+    except HelpdeskConfigError as exc:
+        return Response({"error": str(exc), "configured": False}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    except HelpdeskError as exc:
+        return Response({"error": str(exc), "configured": True}, status=status.HTTP_502_BAD_GATEWAY)
+    if keep is not None:
+        tasks = [t for t in tasks if keep(t)]
+    return Response({
+        **extra,
+        "count": len(tasks),
+        "time_zone": time_zone,
+        "fetched_at": timezone.now(),
+        "results": tasks,
+    }, status=status.HTTP_200_OK)
+
+
+class ProjectHelpdeskTasksAPIView(APIView):
+    """
+    GET /projects/<project_no>/helpdesk-tasks/ -> the helpdesk's tasks on this project, for
+    Project Details > Tasks. Tasks are created and assigned in the helpdesk; this only reads them.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        project = get_object_or_404(Project, project_no=project_no)
+        return _helpdesk_tasks_response(for_project=project.project_no, project_id=project.project_no)
+
+
+class HelpdeskTasksAPIView(APIView):
+    """
+    GET /helpdesk-tasks/ -> the helpdesk's tasks on every project, for Task Management.
+    Same visibility as the old task list: Admin / Manager / Project Manager see every task,
+    anyone else only the tasks assigned to their AIRA employee ID (none if not linked to AIRA).
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        user = request.user
+        if user.roles.filter(role_name__in=["Admin", "Manager", "Project Manager"]).exists():
+            return _helpdesk_tasks_response(scope="all")
+        employee = getattr(user, 'hrms_employee', None)
+        employee_id = employee.employee_id if employee else None
+        return _helpdesk_tasks_response(
+            keep=lambda t: bool(employee_id) and t["resource_type"] == "employee" and t["resource_code"] == employee_id,
+            scope="mine",
+        )

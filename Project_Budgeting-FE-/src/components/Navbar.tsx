@@ -15,7 +15,7 @@ const navigationItems: NavigationItem[] = [
   { label: 'Command center', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'manager', 'user', 'employee'] },
   { label: 'Pipeline & quotes', path: '/pipeline', icon: Network, roles: ['admin', 'manager'] },
   { label: 'Projects', path: '/projects', icon: BriefcaseBusiness, roles: ['admin', 'manager'] },
-  { label: 'Tasks & time', path: '/task-management', icon: CheckSquare, roles: ['admin', 'manager', 'user', 'employee'] },
+  { label: 'Tasks', path: '/task-management', icon: CheckSquare, roles: ['admin', 'manager', 'user', 'employee'] },
   { label: 'Reports', path: '/reports', icon: BarChart3, roles: ['admin', 'manager'] },
   { label: 'Business Partners', path: '/contacts', icon: Users, roles: ['admin', 'manager'] },
   { label: 'Approvals', path: '/vendors/approvals', icon: ShieldCheck, roles: ['admin', 'manager'] },

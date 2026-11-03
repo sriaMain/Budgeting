@@ -113,29 +113,37 @@ class ProjectAssignmentsView(AiraApiView):
                                   employee_projects_data(employee, status_filter, page, page_size)))
 
 
+def resource_identities(rows):
+    """{(resource_type, resource_id): (code, name)} for one page of assignments, a query per resource
+    type. Code = AIRA employee ID / freelancer code / vendor reference. Also used by the helpdesk API."""
+    ids = {}
+    for a in rows:
+        if a.resource_type != 'external' and a.resource_id:
+            ids.setdefault(a.resource_type, set()).add(a.resource_id)
+    found = {}
+    if ids.get('employee'):
+        for acc in Account.objects.filter(pk__in=ids['employee']).select_related('hrms_employee'):
+            hrms = getattr(acc, 'hrms_employee', None)
+            name = (hrms.full_name if hrms and hrms.full_name else acc.display_name) or acc.username
+            found[('employee', acc.pk)] = (hrms.employee_id if hrms else None, name)
+    if ids.get('freelancer'):
+        for f in Freelancer.objects.filter(pk__in=ids['freelancer']).only('id', 'freelancer_code', 'full_name'):
+            found[('freelancer', f.pk)] = (f.freelancer_code or None, f.full_name)
+    if ids.get('vendor'):
+        for v in Vendor.objects.filter(pk__in=ids['vendor']).only('id', 'vendor_reference_no', 'name'):
+            found[('vendor', v.pk)] = (v.vendor_reference_no or None, v.name)
+    return found
+
+
+def resource_identity(a, identities):
+    """(code, name) of one assignment - external resources are named on the assignment itself."""
+    if a.resource_type == 'external':
+        return None, a.external_name or None
+    return identities.get((a.resource_type, a.resource_id), (None, None))
+
+
 class ResourceAssignmentsView(AiraApiView):
     throttle_scope = 'aira_resource_assignments'
-
-    @staticmethod
-    def _resources(rows):
-        """{(resource_type, resource_id): (code, name)} for one page, a query per resource type."""
-        ids = {}
-        for a in rows:
-            if a.resource_type != 'external' and a.resource_id:
-                ids.setdefault(a.resource_type, set()).add(a.resource_id)
-        found = {}
-        if ids.get('employee'):
-            for acc in Account.objects.filter(pk__in=ids['employee']).select_related('hrms_employee'):
-                hrms = getattr(acc, 'hrms_employee', None)
-                name = (hrms.full_name if hrms and hrms.full_name else acc.display_name) or acc.username
-                found[('employee', acc.pk)] = (hrms.employee_id if hrms else None, name)
-        if ids.get('freelancer'):
-            for f in Freelancer.objects.filter(pk__in=ids['freelancer']).only('id', 'freelancer_code', 'full_name'):
-                found[('freelancer', f.pk)] = (f.freelancer_code or None, f.full_name)
-        if ids.get('vendor'):
-            for v in Vendor.objects.filter(pk__in=ids['vendor']).only('id', 'vendor_reference_no', 'name'):
-                found[('vendor', v.pk)] = (v.vendor_reference_no or None, v.name)
-        return found
 
     def get(self, request):
         params = request.query_params
@@ -158,13 +166,10 @@ class ResourceAssignmentsView(AiraApiView):
 
         count = qs.count()
         rows = list(qs[(page - 1) * page_size: page * page_size])
-        resources = self._resources(rows)
+        identities = resource_identities(rows)
         results = []
         for a in rows:
-            if a.resource_type == 'external':
-                code, name = None, a.external_name or None
-            else:
-                code, name = resources.get((a.resource_type, a.resource_id), (None, None))
+            code, name = resource_identity(a, identities)
             results.append({
                 "assignment_id": a.id,
                 "resource_type": a.resource_type,

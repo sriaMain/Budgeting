@@ -1,9 +1,13 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Backend the dev server proxies /api and /ws to. Port 8000 unless overridden, e.g. in the
+  // git-ignored .env.development.local: DEV_BACKEND_URL=http://127.0.0.1:7000
+  const backend = loadEnv(mode, process.cwd(), '').DEV_BACKEND_URL || 'http://127.0.0.1:8000'
+  return {
   plugins: [react(),tailwindcss(),],
   server: {
     // Explicit host - Vite's default "localhost" binding was resolving to
@@ -20,11 +24,11 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: backend,
         changeOrigin: true,
       },
       '/ws': {
-        target: 'http://127.0.0.1:8000',
+        target: backend,
         changeOrigin: true,
         ws: true,
         configure: (proxy) => {
@@ -37,4 +41,5 @@ export default defineConfig({
       },
     },
   },
+  }
 })
