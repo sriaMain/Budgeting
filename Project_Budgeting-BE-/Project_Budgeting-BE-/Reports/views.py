@@ -17,17 +17,6 @@ from accounts.models import Account, Vendor
 from freelancer_onboarding.models import Freelancer, FreelancerProjectAssignment
 
 from .serializers import DashboardMetricsSerializer
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-
-from .services import (
-    get_all_tab_data,
-    get_financial_tab_data,
-    get_project_tab_data,
-    get_payment_tab_data,
-    get_po_invoice_tab_data,
-)
 
 
 def _money_sum(queryset, amount_field, date_field=None, start=None, end=None):
@@ -649,141 +638,100 @@ class AdminDashboardOverviewAPIView(APIView):
         return events[:12]
 
 
+from django.http import HttpResponse
+
+from .export_utils import ExportData, build_excel, build_pdf, export_filename
+from .permissions import CanViewReports
+from .services import CATEGORIES, FIELDS, OVERVIEW_FIELDS, SECTIONS, ReportFilterError, parse_filters, report_rows, summary, totals_by_currency
+
+REPORT_PAGE_SIZE = 25
+REPORT_MAX_PAGE_SIZE = 100
+
+
+def _whole_number(params, name, default, maximum=None):
+    raw = (params.get(name) or '').strip()
+    if not raw:
+        return default
+    if not raw.isdigit() or int(raw) < 1 or (maximum and int(raw) > maximum):
+        raise ReportFilterError(f"{name} must be a whole number from 1{f' to {maximum}' if maximum else ''}.")
+    return int(raw)
+
+
 class FinanceOverviewAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-    authentication_classes = [JWTAuthentication]    
+    """
+    The Reports page: KPIs for the period plus one page of report rows.
+    GET /api/finance/overview/?section=all|financial_reports|project_reports|payment_reports|po_invoice_reports
+        &date_from=2026-10-01&date_to=2026-10-31   (inclusive; each record's own date)
+        &search=acme&status=Paid&type=financial      (type: All tab only)
+        &ordering=-date|date|amount|reference|party|status|type&page=1&page_size=25 (max 100)
+    Admin / Manager / Project Manager only (CanViewReports).
+    """
+    permission_classes = [IsAuthenticated, CanViewReports]
+    authentication_classes = [JWTAuthentication]
 
     def get(self, request):
-        section = request.query_params.get("section", "all")
+        params = request.query_params
+        section = SECTIONS.get((params.get("section") or "all").strip())
+        if section is None:
+            return Response({"error": "Invalid section."}, status=400)
+        try:
+            filters = parse_filters(params)
+            page = _whole_number(params, "page", 1)
+            page_size = _whole_number(params, "page_size", REPORT_PAGE_SIZE, REPORT_MAX_PAGE_SIZE)
+        except ReportFilterError as exc:
+            return Response({"error": str(exc)}, status=400)
 
-        filters = {
-            "from_date": request.query_params.get("date_from"),
-            "to_date": request.query_params.get("date_to"),
-            "client": request.query_params.get("client"),
-            "project": request.query_params.get("project"),
-        }
+        rows, status_options = report_rows(section, filters)
+        count = len(rows)
+        total_pages = max(1, -(-count // page_size))
+        page = min(page, total_pages)
+        categories = list(CATEGORIES) if section == "all" else [section]
+        return Response({
+            "section": section,
+            "period": {"date_from": filters.date_from, "date_to": filters.date_to},
+            "summary": summary(filters),
+            "count": count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "results": rows[(page - 1) * page_size: page * page_size],
+            "totals": totals_by_currency(rows),
+            "status_options": status_options,
+            "type_options": [{"value": k, "label": v} for k, v in CATEGORIES.items()] if section == "all" else [],
+            "fields": {c: [{"key": k, "label": label, "kind": kind} for k, label, kind in FIELDS[c]] for c in categories},
+            "overview_fields": [{"key": k, "label": label, "kind": kind} for k, label, kind in OVERVIEW_FIELDS],
+            "generated_at": timezone.now(),
+        })
 
-        if section == "all":
-            data = get_all_tab_data(filters)
-
-        elif section == "financial_reports":
-            data = get_financial_tab_data(filters)
-
-        elif section == "project_reports":
-            data = get_project_tab_data(filters)
-
-        elif section == "payment_reports":
-            data = get_payment_tab_data(filters)
-
-        elif section == "po_invoice_reports":
-            data = get_po_invoice_tab_data(filters)
-
-        else:
-            return Response(
-                {"error": "Invalid section"},
-                status=400
-            )
-
-        return Response(data)   
-    
-
-from Reports.services import generate_financial_excel
-from Project.models import Project
-from django.http import HttpResponse
-from finances.models import Invoice, Expense
-
-class FinancialReportExport(APIView):
-    """
-    Export financial report as Excel
-    Filters:
-    - project_id (required)
-    - date_from (YYYY-MM-DD)
-    - date_to (YYYY-MM-DD)
-    - status (optional: PAID / PENDING)
-    """
-
-    def get(self, request):
-        project_id = request.GET.get("project_id")
-        date_from = request.GET.get("date_from")
-        date_to = request.GET.get("date_to")
-        status = request.GET.get("status")
-
-        if not project_id or not date_from or not date_to:
-            return HttpResponse(
-                "project_id, date_from, date_to are required",
-                status=400
-            )
-
-        project = Project.objects.get(id=project_id)
-
-        invoices = Invoice.objects.filter(
-            project=project,
-            created_at__date__range=[date_from, date_to]
-        )
-
-        if status:
-            invoices = invoices.filter(status=status)
-
-        expenses = Expense.objects.filter(
-            project=project,
-            created_at__date__range=[date_from, date_to]
-        )
-
-        wb = generate_financial_excel(
-            project=project,
-            invoices=invoices,
-            expenses=expenses,
-            date_from=date_from,
-            date_to=date_to
-        )
-
-        response = HttpResponse(
-            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-        response["Content-Disposition"] = (
-            f'attachment; filename="financial_report_project_{project.id}.xlsx"'
-        )
-
-        wb.save(response)
-        return response
-
-from django.http import HttpResponse
-from .export_utils import generate_excel_from_data, generate_pdf_from_data
-from .services import get_all_tab_data, get_financial_tab_data, get_project_tab_data, get_payment_tab_data, get_po_invoice_tab_data
 
 class ReportExportAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    """
+    GET /api/reports/<all|financial|project|payment|po-invoice>/export/?export_format=excel|pdf
+        + the same filters as FinanceOverviewAPIView (no paging - every matching row).
+    """
+    permission_classes = [IsAuthenticated, CanViewReports]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request, section):
-        print(f"ReportExportAPIView HIT! section={section}")
-        filters = {
-            "from_date": request.query_params.get("date_from"),
-            "to_date": request.query_params.get("date_to"),
-            "status": request.query_params.get("status"),
-        }
-        fmt = request.query_params.get("export_format", "excel")
+        section = SECTIONS.get(section)
+        if section is None:
+            return Response({"error": "Invalid section."}, status=400)
+        fmt = (request.query_params.get("export_format") or "excel").strip().lower()
+        if fmt not in ("excel", "pdf"):
+            return Response({"error": "export_format must be excel or pdf."}, status=400)
+        try:
+            filters = parse_filters(request.query_params)
+        except ReportFilterError as exc:
+            return Response({"error": str(exc)}, status=400)
 
-        if section == "all":
-            data_res = get_all_tab_data(filters)
-        elif section == "financial":
-            data_res = get_financial_tab_data(filters)
-        elif section == "project":
-            data_res = get_project_tab_data(filters)
-        elif section == "payment":
-            data_res = get_payment_tab_data(filters)
-        elif section == "po-invoice":
-            data_res = get_po_invoice_tab_data(filters)
-        else:
-            return Response({"error": "Invalid section"}, status=400)
-
+        rows, _ = report_rows(section, filters)
+        data = ExportData(section=section, filters=filters, summary=summary(filters), rows=rows, generated_at=timezone.now())
         if fmt == "pdf":
-            output = generate_pdf_from_data(data_res, section)
-            response = HttpResponse(output, content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename="report_{section}.pdf"'
+            content, content_type, ext = build_pdf(data), "application/pdf", "pdf"
         else:
-            output = generate_excel_from_data(data_res, section)
-            response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            response['Content-Disposition'] = f'attachment; filename="report_{section}.xlsx"'
-
-        return response
+            content, content_type, ext = (
+                build_excel(data), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx")
+        response = HttpResponse(content, content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{export_filename(section, filters, ext)}"'
+        response["Access-Control-Expose-Headers"] = "Content-Disposition"
+        return response

@@ -29,11 +29,17 @@ class Command(BaseCommand):
         if all:
             account_ids = ResourceAssignment.objects.filter(resource_type='employee', is_active=True) \
                 .values_list('resource_id', flat=True)
-            employees = list(HrmsEmployee.objects.filter(account_id__in=account_ids).order_by('employee_id'))
+            # Only employees AIRA still has - a removed / re-issued employee_id would be rejected.
+            employees = list(HrmsEmployee.objects.filter(account_id__in=account_ids, is_active_in_hrms=True)
+                             .order_by('employee_id'))
         else:
             employees = list(HrmsEmployee.objects.filter(employee_id=employee_id))
             if not employees:
                 raise CommandError(f"{employee_id} is not an AIRA employee synced into Project Budgeting.")
+            if not employees[0].is_active_in_hrms:
+                raise CommandError(f"{employee_id} is no longer in AIRA's employee list - nothing to push.")
+        if not employees:
+            raise CommandError("No current AIRA employee is on any project yet - assign them in Resources first.")
 
         if dry_run:
             for employee in employees:

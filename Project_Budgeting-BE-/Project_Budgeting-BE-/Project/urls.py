@@ -6,7 +6,7 @@ from .views import (ProjectAPIView, ProjectBudgetAPIView, BudgetLineListCreateAP
   BudgetLineSummaryAPIView, MilestoneListCreateAPIView, MilestoneDetailAPIView, MilestoneCreateInvoiceAPIView,
   ResourceAssignmentListCreateAPIView, ResourceAssignmentDetailAPIView, ProjectGenerateTMInvoiceAPIView,
   ProjectPeriodListAPIView, ProjectPeriodDetailAPIView,
-  ResourceMasterRateAPIView,
+  ResourceMasterRateAPIView, ResourceExportAPIView, ResourceImportTemplateAPIView, ResourceImportAPIView,
   ProjectFinancialSummaryAPIView, StopTaskTimerAPIView, TaskAPIView, TaskTimerStateAPIView,
  TimesheetAPIView, TimesheetEntryAPIView, SubmitTimesheetAPIView, StartTaskTimerAPIView,
   PauseTaskTimerAPIView, PendingExtraHoursAPIView, ReviewExtraHoursAPIView, RequestExtraHoursAPIView, ExtraHoursHistoryAPIView,
@@ -34,6 +34,9 @@ urlpatterns = [
     path('projects/<int:project_no>/milestones/<int:milestone_id>/create-invoice/', MilestoneCreateInvoiceAPIView.as_view(), name='project-milestone-create-invoice'),
     path('projects/resource-rate/', ResourceMasterRateAPIView.as_view(), name='project-resource-master-rate'),
     path('projects/<int:project_no>/resources/', ResourceAssignmentListCreateAPIView.as_view(), name='project-resource-list-create'),
+    path('projects/<int:project_no>/resources/export/', ResourceExportAPIView.as_view(), name='project-resource-export'),
+    path('projects/<int:project_no>/resources/import-template/', ResourceImportTemplateAPIView.as_view(), name='project-resource-import-template'),
+    path('projects/<int:project_no>/resources/import/', ResourceImportAPIView.as_view(), name='project-resource-import'),
     path('projects/<int:project_no>/resources/<int:assignment_id>/', ResourceAssignmentDetailAPIView.as_view(), name='project-resource-detail'),
     path('projects/<int:project_no>/generate-tm-invoice/', ProjectGenerateTMInvoiceAPIView.as_view(), name='project-generate-tm-invoice'),
     path('projects/<int:project_no>/periods/', ProjectPeriodListAPIView.as_view(), name='project-periods'),  # T&M monthly financials

@@ -186,6 +186,7 @@ class TMPeriodCostTests(TestCase):
     def test_expense_falls_in_its_month(self):
         last_month = add_months(self.current, -1)
         Expense.objects.create(
+            created_by=self.employee,
             project=self.project, category='travel', description="Trip",
             amount=Decimal("2500.00"), expense_date=last_month + timedelta(days=3),
         )
@@ -196,6 +197,7 @@ class TMPeriodCostTests(TestCase):
 
     def test_expense_before_start_falls_in_first_month(self):
         Expense.objects.create(
+            created_by=self.employee,
             project=self.project, category='software', description="Licence",
             amount=Decimal("1000.00"), expense_date=self.first - timedelta(days=10),
         )
@@ -204,6 +206,7 @@ class TMPeriodCostTests(TestCase):
 
     def test_resource_category_expenses_are_not_expenses(self):
         Expense.objects.create(
+            created_by=self.employee,
             project=self.project, category='employee_cost', description="Salary share",
             amount=Decimal("9000.00"), expense_date=self.current,
         )
@@ -225,22 +228,27 @@ class TMPeriodCostTests(TestCase):
         self.assertEqual(rows[pay_month]['vendor_bills'], Decimal("4000.00"))
         self.assertEqual(totals['vendor_bills'], Decimal("4000.00"))  # unpaid balance isn't cost
 
-    def test_task_labour_falls_in_due_date_month(self):
-        due_month = add_months(self.current, -1)
-        Task.objects.create(
-            project=self.project, title="Build API", assigned_to=self.employee,
-            allocated_hours=Decimal("10.00"), due_date=due_month + timedelta(days=5),
+    def test_hourly_employee_is_costed_per_started_month(self):
+        ResourceAssignment.objects.create(
+            project=self.project, resource_type='employee', resource_id=self.employee.pk,
+            start_date=add_months(self.current, -1), cost_rate=Decimal("500.00"), working_hours=Decimal("10.00"),
         )
         rows, totals = self.rows()
-        self.assertEqual(rows[due_month]['labour_cost'], Decimal("5000.00"))
-        self.assertEqual(rows[due_month]['resource_cost'], Decimal("5000.00"))
-        self.assertEqual(totals['labour_cost'], Decimal("5000.00"))
+        for m, row in rows.items():
+            expected = Decimal("5000.00") if add_months(self.current, -1) <= m <= self.current else Decimal("0.00")
+            self.assertEqual(row['resource_cost'], expected, m)
+            self.assertEqual(row['employee_cost'], expected, m)
+        self.assertEqual(totals['resource_cost'], Decimal("10000.00"))  # last month + this month
+        self.assertEqual(totals['planned_cost'], Decimal("10000.00"))  # the 2 future months
 
-    def test_unassigned_task_hours_are_unrated(self):
-        Task.objects.create(project=self.project, title="Spec", allocated_hours=Decimal("4.00"), due_date=self.today)
-        rows, _ = self.rows()
-        self.assertEqual(rows[self.current]['labour_cost'], Decimal("0.00"))
-        self.assertEqual(rows[self.current]['unrated_hours'], Decimal("4.00"))
+    def test_tasks_are_not_costed(self):
+        """Tasks live in the helpdesk - local task hours never add to the cost."""
+        Task.objects.create(
+            project=self.project, title="Build API", assigned_to=self.employee,
+            allocated_hours=Decimal("10.00"), due_date=self.today,
+        )
+        _, totals = self.rows()
+        self.assertEqual(totals['actual_cost'], Decimal("0.00"))
 
     def test_vendor_resource_costs_started_months_only(self):
         vendor = Vendor.objects.create(name="Staffing Co", vendor_type="company")
@@ -251,11 +259,13 @@ class TMPeriodCostTests(TestCase):
         rows, totals = self.rows()
         for m, row in rows.items():
             expected = Decimal("16000.00") if m <= self.current else Decimal("0.00")
-            self.assertEqual(row['assigned_resource_cost'], expected, m)
-        self.assertEqual(totals['assigned_resource_cost'], Decimal("64000.00"))  # 4 started months
+            self.assertEqual(row['resource_cost'], expected, m)
+            self.assertEqual(row['employee_cost'], Decimal("0.00"), m)
+        self.assertEqual(totals['resource_cost'], Decimal("64000.00"))  # 4 started months
 
     def test_budget_remaining_and_used_percent(self):
         Expense.objects.create(
+            created_by=self.employee,
             project=self.project, category='travel', description="Trip",
             amount=Decimal("25000.00"), expense_date=self.current,
         )
@@ -267,6 +277,7 @@ class TMPeriodCostTests(TestCase):
 
     def test_detail_lists_the_transactions_behind_the_month(self):
         Expense.objects.create(
+            created_by=self.employee,
             project=self.project, category='travel', description="Trip",
             amount=Decimal("700.00"), expense_date=self.current,
         )
@@ -343,6 +354,7 @@ class TMPeriodInvoiceTests(TestCase):
     def test_partial_payment(self):
         invoice = Invoice.objects.get(pk=self.generate(self.period(0)).data['id'])
         InvoicePayment.objects.create(
+            created_by=self.user,
             invoice=invoice, payment_date=self.today, amount=Decimal("40000.00"), payment_method='UPI', status='Completed',
         )
         rows, totals = period_financials(self.project, today=self.today)
@@ -353,6 +365,7 @@ class TMPeriodInvoiceTests(TestCase):
         self.assertFalse(row['can_generate_invoice'])
 
         InvoicePayment.objects.create(
+            created_by=self.user,
             invoice=invoice, payment_date=self.today, amount=Decimal("60000.00"), payment_method='UPI', status='Completed',
         )
         rows, _ = period_financials(self.project, today=self.today)
@@ -402,6 +415,7 @@ class TMProjectSummaryTests(TestCase):
 
     def test_totals_equal_sum_of_months_and_summary(self):
         Expense.objects.create(
+            created_by=self.user,
             project=self.project, category='travel', description="Trip",
             amount=Decimal("3000.00"), expense_date=add_months(self.current, -1),
         )
@@ -458,35 +472,87 @@ class TMProjectSummaryTests(TestCase):
 
 
 
-class MilestoneLabourTests(TestCase):
-    """Fixed Budget / milestone projects cost labour on the allocated hours of the milestone's tasks."""
+class MilestoneResourceCostTests(TestCase):
+    """A milestone's Actual Cost includes the assigned cost of every resource added to it."""
 
     def setUp(self):
         from Project.models import Milestone
         self.today = timezone.localdate()
         self.project = make_tm_project(self.today, self.today + timedelta(days=90), engagement_type='fixed')
-        self.milestone = Milestone.objects.create(project=self.project, name="Phase 1", budget_amount=Decimal("2000.00"))
+        self.milestone = Milestone.objects.create(project=self.project, name="Phase 1", budget_amount=Decimal("20000.00"))
+        self.other = Milestone.objects.create(project=self.project, name="Phase 2", sequence=2)
         self.employee = Account.objects.create_user(
             username="fixed-dev", email="fixed-dev@example.com", password="x", charges_per_hour=Decimal("150.00"),
         )
-        self.task = Task.objects.create(
+        self.api = APIClient()
+        self.api.force_authenticate(self.employee)
+
+    def add(self, milestone=None, **kwargs):
+        values = dict(
+            project=self.project, milestone=milestone or self.milestone, resource_type='employee',
+            resource_id=self.employee.pk, start_date=self.today,
+            cost_rate=Decimal("150.00"), working_hours=Decimal("40.00"),
+        )
+        values.update(kwargs)
+        return ResourceAssignment.objects.create(**values)
+
+    def test_hourly_employee_counts_rate_x_planned_hours(self):
+        self.add()
+        self.milestone.refresh_from_db()
+        self.assertEqual(self.milestone.resource_cost, Decimal("6000.00"))  # 40 h x 150
+        self.assertEqual(self.milestone.actual_cost, Decimal("6000.00"))
+        self.assertEqual(self.milestone.remaining_budget, Decimal("14000.00"))
+        self.assertEqual(self.milestone.budget_utilization_percent, Decimal("30.00"))
+
+    def test_specific_amount_overrides_rate_x_hours(self):
+        self.add(cost_amount=Decimal("2500.00"))
+        self.assertEqual(self.milestone.actual_cost, Decimal("2500.00"))
+
+    def test_every_resource_type_counts_and_removed_ones_do_not(self):
+        vendor = Vendor.objects.create(name="Staffing Co", vendor_type="company")
+        self.add()                                                          # 6000
+        self.add(resource_type='vendor', resource_id=vendor.pk, cost_rate=Decimal("100.00"),
+                 working_hours=Decimal("10.00"))                            # 1000
+        self.add(resource_type='external', resource_id=None, external_name="Contract QA",
+                 cost_amount=Decimal("700.00"))                             # 700
+        self.add(status='removed', cost_amount=Decimal("9999.00"))         # ignored
+        self.add(milestone=self.other, cost_amount=Decimal("5000.00"))      # other milestone
+        self.assertEqual(self.milestone.actual_cost, Decimal("7700.00"))
+        self.assertEqual(self.other.actual_cost, Decimal("5000.00"))
+
+    def test_tasks_are_not_costed(self):
+        Task.objects.create(
             project=self.project, milestone=self.milestone, title="Build", assigned_to=self.employee,
             allocated_hours=Decimal("10.00"),
         )
+        self.assertEqual(self.milestone.actual_cost, Decimal("0.00"))
 
-    def milestone(self):
-        from Project.models import Milestone
-        return Milestone.objects.get(pk=self.milestone.pk)  # fresh - labour is cached per instance
+    def test_resource_api_requires_a_milestone_on_fixed_projects(self):
+        from hrms_integration.models import HrmsEmployee
+        HrmsEmployee.objects.create(employee_id="10000004", account=self.employee)  # active in AIRA HRMS
+        url = f"/api/projects/{self.project.pk}/resources/"
+        payload = {
+            "resource_type": "employee", "resource_id": self.employee.pk, "cost_rate": "150",
+            "working_hours": "40", "start_date": str(self.today), "end_date": str(self.today + timedelta(days=30)),
+        }
+        resp = self.api.post(url, {**payload, "milestone": None}, format="json")
+        self.assertEqual(resp.status_code, 400, resp.data)
+        self.assertIn("milestone", resp.data['errors'])
 
-    def test_allocated_hours_are_costed_at_the_assignee_rate(self):
-        m = self.milestone()
-        self.assertEqual(m.allocated_hours, Decimal("10.00"))
-        self.assertEqual(m.labour_cost, Decimal("1500.00"))  # 10 h x 150
-        self.assertEqual(m.actual_cost, Decimal("1500.00"))
-        self.assertEqual(m.unrated_hours, Decimal("0.00"))
+        resp = self.api.post(url, {**payload, "milestone": self.milestone.pk}, format="json")
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(self.milestone.actual_cost, Decimal("6000.00"))
 
-    def test_allocated_hours_without_a_rate_are_unrated(self):
-        Account.objects.filter(pk=self.employee.pk).update(charges_per_hour=None)
-        m = self.milestone()
-        self.assertEqual(m.labour_cost, Decimal("0.00"))
-        self.assertEqual(m.unrated_hours, Decimal("10.00"))
+    def test_milestone_api_and_project_summary_agree(self):
+        self.add()
+        self.add(milestone=self.other, cost_amount=Decimal("5000.00"))
+        rows = self.api.get(f"/api/projects/{self.project.pk}/milestones/").data
+        by_name = {r['name']: r for r in rows}
+        self.assertEqual(Decimal(by_name['Phase 1']['actual_cost']), Decimal("6000.00"))
+        self.assertEqual(Decimal(by_name['Phase 1']['resource_cost']), Decimal("6000.00"))
+        self.assertNotIn('labour_cost', by_name['Phase 1'])
+
+        summary = self.api.get(f"/api/projects/{self.project.pk}/financial-summary/").data
+        self.assertEqual(summary['resource_cost'], Decimal("11000.00"))
+        self.assertEqual(summary['actual_cost'], Decimal("11000.00"))
+        self.assertEqual(summary['cost_breakdown']['employee_cost'], Decimal("11000.00"))

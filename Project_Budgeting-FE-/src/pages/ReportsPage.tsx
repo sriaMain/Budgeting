@@ -1,132 +1,78 @@
-import { formatDate as toDMY } from '../utils/date';
-import React, { useState, useEffect } from 'react';
-import { Layout } from '../components/Layout';
-import axiosInstance from '../utils/axiosInstance';
+/**
+ * Reports - KPI summary and report records for one reporting period.
+ * Data: GET finance/overview/ (KPIs + one page of rows); downloads: GET reports/<section>/export/.
+ * Both take the same filters, applied on the server, so an Excel / PDF holds exactly the
+ * records the table shows (every page of them). Calculations: backend Reports/services.py.
+ */
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { toast } from 'react-hot-toast';
 import {
-    FileText,
-    Download,
-    DollarSign,
-    PieChart,
-    TrendingUp,
-    CheckCircle,
-    Clock,
-    Users,
-    FileSpreadsheet,
-    ArrowUpRight,
-    ArrowDownRight,
-    Filter,
-    Calendar,
-    ArrowUpDown,
-    ArrowUp,
-    ArrowDown,
-    ChevronDown
+    ArrowDown, ArrowUp, ArrowUpDown, CalendarRange, ChevronLeft, ChevronRight, Clock, Eye, FileSpreadsheet,
+    FileText, IndianRupee, Loader2, Percent, Receipt, Search, TrendingDown, TrendingUp,
 } from 'lucide-react';
+import { Layout } from '../components/Layout';
+import { StatusBadge } from '../components/StatusBadge';
+import { ErrorState } from '../components/ErrorState';
+import { Drawer } from '../components/Drawer';
+import axiosInstance from '../utils/axiosInstance';
+import { formatDate as toDMY, formatDateTime } from '../utils/date';
+import { formatMoney } from '../utils/format';
 
-// Interface for API Response
-interface MetricData {
-    value: string;
-    change: number;
-}
+type Section = 'all' | 'financial' | 'project' | 'payment' | 'po_invoice';
+/** money = the row's currency; base_money = always INR (costs carry no currency of their own). */
+type FieldKind = 'text' | 'date' | 'money' | 'base_money' | 'number';
+type Variant = 'success' | 'warning' | 'danger' | 'neutral' | 'info';
 
-interface DashboardMetrics {
-    budget: MetricData;
-    invoiced: MetricData;
-    received: MetricData;
-    expenses: MetricData;
-    profit: MetricData;
-}
+interface FieldSpec { key: string; label: string; kind: FieldKind }
 
-// Interface for Finance Overview API Response
-interface FinanceSummaryCards {
-    total_revenue: number;
-    total_expenses: number;
-    total_profit: number;
-    total_outstanding: number;
-    overall_collection_rate: number;
-}
-
-interface RecentHighlight {
-    client_name: string;
-    project_name: string;
-    total_revenue: number;
-    total_expenses: number;
-    profit: number;
-    profit_margin_percent: number;
-    latest_invoice_status: string;
-    last_receipt_date: string;
-    outstanding_amount: number;
-    collection_rate_percent: number;
-}
-
-interface FinanceOverviewResponse {
-    summary_cards: FinanceSummaryCards;
-    recent_highlights: RecentHighlight[];
-}
-
-// Interface for Financial Reports API Response (dedicated endpoint)
-interface FinancialReportRow {
-    invoice_no: string;
-    invoice_date: string;
-    client_name: string;
-    invoice_total: number;
-    amount_paid: number;
-    outstanding_balance: number;
+interface ReportRow {
+    key: string;
+    category: Exclude<Section, 'all'>;
+    category_label: string;
+    record_type: string;
+    reference: string;
+    party: string | null;
+    project: string | null;
+    project_no: number | null;
+    project_or_party: string;
+    date: string | null;
+    amount: number;
+    currency: string;
     status: string;
-    due_date: string;
-    last_payment_date: string | null;
-    days_overdue: number;
+    status_label: string;
+    [field: string]: unknown;
 }
 
-interface FinancialReportsResponse {
-    rows: FinancialReportRow[];
-}
+interface CurrencySummary { currency: string; revenue: number; amount_due: number; received: number; outstanding: number; collection_rate: number | null; invoice_count: number }
 
-// Interface for Project Reports API Response
-interface ProjectReportRow {
-    project_no: number;
-    project_name: string;
-    project_status: string;
-    budget: number;
-    invoiced: number;
-    received: number;
+interface Summary {
+    currency: string;
+    revenue: number;
     expenses: number;
     profit: number;
-    /** Budget - expenses: available even before any invoice/payment exists. */
-    forecasted_profit: number;
+    outstanding: number;
+    amount_due: number;
+    received: number;
+    collection_rate: number | null;
+    invoice_count: number;
+    other_currencies: CurrencySummary[];
 }
 
-interface ProjectReportsResponse {
-    rows: ProjectReportRow[];
+interface OverviewResponse {
+    summary: Summary;
+    count: number;
+    page: number;
+    page_size: number;
+    total_pages: number;
+    results: ReportRow[];
+    totals: { currency: string; count: number; amount: number }[];
+    status_options: string[];
+    type_options: { value: string; label: string }[];
+    fields: Record<string, FieldSpec[]>;
+    generated_at: string;
 }
-
-// Interface for Payment Reports API Response
-interface PaymentReportRow {
-    payment_date: string;
-    invoice__invoice_no: string;
-    invoice__client__company_name: string;
-    payment_method: string;
-    amount: number;
-    invoice__status: string;
-}
-
-interface PaymentReportsResponse {
-    rows: PaymentReportRow[];
-}
-
-// Interface for PO Invoice Reports API Response
-interface POInvoiceReportRow {
-    po_no: string;
-    vendor__name: string;
-    total_amount: number;
-    paid: number;
-    balance: number;
-}
-
-interface POInvoiceReportsResponse {
-    rows: POInvoiceReportRow[];
-}
-
-type TabType = 'All' | 'Financial Reports' | 'Project Reports' | 'Payment Reports' | 'PO & Invoice Reports';
 
 interface ReportsPageProps {
     userRole: 'admin' | 'user' | 'manager';
@@ -134,955 +80,651 @@ interface ReportsPageProps {
     onNavigate: (page: string) => void;
 }
 
-const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavigate }) => {
-    const [activeTab, setActiveTab] = useState<TabType>('All');
-    const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-    const [financeOverview, setFinanceOverview] = useState<FinanceOverviewResponse | null>(null);
-    const [financialReports, setFinancialReports] = useState<FinancialReportsResponse | null>(null);
-    const [projectReports, setProjectReports] = useState<ProjectReportsResponse | null>(null);
-    const [paymentReports, setPaymentReports] = useState<PaymentReportsResponse | null>(null);
-    const [poInvoiceReports, setPOInvoiceReports] = useState<POInvoiceReportsResponse | null>(null);
-    const [loading, setLoading] = useState(true);
+const TABS: { id: Section; label: string; api: string; slug: string }[] = [
+    { id: 'all', label: 'All', api: 'all', slug: 'all' },
+    { id: 'financial', label: 'Financial Reports', api: 'financial_reports', slug: 'financial' },
+    { id: 'project', label: 'Project Reports', api: 'project_reports', slug: 'project' },
+    { id: 'payment', label: 'Payment Reports', api: 'payment_reports', slug: 'payment' },
+    { id: 'po_invoice', label: 'PO & Invoice Reports', api: 'po_invoice_reports', slug: 'po-invoice' },
+];
 
-    // Filter states
-    const [projects, setProjects] = useState<Array<{ project_no: number; project_name: string }>>([]);
-    const [selectedProject, setSelectedProject] = useState<number | null>(null);
-    const [selectedStatus, setSelectedStatus] = useState<string>('');
-    const [dateFrom, setDateFrom] = useState<string>('');
-    const [dateTo, setDateTo] = useState<string>('');
-    const [exportLoading, setExportLoading] = useState(false);
+// ---- reporting period presets (local calendar dates; the backend includes both ends)
 
-    // Sorting states
-    const [sortColumn, setSortColumn] = useState<string>('');
-    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-    const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+type Preset = 'today' | 'this_week' | 'this_month' | 'last_month' | 'this_quarter' | 'this_year' | 'all_time' | 'custom';
 
+const PRESETS: { id: Preset; label: string }[] = [
+    { id: 'today', label: 'Today' },
+    { id: 'this_week', label: 'This Week' },
+    { id: 'this_month', label: 'This Month' },
+    { id: 'last_month', label: 'Last Month' },
+    { id: 'this_quarter', label: 'This Quarter' },
+    { id: 'this_year', label: 'This Year' },
+    { id: 'all_time', label: 'All Time' },
+    { id: 'custom', label: 'Custom Range' },
+];
+const DEFAULT_PRESET: Preset = 'this_year';
 
+const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-
-    // Fetch dashboard metrics and all reports from API with optional filters
-    const fetchData = async (filters?: { dateFrom?: string; dateTo?: string; status?: string }) => {
-        try {
-            setLoading(true);
-
-            // Build query params for filters
-            const dateParams = filters?.dateFrom && filters?.dateTo
-                ? `&date_from=${filters.dateFrom}&date_to=${filters.dateTo}`
-                : '';
-
-            const statusParam = filters?.status ? `&status=${filters.status}` : '';
-
-            // Fetch all APIs in parallel using allSettled to prevent one failure from blocking all
-            const results = await Promise.allSettled([
-                axiosInstance.get('dashboard/metrics/'),
-                axiosInstance.get(`finance/overview/?section=all${dateParams}`),
-                axiosInstance.get(`finance/overview/?section=financial_reports${dateParams}${statusParam}`),
-                axiosInstance.get(`finance/overview/?section=project_reports${dateParams}`),
-                axiosInstance.get(`finance/overview/?section=payment_reports${dateParams}${statusParam}`),
-                axiosInstance.get(`finance/overview/?section=po_invoice_reports${dateParams}`)
-            ]);
-
-            if (results[0].status === 'fulfilled') setMetrics(results[0].value.data);
-            if (results[1].status === 'fulfilled') setFinanceOverview(results[1].value.data);
-            if (results[2].status === 'fulfilled') setFinancialReports(results[2].value.data);
-            if (results[3].status === 'fulfilled') setProjectReports(results[3].value.data);
-            if (results[4].status === 'fulfilled') setPaymentReports(results[4].value.data);
-            if (results[5].status === 'fulfilled') setPOInvoiceReports(results[5].value.data);
-        } catch (error) {
-            console.error('Error fetching data:', error);
-        } finally {
-            setLoading(false);
+const presetRange = (preset: Preset, today = new Date()): { from: string; to: string } => {
+    const y = today.getFullYear();
+    const m = today.getMonth();
+    switch (preset) {
+        case 'today':
+            return { from: isoDay(today), to: isoDay(today) };
+        case 'this_week': {
+            // Monday to Sunday; Date rolls over month and year ends.
+            const monday = new Date(y, m, today.getDate() - ((today.getDay() + 6) % 7));
+            return { from: isoDay(monday), to: isoDay(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6)) };
         }
+        case 'this_month':
+            return { from: isoDay(new Date(y, m, 1)), to: isoDay(new Date(y, m + 1, 0)) };
+        case 'last_month':
+            return { from: isoDay(new Date(y, m - 1, 1)), to: isoDay(new Date(y, m, 0)) };
+        case 'this_quarter': {
+            const q = Math.floor(m / 3) * 3;
+            return { from: isoDay(new Date(y, q, 1)), to: isoDay(new Date(y, q + 3, 0)) };
+        }
+        case 'this_year':
+            return { from: isoDay(new Date(y, 0, 1)), to: isoDay(new Date(y, 11, 31)) };
+        default:
+            return { from: '', to: '' };
+    }
+};
+
+const periodLabel = (from: string, to: string) => {
+    if (from && to) return `${toDMY(from)} – ${toDMY(to)}`;
+    if (from) return `From ${toDMY(from)}`;
+    if (to) return `Up to ${toDMY(to)}`;
+    return 'All dates';
+};
+
+// ---- formatting
+
+const money = (value: unknown, currency = 'INR') => formatMoney(Number(value) || 0, currency, 2);
+/** KPI cards: whole rupees, so large totals fit; the table and exports keep paise. */
+const kpiMoney = (value: unknown, currency = 'INR') => formatMoney(Math.round(Number(value) || 0), currency, 0);
+
+const statusVariant = (status: string): Variant => {
+    const s = status.trim().toLowerCase();
+    if (/^(paid|completed|deployed)$/.test(s)) return 'success';
+    if (/overdue|failed/.test(s)) return 'danger';
+    if (/partially|pending|unpaid|processing|on hold/.test(s)) return 'warning';
+    if (/draft|cancel/.test(s)) return 'neutral';
+    return 'info';
+};
+
+const fieldValue = (row: ReportRow, field: FieldSpec): string => {
+    const value = row[field.key];
+    if (value === null || value === undefined || value === '') return '—';
+    if (field.kind === 'money') return money(value, row.currency);
+    if (field.kind === 'base_money') return money(value, 'INR');
+    if (field.kind === 'date') return toDMY(String(value));
+    if (field.kind === 'number') return Number(value) ? String(value) : '—';
+    return String(value);
+};
+
+/** One extra line under a row's amount: what is still open, or how it was paid. */
+const amountNote = (row: ReportRow): string | null => {
+    if ((row.category === 'financial' || row.category === 'po_invoice') && Number(row.balance) > 0) return `Balance ${money(row.balance, row.currency)}`;
+    if (row.category === 'project' && row.profit !== null && row.profit !== undefined) return `Profit ${money(row.profit, row.currency)}`;
+    if (row.category === 'payment' && row.method) return String(row.method);
+    return null;
+};
+
+type Tone = 'positive' | 'negative' | 'warning' | 'neutral';
+const VALUE_TONES: Record<Tone, string> = {
+    positive: 'text-green-700 dark:text-green-400',
+    negative: 'text-red-600 dark:text-red-400',
+    warning: 'text-amber-700 dark:text-amber-400',
+    neutral: 'text-gray-900 dark:text-white',
+};
+const ICON_TONES: Record<Tone, string> = {
+    positive: 'bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400',
+    negative: 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400',
+    warning: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+    neutral: 'bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400',
+};
+
+/** Compact KPI card (~108px): 16px padding, 13px label, 24px value. Green = good, red = bad, amber = pending. */
+const KpiCard: React.FC<{ label: string; value: string; caption?: string; icon: React.ReactNode; tone?: Tone; iconTone?: Tone; loading?: boolean; className?: string }> = ({
+    label, value, caption, icon, tone = 'neutral', iconTone, loading, className = '',
+}) => (
+    <div className={`min-w-0 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 ${className}`}>
+        {loading ? (
+            <div className="animate-pulse space-y-2.5" aria-hidden="true">
+                <div className="h-4 w-24 rounded bg-gray-100 dark:bg-gray-800" />
+                <div className="h-7 w-32 rounded bg-gray-100 dark:bg-gray-800" />
+                <div className="h-3 w-20 rounded bg-gray-100 dark:bg-gray-800" />
+            </div>
+        ) : (
+            <>
+                <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-[13px] font-medium text-gray-500 dark:text-gray-400">{label}</span>
+                    <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded ${ICON_TONES[iconTone ?? tone]}`}>{icon}</span>
+                </div>
+                <div className={`mt-1.5 truncate text-2xl font-semibold leading-[30px] tabular-nums ${VALUE_TONES[tone]}`} title={value}>{value}</div>
+                {caption && <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" title={caption}>{caption}</p>}
+            </>
+        )}
+    </div>
+);
+
+const CONTROL = 'h-10 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100';
+const PAGE_SIZE = 25;
+
+type SortKey = 'type' | 'reference' | 'party' | 'date' | 'amount' | 'status';
+const COLUMNS: { key: SortKey | 'actions'; label: string; align?: 'right'; width?: string }[] = [
+    { key: 'type', label: 'Report Type', width: 'w-[176px]' },
+    { key: 'reference', label: 'Reference Number', width: 'w-[170px]' },
+    { key: 'party', label: 'Project / Client' },
+    { key: 'date', label: 'Report Date', width: 'w-[148px]' },
+    { key: 'amount', label: 'Amount', align: 'right', width: 'w-[170px]' },
+    { key: 'status', label: 'Status', width: 'w-[150px]' },
+    { key: 'actions', label: 'Actions', align: 'right', width: 'w-[76px]' },
+];
+
+const errorText = async (err: unknown, fallback: string) => {
+    if (axios.isAxiosError(err)) {
+        const data = err.response?.data;
+        if (data instanceof Blob) {
+            try { return JSON.parse(await data.text())?.error || fallback; } catch { return fallback; }
+        }
+        if (data?.error) return String(data.error);
+        if (data?.detail) return String(data.detail);
+    }
+    return fallback;
+};
+
+const ReportsPage: React.FC<ReportsPageProps> = ({ userRole, currentPage, onNavigate }) => {
+    const navigate = useNavigate();
+    const [tab, setTab] = useState<Section>('all');
+
+    // Reporting period: `draft` is what the inputs show, `applied` is what the data uses.
+    const [draft, setDraft] = useState(() => ({ preset: DEFAULT_PRESET as Preset, ...presetRange(DEFAULT_PRESET) }));
+    const [applied, setApplied] = useState(() => ({ preset: DEFAULT_PRESET as Preset, ...presetRange(DEFAULT_PRESET) }));
+    const rangeError = draft.from && draft.to && draft.to < draft.from ? "To Date can't be earlier than From Date." : null;
+    const dirty = draft.from !== applied.from || draft.to !== applied.to;
+
+    const [searchInput, setSearchInput] = useState('');
+    const [search, setSearch] = useState('');
+    const [status, setStatus] = useState('');
+    const [recordType, setRecordType] = useState('');
+    const [ordering, setOrdering] = useState('-date');
+    const [page, setPage] = useState(1);
+    const [reloadKey, setReloadKey] = useState(0);
+    const [detail, setDetail] = useState<ReportRow | null>(null);
+    const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
+
+    const tabInfo = TABS.find(t => t.id === tab)!;
+    const filterParams = useMemo(() => {
+        const p: Record<string, string> = {};
+        if (applied.from) p.date_from = applied.from;
+        if (applied.to) p.date_to = applied.to;
+        if (search) p.search = search;
+        if (status) p.status = status;
+        if (tab === 'all' && recordType) p.type = recordType;
+        p.ordering = ordering;
+        return p;
+    }, [applied.from, applied.to, search, status, recordType, ordering, tab]);
+
+    // Search waits until typing pauses.
+    useEffect(() => {
+        const t = setTimeout(() => {
+            setSearch(searchInput.trim());
+            setPage(1);
+        }, 300);
+        return () => clearTimeout(t);
+    }, [searchInput]);
+
+    // A response is shown only for the request it answers; `loading` = the current request hasn't answered yet.
+    const requestKey = JSON.stringify([tabInfo.api, filterParams, page, reloadKey]);
+    const [result, setResult] = useState<{ key: string; data?: OverviewResponse; error?: string } | null>(null);
+    const [lastData, setLastData] = useState<OverviewResponse | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        axiosInstance.get<OverviewResponse>('finance/overview/', { params: { section: tabInfo.api, ...filterParams, page, page_size: PAGE_SIZE } })
+            .then(res => {
+                if (cancelled) return;
+                setResult({ key: requestKey, data: res.data });
+                setLastData(res.data);
+            })
+            .catch(async err => {
+                const message = await errorText(err, 'Could not load reports. Try again.');
+                if (!cancelled) setResult({ key: requestKey, error: message });
+            });
+        return () => { cancelled = true; };
+        // requestKey covers every input of the request.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requestKey]);
+    const loading = result?.key !== requestKey;
+    const error = !loading ? result?.error ?? null : null;
+    const data = (!loading && result?.data) || lastData;
+
+    const selectTab = (id: Section) => {
+        setTab(id);
+        setStatus('');
+        setRecordType('');
+        setOrdering('-date');
+        setPage(1);
     };
 
-    // Initial data fetch on component mount
-    useEffect(() => {
-        fetchData();
-    }, []);
+    const choosePreset = (preset: Preset) => {
+        if (preset === 'custom') {
+            setDraft(d => ({ ...d, preset }));
+            return;
+        }
+        const range = presetRange(preset);
+        setDraft({ preset, ...range });
+        setApplied({ preset, ...range });   // presets apply straight away
+        setPage(1);
+    };
+    const applyDates = () => {
+        if (rangeError) return;
+        setApplied({ ...draft });
+        setPage(1);
+    };
+    const resetFilters = () => {
+        const range = presetRange(DEFAULT_PRESET);
+        setDraft({ preset: DEFAULT_PRESET, ...range });
+        setApplied({ preset: DEFAULT_PRESET, ...range });
+        setSearchInput('');
+        setSearch('');
+        setStatus('');
+        setRecordType('');
+        setOrdering('-date');
+        setPage(1);
+    };
 
-    // Fetch projects list for filter dropdown
-    useEffect(() => {
-        const fetchProjects = async () => {
-            try {
-                const response = await axiosInstance.get('projects/');
-                // Handle different possible response structures
-                const projectsData = Array.isArray(response.data)
-                    ? response.data
-                    : (response.data.results || response.data.data || []);
-                setProjects(projectsData);
-            } catch (error) {
-                console.error('Error fetching projects:', error);
-                setProjects([]); // Set empty array on error
-            }
-        };
+    const sortBy = (key: SortKey) => {
+        setOrdering(current => (current === key ? `-${key}` : current === `-${key}` ? key : key === 'date' || key === 'amount' ? `-${key}` : key));
+        setPage(1);
+    };
 
-        fetchProjects();
-    }, []);
-
-
-    // Handle Export based on the currently active report tab
     const handleExport = async (format: 'excel' | 'pdf') => {
+        setExporting(format);
         try {
-            setExportLoading(true);
-
-            // Determine the export endpoint based on selected report type
-            let exportUrl = '';
-            let fileName = '';
-
-            // Build query parameters
-            const params = new URLSearchParams();
-            if (dateFrom && dateTo) {
-                params.append('date_from', dateFrom);
-                params.append('date_to', dateTo);
-            }
-            if (selectedStatus) {
-                params.append('status', selectedStatus);
-            }
-            params.append('export_format', format);
-
-            const queryString = params.toString() ? `?${params.toString()}` : '';
-            const ext = format === 'excel' ? 'xlsx' : 'pdf';
-
-            switch (activeTab) {
-                case 'Financial Reports':
-                    exportUrl = `reports/financial/export/${queryString}`;
-                    fileName = `financial_report${selectedStatus ? `_${selectedStatus}` : ''}${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.${ext}`;
-                    break;
-                case 'Project Reports':
-                    exportUrl = `reports/project/export/${queryString}`;
-                    fileName = `project_report${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.${ext}`;
-                    break;
-                case 'Payment Reports':
-                    exportUrl = `reports/payment/export/${queryString}`;
-                    fileName = `payment_report${selectedStatus ? `_${selectedStatus}` : ''}${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.${ext}`;
-                    break;
-                case 'PO & Invoice Reports':
-                    exportUrl = `reports/po-invoice/export/${queryString}`;
-                    fileName = `po_invoice_report${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.${ext}`;
-                    break;
-                case 'All':
-                default:
-                    exportUrl = `reports/all/export/${queryString}`;
-                    fileName = `all_reports${dateFrom ? `_${dateFrom}_to_${dateTo}` : ''}.${ext}`;
-                    break;
-            }
-
-            const response = await axiosInstance.get(exportUrl, {
-                responseType: 'blob'
+            const res = await axiosInstance.get(`reports/${tabInfo.slug}/export/`, {
+                params: { ...filterParams, export_format: format },
+                responseType: 'blob',
             });
-
-            // Create a blob URL and trigger download
-            const blobType = format === 'excel' 
-                ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                : 'application/pdf';
-                
-            const blob = new Blob([response.data], { type: blobType });
-            const url = window.URL.createObjectURL(blob);
+            const header = String(res.headers['content-disposition'] || '');
+            const name = /filename="?([^";]+)"?/.exec(header)?.[1]
+                || `ProjectBudget_Reports_${applied.from || 'all'}_to_${applied.to || 'dates'}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+            const url = URL.createObjectURL(res.data as Blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = fileName;
+            link.download = name;
             document.body.appendChild(link);
             link.click();
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(url);
-        } catch (error) {
-            console.error(`Error exporting ${format}:`, error);
-            alert(`Failed to export ${format.toUpperCase()} file. Please try again.`);
+            link.remove();
+            URL.revokeObjectURL(url);
+            toast.success(`Downloaded ${name}`);
+        } catch (err) {
+            toast.error(await errorText(err, `Could not export the ${format === 'excel' ? 'Excel' : 'PDF'} report.`));
         } finally {
-            setExportLoading(false);
+            setExporting(null);
         }
     };
 
-    // Handle sorting
-    const handleSort = (column: string) => {
-        if (sortColumn === column) {
-            // Toggle direction if same column
-            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-        } else {
-            // New column, default to ascending
-            setSortColumn(column);
-            setSortDirection('asc');
-        }
-    };
-
-    // Handle date filter apply
-    const handleApplyDateFilter = () => {
-        if (dateFrom && dateTo) {
-            fetchData({ dateFrom, dateTo });
-        } else if (!dateFrom && !dateTo) {
-            fetchData();
-        }
-    };
-
-    // Helper function to sort data
-    const sortData = (data: any[], column: string) => {
-        if (!data) return data;
-
-        const sorted = [...data].sort((a, b) => {
-            let aVal = a[column];
-            let bVal = b[column];
-
-            // Handle numeric values
-            if (typeof aVal === 'number' && typeof bVal === 'number') {
-                return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-            }
-
-            // Handle string values
-            aVal = String(aVal).toLowerCase();
-            bVal = String(bVal).toLowerCase();
-
-            if (sortDirection === 'asc') {
-                return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-            } else {
-                return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
-            }
-        });
-
-        return sorted;
-    };
-
-    // Helper function to filter data by status
-    const filterByStatus = (data: any[], statusField: string) => {
-        if (!data || !selectedStatus) return data;
-
-        return data.filter(row => {
-            const rowStatus = row[statusField]?.toLowerCase();
-            return rowStatus === selectedStatus.toLowerCase();
-        });
-    };
-
-    // Helper function to format currency
-    const formatCurrency = (value: string | number) => {
-        const num = typeof value === 'string' ? parseFloat(value) : value;
-        return new Intl.NumberFormat('en-IN', {
-            style: 'currency',
-            currency: 'INR',
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0,
-        }).format(num);
-    };
-
-    // Helper function to format trend
-    const formatTrend = (change: number) => {
-        if (change === 0) return '0%';
-        return change > 0 ? `+${change}%` : `${change}%`;
-    };
-
-    // Create summary cards from API data
-    const summaryCards = financeOverview?.summary_cards ? [
-        {
-            label: 'Total Revenue',
-            amount: formatCurrency(financeOverview.summary_cards.total_revenue),
-            icon: <DollarSign size={20} className="text-blue-600 dark:text-blue-400" />,
-            trend: null as string | null
-        },
-        {
-            label: 'Total Expenses',
-            amount: formatCurrency(financeOverview.summary_cards.total_expenses),
-            icon: <TrendingUp size={20} className="text-rose-600 dark:text-rose-400" />,
-            trend: null as string | null
-        },
-        {
-            label: 'Total Profit',
-            amount: formatCurrency(financeOverview.summary_cards.total_profit),
-            icon: <PieChart size={20} className="text-emerald-600 dark:text-emerald-400" />,
-            trend: null as string | null
-        },
-        {
-            label: 'Total Outstanding',
-            amount: formatCurrency(financeOverview.summary_cards.total_outstanding),
-            icon: <Clock size={20} className="text-amber-600 dark:text-amber-400" />,
-            trend: null as string | null
-        },
-        {
-            label: 'Collection Rate',
-            amount: `${financeOverview.summary_cards.overall_collection_rate.toFixed(2)}%`,
-            icon: <CheckCircle size={20} className="text-indigo-600 dark:text-indigo-400" />,
-            trend: null as string | null
-        },
-    ] : [];
-
-    const tabs: TabType[] = ['All', 'Financial Reports', 'Project Reports', 'Payment Reports', 'PO & Invoice Reports'];
-
-    // ---- Pagination: PAGE_SIZE rows per page on every tab ----
-    const PAGE_SIZE = 10;
-    const [page, setPage] = useState(1);
-    // Back to page 1 when the tab, filters or sort change (state adjusted during render, not in an effect).
-    const pageResetKey = [activeTab, selectedStatus, selectedProject, dateFrom, dateTo, sortColumn, sortDirection].join('|');
-    const [pagedFor, setPagedFor] = useState(pageResetKey);
-    if (pagedFor !== pageResetKey) {
-        setPagedFor(pageResetKey);
-        setPage(1);
-    }
-
-    // Real row count for the currently active tab (mirrors the filtering renderTable() applies),
-    // used to drive the results footer instead of a hardcoded placeholder count.
-    const getRowCount = (): number => {
-        switch (activeTab) {
-            case 'Financial Reports':
-                return filterByStatus(financialReports?.rows || [], 'status').length;
-            case 'Project Reports':
-                return filterByStatus(projectReports?.rows || [], 'project_status').length;
-            case 'Payment Reports':
-                return filterByStatus(paymentReports?.rows || [], 'invoice__status').length;
-            case 'PO & Invoice Reports':
-                return poInvoiceReports?.rows?.length || 0;
-            case 'All':
-            default:
-                return (
-                    (financialReports?.rows?.length || 0) +
-                    (projectReports?.rows?.length || 0) +
-                    (paymentReports?.rows?.length || 0) +
-                    (poInvoiceReports?.rows?.length || 0)
-                );
-        }
-    };
-
-    const totalRows = getRowCount();
-    const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
-    const currentPageNo = Math.min(page, totalPages); // reloaded data can shrink the list
-    const pageRows = <T,>(rows: T[]): T[] => rows.slice((currentPageNo - 1) * PAGE_SIZE, currentPageNo * PAGE_SIZE);
-    const firstRow = totalRows === 0 ? 0 : (currentPageNo - 1) * PAGE_SIZE + 1;
-    const lastRow = Math.min(currentPageNo * PAGE_SIZE, totalRows);
-
-    const renderTable = () => {
-        switch (activeTab) {
-            case 'Financial Reports':
-                return (
-                    <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-gray-50 z-10 dark:bg-gray-800">
-                            <tr className="border-b border-gray-200 dark:border-gray-700">
-                                <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
-                                    onClick={() => handleSort('invoice_no')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Invoice No
-                                        {sortColumn === 'invoice_no' ? (
-                                            sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                                        ) : <ArrowUpDown size={14} className="opacity-40" />}
-                                    </div>
-                                </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Client Name</th>
-                                <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
-                                    onClick={() => handleSort('invoice_total')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Invoice Total
-                                        {sortColumn === 'invoice_total' ? (
-                                            sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                                        ) : <ArrowUpDown size={14} className="opacity-40" />}
-                                    </div>
-                                </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Amount Paid</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Outstanding</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">
-                                    <div className="flex items-center gap-2">
-                                        Status
-                                        <div className="relative">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setShowStatusDropdown(!showStatusDropdown);
-                                                }}
-                                                className="hover:bg-gray-200 p-1 rounded transition-colors dark:hover:bg-gray-700"
-                                            >
-                                                <ChevronDown size={14} />
-                                            </button>
-                                            {showStatusDropdown && (
-                                                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] min-w-[180px] dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
-                                                    <button onClick={() => { setSelectedStatus(''); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: '' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors border-b border-gray-100 dark:text-gray-200 dark:hover:bg-gray-700 dark:border-gray-700">All Statuses</button>
-                                                    <button onClick={() => { setSelectedStatus('paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Paid</button>
-                                                    <button onClick={() => { setSelectedStatus('partially_paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'partially_paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Partially Paid</button>
-                                                    <button onClick={() => { setSelectedStatus('issued'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'issued' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Issued</button>
-                                                    <button onClick={() => { setSelectedStatus('overdue'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'overdue' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Overdue</button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Due Date</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Last Payment</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {(() => {
-                                let data = financialReports?.rows || [];
-                                data = filterByStatus(data, 'status');
-                                data = sortColumn ? sortData(data, sortColumn) : data;
-                                if (data.length === 0) {
-                                    return (
-                                        <tr>
-                                            <td colSpan={8} className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-                                                No financial records found for the selected filters.
-                                            </td>
-                                        </tr>
-                                    );
-                                }
-                                return pageRows(data).map((row, idx) => (
-                                    <tr key={idx} className="hover:bg-gray-50 transition-colors group dark:hover:bg-gray-800">
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.invoice_no}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{row.client_name}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-semibold dark:text-gray-300">{formatCurrency(row.invoice_total)}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatCurrency(row.amount_paid)}</td>
-                                        <td className="px-6 py-4 text-sm">
-                                            <span className={`font-semibold ${row.outstanding_balance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                                                {formatCurrency(row.outstanding_balance)}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm">
-                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${row.status === 'Paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/20' :
-                                                row.status === 'Partially Paid' ? 'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/20' :
-                                                    row.status === 'Issued' ? 'bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/20' :
-                                                        'bg-rose-50 text-rose-700 border border-rose-100 dark:bg-rose-500/15 dark:text-rose-300 dark:border-rose-500/20'
-                                                }`}>
-                                                {row.status}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{toDMY(row.due_date)}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                                            {toDMY(row.last_payment_date, '-')}
-                                        </td>
-                                    </tr>
-                                ))
-                            })()}
-                        </tbody>
-                    </table>
-                );
-            case 'Project Reports':
-                return (
-                    <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-gray-50 z-10 dark:bg-gray-800">
-                            <tr className="border-b border-gray-200 dark:border-gray-700">
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Project No</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Project Name</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">
-                                    <div className="flex items-center gap-2">
-                                        Status
-                                        <div className="relative">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setShowStatusDropdown(!showStatusDropdown);
-                                                }}
-                                                className="hover:bg-gray-200 p-1 rounded transition-colors dark:hover:bg-gray-700"
-                                            >
-                                                <ChevronDown size={14} />
-                                            </button>
-                                            {showStatusDropdown && (
-                                                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] min-w-[180px] dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
-                                                    <button onClick={() => { setSelectedStatus(''); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors border-b border-gray-100 dark:text-gray-200 dark:hover:bg-gray-700 dark:border-gray-700">All Statuses</button>
-                                                    <button onClick={() => { setSelectedStatus('completed'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Completed</button>
-                                                    <button onClick={() => { setSelectedStatus('in_progress'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">In Progress</button>
-                                                    <button onClick={() => { setSelectedStatus('planning'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Planning</button>
-                                                    <button onClick={() => { setSelectedStatus('on_hold'); setShowStatusDropdown(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">On Hold</button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
-                                    onClick={() => handleSort('budget')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Budget
-                                        {sortColumn === 'budget' ? (
-                                            sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                                        ) : <ArrowUpDown size={14} className="opacity-40" />}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
-                                    onClick={() => handleSort('invoiced')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Invoiced
-                                        {sortColumn === 'invoiced' ? (
-                                            sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                                        ) : <ArrowUpDown size={14} className="opacity-40" />}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
-                                    onClick={() => handleSort('received')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Received
-                                        {sortColumn === 'received' ? (
-                                            sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                                        ) : <ArrowUpDown size={14} className="opacity-40" />}
-                                    </div>
-                                </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Expenses</th>
-                                <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
-                                    onClick={() => handleSort('profit')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Profit
-                                        {sortColumn === 'profit' ? (
-                                            sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                                        ) : <ArrowUpDown size={14} className="opacity-40" />}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
-                                    onClick={() => handleSort('forecasted_profit')}
-                                    title="Budget minus expenses - an estimate available even before any invoice is raised"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Forecasted Profit
-                                        {sortColumn === 'forecasted_profit' ? (
-                                            sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                                        ) : <ArrowUpDown size={14} className="opacity-40" />}
-                                    </div>
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {(() => {
-                                let data = projectReports?.rows || [];
-                                data = filterByStatus(data, 'project_status');
-                                data = sortColumn ? sortData(data, sortColumn) : data;
-                                if (data.length === 0) {
-                                    return (
-                                        <tr>
-                                            <td colSpan={8} className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-                                                No project records found for the selected filters.
-                                            </td>
-                                        </tr>
-                                    );
-                                }
-                                return pageRows(data).map((row) => (
-                                    <tr key={row.project_no} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">#{row.project_no}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.project_name}</td>
-                                        <td className="px-6 py-4 text-sm">
-                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${row.project_status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/20' :
-                                                row.project_status === 'planning' ? 'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/20' :
-                                                    row.project_status === 'in_progress' ? 'bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/20' :
-                                                        'bg-gray-50 text-gray-700 border border-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
-                                                }`}>
-                                                {row.project_status?.replace('_', ' ') || ''}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-semibold dark:text-gray-300">{formatCurrency(row.budget)}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatCurrency(row.invoiced)}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatCurrency(row.received)}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatCurrency(row.expenses)}</td>
-                                        <td className="px-6 py-4 text-sm">
-                                            <span className={`font-semibold ${row.profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                                {formatCurrency(row.profit)}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm">
-                                            <span className={`font-semibold ${row.forecasted_profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                                {formatCurrency(row.forecasted_profit)}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))
-                            })()}
-                        </tbody>
-                    </table>
-                );
-            case 'Payment Reports':
-                return (
-                    <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-gray-50 z-10 dark:bg-gray-800">
-                            <tr className="border-b border-gray-200 dark:border-gray-700">
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Payment Date</th>
-                                <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
-                                    onClick={() => handleSort('invoice__invoice_no')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Invoice No
-                                        {sortColumn === 'invoice__invoice_no' ? (
-                                            sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                                        ) : <ArrowUpDown size={14} className="opacity-40" />}
-                                    </div>
-                                </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Client Name</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Payment Method</th>
-                                <th
-                                    className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors dark:text-gray-400 dark:hover:bg-gray-700"
-                                    onClick={() => handleSort('amount')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Amount
-                                        {sortColumn === 'amount' ? (
-                                            sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                                        ) : <ArrowUpDown size={14} className="opacity-40" />}
-                                    </div>
-                                </th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">
-                                    <div className="flex items-center gap-2">
-                                        Invoice Status
-                                        <div className="relative">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setShowStatusDropdown(!showStatusDropdown);
-                                                }}
-                                                className="hover:bg-gray-200 p-1 rounded transition-colors dark:hover:bg-gray-700"
-                                            >
-                                                <ChevronDown size={14} />
-                                            </button>
-                                            {showStatusDropdown && (
-                                                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] min-w-[180px] dark:bg-gray-800 dark:border-gray-700 dark:shadow-black/40">
-                                                    <button onClick={() => { setSelectedStatus(''); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: '' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors border-b border-gray-100 dark:text-gray-200 dark:hover:bg-gray-700 dark:border-gray-700">All Statuses</button>
-                                                    <button onClick={() => { setSelectedStatus('paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Paid</button>
-                                                    <button onClick={() => { setSelectedStatus('partially_paid'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'partially_paid' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Partially Paid</button>
-                                                    <button onClick={() => { setSelectedStatus('issued'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'issued' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Issued</button>
-                                                    <button onClick={() => { setSelectedStatus('overdue'); setShowStatusDropdown(false); fetchData({ dateFrom, dateTo, status: 'overdue' }); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors dark:text-gray-200 dark:hover:bg-gray-700">Overdue</button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {(() => {
-                                let data = paymentReports?.rows || [];
-                                data = filterByStatus(data, 'invoice__status');
-                                data = sortColumn ? sortData(data, sortColumn) : data;
-                                if (data.length === 0) {
-                                    return (
-                                        <tr>
-                                            <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-                                                No payment records found for the selected filters.
-                                            </td>
-                                        </tr>
-                                    );
-                                }
-                                return pageRows(data).map((row, idx) => (
-                                    <tr key={idx} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
-                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{toDMY(row.payment_date)}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.invoice__invoice_no}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{row.invoice__client__company_name}</td>
-                                        <td className="px-6 py-4 text-sm">
-                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${row.payment_method === 'Bank Transfer' ? 'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/20' :
-                                                row.payment_method === 'Credit Card' ? 'bg-purple-50 text-purple-700 border border-purple-100 dark:bg-purple-500/15 dark:text-purple-300 dark:border-purple-500/20' :
-                                                    row.payment_method === 'Debit Card' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/20' :
-                                                        'bg-gray-50 text-gray-700 border border-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
-                                                }`}>
-                                                {row.payment_method}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-gray-700 font-semibold dark:text-gray-300">{formatCurrency(row.amount)}</td>
-                                        <td className="px-6 py-4 text-sm">
-                                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${row.invoice__status === 'Paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/20' :
-                                                row.invoice__status === 'Partially Paid' ? 'bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/20' :
-                                                    row.invoice__status === 'Cancelled' ? 'bg-rose-50 text-rose-700 border border-rose-100 dark:bg-rose-500/15 dark:text-rose-300 dark:border-rose-500/20' :
-                                                        'bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/20'
-                                                }`}>
-                                                {row.invoice__status}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))
-                            })()}
-                        </tbody>
-                    </table>
-                );
-            case 'PO & Invoice Reports':
-                return (
-                    <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-gray-50 z-10 dark:bg-gray-800">
-                            <tr className="border-b border-gray-200 dark:border-gray-700">
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">PO Number</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Vendor Name</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Total Amount</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Paid</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Balance</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {!poInvoiceReports?.rows?.length && (
-                                <tr>
-                                    <td colSpan={5} className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-                                        No PO/invoice records found for the selected filters.
-                                    </td>
-                                </tr>
-                            )}
-                            {pageRows(poInvoiceReports?.rows || []).map((row, idx) => (
-                                <tr key={idx} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
-                                    <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.po_no}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{row.vendor__name}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-700 font-semibold dark:text-gray-300">{formatCurrency(row.total_amount)}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatCurrency(row.paid)}</td>
-                                    <td className="px-6 py-4 text-sm">
-                                        <span className={`font-semibold ${row.balance === 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                                            {formatCurrency(row.balance)}
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                );
-            case 'All':
-            default:
-                // Combine all reports from API data
-                const allReports: any[] = [
-                    ...(financialReports?.rows?.map(row => ({
-                        type: 'Financial',
-                        primary: row.invoice_no,
-                        secondary: row.client_name,
-                        status: row.status
-                    })) || []),
-                    ...(projectReports?.rows?.map(row => ({
-                        type: 'Project',
-                        primary: row.project_name,
-                        secondary: formatCurrency(row.budget),
-                        status: row.project_status
-                    })) || []),
-                    ...(paymentReports?.rows?.map(row => ({
-                        type: 'Payment',
-                        primary: row.invoice__invoice_no,
-                        secondary: row.invoice__client__company_name,
-                        status: row.payment_method
-                    })) || []),
-                    ...(poInvoiceReports?.rows?.map(row => ({
-                        type: 'PO & Invoice',
-                        primary: row.po_no,
-                        secondary: row.vendor__name,
-                        status: formatCurrency(row.balance)
-                    })) || [])
-                ];
-
-                return (
-                    <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-gray-50 z-10 dark:bg-gray-800">
-                            <tr className="border-b border-gray-200 dark:border-gray-700">
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Report Type</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Primary Detail</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Secondary Detail</th>
-                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 uppercase tracking-wider dark:text-gray-400">Status/Value</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {allReports.length === 0 && (
-                                <tr>
-                                    <td colSpan={4} className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-                                        No records found for the selected filters.
-                                    </td>
-                                </tr>
-                            )}
-                            {pageRows(allReports).map((row, idx) => (
-                                <tr key={idx} className="hover:bg-gray-50 transition-colors dark:hover:bg-gray-800">
-                                    <td className="px-6 py-4 text-sm">
-                                        <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-bold uppercase dark:bg-gray-800 dark:text-gray-400">
-                                            {row.type}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-sm text-gray-700 font-medium dark:text-gray-300">{row.primary}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{row.secondary}</td>
-                                    <td className="px-6 py-4 text-sm">
-                                        <span className={`font-semibold ${row.type === 'Financial' ? 'text-emerald-600 dark:text-emerald-400' :
-                                            row.type === 'Project' ? 'text-blue-600 capitalize dark:text-blue-400' :
-                                                row.type === 'Payment' ? 'text-indigo-600 dark:text-indigo-400' :
-                                                    'text-amber-600 dark:text-amber-400'
-                                            }`}>
-                                            {row.type === 'Project' ? row.status?.replace('_', ' ') || '' : row.status}
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                );
-        }
-    };
-
+    const summary = data?.summary;
+    const firstLoad = !data && loading;
+    const profitTone: Tone = summary ? (summary.profit > 0 ? 'positive' : summary.profit < 0 ? 'negative' : 'neutral') : 'neutral';
+    const rate = summary?.collection_rate ?? null;
+    const rateTone: Tone = rate === null ? 'neutral' : rate >= 80 ? 'positive' : rate >= 50 ? 'warning' : 'negative';
+    const rows = data?.results ?? [];
+    const hasFilters = !!(search || status || recordType);
+    const firstRow = data && data.count ? (data.page - 1) * data.page_size + 1 : 0;
+    const lastRow = data ? Math.min(data.page * data.page_size, data.count) : 0;
+    const detailFields = detail ? data?.fields[detail.category] ?? [] : [];
 
     return (
-        <>
-            <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
-                <div className="space-y-8 animate-in fade-in duration-500">
+        <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
+            <div className="w-full space-y-5">
+                {/* Header: title + period filter + exports */}
+                <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+                    <div className="min-w-0">
+                        <nav aria-label="Breadcrumb">
+                            <ol className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                <li><Link to="/dashboard" className="hover:text-gray-900 hover:underline dark:hover:text-white">Home</Link></li>
+                                <li aria-hidden="true">/</li>
+                                <li aria-current="page" className="font-medium text-gray-700 dark:text-gray-200">Reports</li>
+                            </ol>
+                        </nav>
+                        <h1 className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">Reports</h1>
+                        <p className="mt-0.5 text-[13px] text-gray-500 dark:text-gray-400">Financial, Project, Payment &amp; Invoice Insights</p>
+                    </div>
 
-                    {/* Page Header */}
-                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                        <div>
-                            <nav className="flex mb-2" aria-label="Breadcrumb">
-                                <ol className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
-                                    <li><a href="/dashboard" className="hover:text-blue-600 transition-colors dark:hover:text-blue-400">Home</a></li>
-                                    <li><span className="mx-1 text-gray-400 dark:text-gray-600">/</span></li>
-                                    <li className="text-gray-900 font-medium dark:text-white">Reports</li>
-                                </ol>
-                            </nav>
-                            <h1 className="text-3xl font-bold text-gray-900 tracking-tight dark:text-white">Reports</h1>
-                            <p className="text-gray-500 mt-1 dark:text-gray-400">Financial, Project, Payment & Invoice Insights</p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-3">
-                            {/* Calendar Icon */}
-                            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg dark:bg-blue-500/10 dark:border-blue-900">
-                                <Calendar size={18} className="text-blue-600 dark:text-blue-400" />
-                            </div>
-
-                            {/* Date From */}
-                            <div className="flex items-center gap-2">
-                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">From:</label>
-                                <input
-                                    type="date"
-                                    value={dateFrom}
-                                    onChange={(e) => {
-                                        setDateFrom(e.target.value);
-                                        if (e.target.value && dateTo) {
-                                            setTimeout(() => handleApplyDateFilter(), 100);
-                                        }
-                                    }}
-                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                                />
-                            </div>
-
-                            {/* Date To */}
-                            <div className="flex items-center gap-2">
-                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">To:</label>
-                                <input
-                                    type="date"
-                                    value={dateTo}
-                                    onChange={(e) => {
-                                        setDateTo(e.target.value);
-                                        if (dateFrom && e.target.value) {
-                                            setTimeout(() => handleApplyDateFilter(), 100);
-                                        }
-                                    }}
-                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500"
-                                />
-                            </div>
-
-
-                            <div className="h-8 w-px bg-gray-200 mx-1 hidden md:block dark:bg-gray-800"></div>
+                    <div className="flex w-full flex-wrap items-end gap-2 min-[1280px]:w-auto">
+                        <label className="flex w-full flex-col gap-1 min-[480px]:w-auto">
+                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Period</span>
+                            <select value={draft.preset} onChange={(e) => choosePreset(e.target.value as Preset)} className={`${CONTROL} min-[480px]:w-40`}>
+                                {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                            </select>
+                        </label>
+                        <label className="flex flex-1 flex-col gap-1 min-[480px]:flex-none">
+                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">From Date</span>
+                            <input
+                                type="date"
+                                value={draft.from}
+                                max={draft.to || undefined}
+                                onChange={(e) => setDraft(d => ({ ...d, preset: 'custom', from: e.target.value }))}
+                                aria-invalid={!!rangeError}
+                                className={`${CONTROL} w-full min-[480px]:w-40`}
+                            />
+                        </label>
+                        <label className="flex flex-1 flex-col gap-1 min-[480px]:flex-none">
+                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">To Date</span>
+                            <input
+                                type="date"
+                                value={draft.to}
+                                min={draft.from || undefined}
+                                onChange={(e) => setDraft(d => ({ ...d, preset: 'custom', to: e.target.value }))}
+                                aria-invalid={!!rangeError}
+                                aria-describedby={rangeError ? 'report-range-error' : undefined}
+                                className={`${CONTROL} w-full min-[480px]:w-40 ${rangeError ? 'border-red-400 dark:border-red-500' : ''}`}
+                            />
+                        </label>
+                        <button
+                            type="button"
+                            onClick={applyDates}
+                            disabled={!!rangeError || !dirty}
+                            className="h-10 rounded-md bg-navy-900 px-4 text-sm font-semibold text-white hover:bg-navy-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:ring-offset-gray-950"
+                        >
+                            Apply Filters
+                        </button>
+                        <button
+                            type="button"
+                            onClick={resetFilters}
+                            className="h-10 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                        >
+                            Reset
+                        </button>
+                        <span className="mx-1 hidden h-8 w-px self-end bg-gray-200 min-[768px]:block dark:bg-gray-800" aria-hidden="true" />
+                        {/* The two exports wrap together */}
+                        <div className="flex gap-2">
                             <button
+                                type="button"
                                 onClick={() => handleExport('excel')}
-                                disabled={exportLoading}
-                                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-900 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:border-gray-700"
+                                disabled={exporting !== null}
+                                className="inline-flex h-10 items-center gap-2 rounded-md border border-green-300 bg-white px-3 text-sm font-semibold text-green-800 hover:bg-green-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-green-500/40 dark:bg-gray-900 dark:text-green-300 dark:hover:bg-green-500/10"
                             >
-                                <FileSpreadsheet size={16} className="text-emerald-600 dark:text-emerald-400" />
-                                {exportLoading ? 'Exporting...' : 'Export Excel'}
+                                {exporting === 'excel' ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <FileSpreadsheet size={16} aria-hidden="true" />}
+                                Export Excel
                             </button>
                             <button
+                                type="button"
                                 onClick={() => handleExport('pdf')}
-                                disabled={exportLoading}
-                                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-900 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:border-gray-700"
+                                disabled={exporting !== null}
+                                className="inline-flex h-10 items-center gap-2 rounded-md border border-red-300 bg-white px-3 text-sm font-semibold text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500/40 dark:bg-gray-900 dark:text-red-300 dark:hover:bg-red-500/10"
                             >
-                                <Download size={16} className="text-rose-600 dark:text-rose-400" />
-                                {exportLoading ? 'Exporting...' : 'Export PDF'}
+                                {exporting === 'pdf' ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
+                                Export PDF
                             </button>
                         </div>
                     </div>
+                </header>
 
-                    {/* Financial Summary Section */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                        {loading ? (
-                            // Loading skeleton
-                            Array.from({ length: 5 }).map((_, idx) => (
-                                <div key={idx} className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm animate-pulse dark:bg-gray-900 dark:border-gray-800">
-                                    <div className="flex items-start justify-between">
-                                        <div className="w-10 h-10 bg-gray-200 rounded-lg dark:bg-gray-700"></div>
-                                        <div className="w-12 h-4 bg-gray-200 rounded dark:bg-gray-700"></div>
-                                    </div>
-                                    <div className="mt-4">
-                                        <div className="w-16 h-4 bg-gray-200 rounded mb-2 dark:bg-gray-700"></div>
-                                        <div className="w-24 h-8 bg-gray-200 rounded dark:bg-gray-700"></div>
-                                    </div>
-                                </div>
-                            ))
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
+                    <p className="text-gray-600 dark:text-gray-300">
+                        <CalendarRange size={15} aria-hidden="true" className="-mt-0.5 mr-1.5 inline text-gray-400" />
+                        Reporting period: <strong className="font-semibold tabular-nums text-gray-900 dark:text-white">{periodLabel(applied.from, applied.to)}</strong>
+                        {' '}<span className="text-gray-500 dark:text-gray-400">({PRESETS.find(p => p.id === applied.preset)?.label})</span>
+                    </p>
+                    {rangeError ? (
+                        <p id="report-range-error" role="alert" className="font-medium text-red-600 dark:text-red-400">{rangeError}</p>
+                    ) : dirty ? (
+                        <p className="text-amber-700 dark:text-amber-400">Dates changed. Click Apply Filters to update the report.</p>
+                    ) : data?.generated_at ? (
+                        <p className="tabular-nums text-gray-500 dark:text-gray-400">Updated {formatDateTime(data.generated_at)}</p>
+                    ) : null}
+                </div>
+
+                {/* KPIs - from the backend, for the applied period */}
+                <section aria-label="Financial summary" aria-busy={loading} className={`grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 xl:gap-4 ${loading && !firstLoad ? 'opacity-70' : ''}`}>
+                    <KpiCard loading={firstLoad} label="Total Revenue" value={summary ? kpiMoney(summary.revenue) : '—'} icon={<IndianRupee size={13} />}
+                        caption={summary ? `${summary.invoice_count} ${summary.invoice_count === 1 ? 'invoice' : 'invoices'} · excl. tax` : undefined} />
+                    <KpiCard loading={firstLoad} label="Total Expenses" value={summary ? kpiMoney(summary.expenses) : '—'} icon={<Receipt size={13} />} iconTone="negative"
+                        caption="Expenses + vendor bill payments" />
+                    <KpiCard loading={firstLoad} label="Total Profit" value={summary ? kpiMoney(summary.profit) : '—'}
+                        icon={summary && summary.profit < 0 ? <TrendingDown size={13} /> : <TrendingUp size={13} />} tone={profitTone}
+                        caption={summary && summary.revenue > 0 ? `Margin ${(summary.profit / summary.revenue * 100).toFixed(1)}% · Revenue − Expenses` : 'Revenue − Expenses'} />
+                    <KpiCard loading={firstLoad} label="Total Outstanding" value={summary ? kpiMoney(summary.outstanding) : '—'} icon={<Clock size={13} />}
+                        tone={summary && summary.outstanding > 0 ? 'warning' : 'neutral'} iconTone="warning"
+                        caption={summary ? `of ${kpiMoney(summary.amount_due)} due` : undefined} />
+                    <KpiCard loading={firstLoad} className="min-[480px]:max-[767px]:col-span-2" label="Collection Rate" value={rate === null ? '—' : `${rate.toFixed(1)}%`}
+                        icon={<Percent size={13} />} tone={rateTone}
+                        caption={summary ? `${kpiMoney(summary.received)} received` : undefined} />
+                </section>
+                <p className="-mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Revenue: invoices issued in the period, excluding tax, Draft and Cancelled. Profit = Revenue − Expenses. Outstanding and Collection Rate cover the invoices issued in the period.
+                </p>
+                {summary && summary.other_currencies.length > 0 && (
+                    <div role="note" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                        {summary.other_currencies.map(c => (
+                            <p key={c.currency}>
+                                {c.currency} invoices aren't included in the INR figures above: revenue {money(c.revenue, c.currency)}, outstanding {money(c.outstanding, c.currency)},
+                                collection {c.collection_rate === null ? '—' : `${c.collection_rate.toFixed(1)}%`} ({c.invoice_count} {c.invoice_count === 1 ? 'invoice' : 'invoices'}).
+                            </p>
+                        ))}
+                    </div>
+                )}
+
+                {/* Report categories + table */}
+                <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                    <div
+                        role="tablist"
+                        aria-label="Report categories"
+                        className="flex overflow-x-auto border-b border-gray-200 px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-gray-800"
+                        onKeyDown={(e) => {
+                            if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                            const at = TABS.findIndex(t => t.id === tab);
+                            const next = TABS[(at + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length].id;
+                            selectTab(next);
+                            requestAnimationFrame(() => document.getElementById(`report-tab-${next}`)?.focus());
+                        }}
+                    >
+                        {TABS.map(t => (
+                            <button
+                                key={t.id}
+                                id={`report-tab-${t.id}`}
+                                type="button"
+                                role="tab"
+                                aria-selected={tab === t.id}
+                                aria-controls="report-tab-panel"
+                                tabIndex={tab === t.id ? 0 : -1}
+                                onClick={() => selectTab(t.id)}
+                                className={`-mb-px h-12 shrink-0 whitespace-nowrap border-b-2 px-4 text-sm font-medium transition-colors focus:outline-none focus-visible:bg-gray-50 dark:focus-visible:bg-gray-800 ${tab === t.id
+                                    ? 'border-teal-600 text-gray-900 dark:border-violet-400 dark:text-white'
+                                    : 'border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}
+                            >
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div id="report-tab-panel" role="tabpanel" aria-labelledby={`report-tab-${tab}`} className="space-y-3 p-3 sm:p-4">
+                        {/* Toolbar */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="relative w-full min-[640px]:w-72">
+                                <Search size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                <input
+                                    type="search"
+                                    value={searchInput}
+                                    onChange={(e) => setSearchInput(e.target.value)}
+                                    placeholder="Search reference, client, vendor, project…"
+                                    aria-label="Search reports"
+                                    className={`${CONTROL} w-full pl-9 placeholder:text-gray-400`}
+                                />
+                            </div>
+                            {tab === 'all' && (
+                                <select value={recordType} onChange={(e) => { setRecordType(e.target.value); setStatus(''); setPage(1); }} aria-label="Filter by report type" className={CONTROL}>
+                                    <option value="">All report types</option>
+                                    {(data?.type_options ?? []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                            )}
+                            <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} aria-label="Filter by status" className={CONTROL}>
+                                <option value="">All statuses</option>
+                                {(data?.status_options ?? []).map(s => <option key={s} value={s}>{s}</option>)}
+                                {status && !(data?.status_options ?? []).includes(status) && <option value={status}>{status}</option>}
+                            </select>
+                            {hasFilters && (
+                                <button type="button" onClick={() => { setSearchInput(''); setSearch(''); setStatus(''); setRecordType(''); setPage(1); }}
+                                    className="h-10 px-2 text-sm font-medium text-teal-700 hover:underline focus:outline-none focus-visible:underline dark:text-violet-300">
+                                    Clear
+                                </button>
+                            )}
+                            <p className="ml-auto text-[13px] tabular-nums text-gray-500 dark:text-gray-400" aria-live="polite">
+                                {data ? `${data.count.toLocaleString('en-IN')} ${data.count === 1 ? 'record' : 'records'}` : ''}
+                            </p>
+                        </div>
+
+                        {error ? (
+                            <div className="rounded-lg border border-gray-200 dark:border-gray-800">
+                                <ErrorState message={error} onRetry={() => setReloadKey(k => k + 1)} />
+                            </div>
                         ) : (
-                            summaryCards.map((card, idx) => (
-                                <div key={idx} className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow group dark:bg-gray-900 dark:border-gray-800">
-                                    <div className="flex items-start justify-between">
-                                        <div className="p-2 bg-gray-50 rounded-lg group-hover:bg-white transition-colors border border-transparent group-hover:border-gray-100 dark:bg-gray-800 dark:group-hover:bg-gray-900 dark:group-hover:border-gray-800">
-                                            {card.icon}
-                                        </div>
-                                        {card.trend && (
-                                            <span className={`text-xs font-bold flex items-center gap-0.5 ${card.trend.startsWith('+') ? 'text-emerald-600 dark:text-emerald-400' : card.trend.startsWith('-') ? 'text-rose-600 dark:text-rose-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                                                {card.trend.startsWith('+') ? <ArrowUpRight size={12} /> : card.trend.startsWith('-') ? <ArrowDownRight size={12} /> : null}
-                                                {card.trend}
-                                            </span>
-                                        )}
+                            // relative: keeps sr-only header text inside this scroll box
+                            <div className={`relative overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800 ${loading && !firstLoad ? 'opacity-60' : ''}`} aria-busy={loading}>
+                                <table className="w-full min-w-[1080px] table-fixed text-sm">
+                                    <colgroup>{COLUMNS.map(c => <col key={c.key} className={c.width} />)}</colgroup>
+                                    <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
+                                        <tr className="h-11">
+                                            {COLUMNS.map(c => {
+                                                if (c.key === 'actions') return <th key={c.key} scope="col" className="px-3 text-right"><span className="sr-only">{c.label}</span></th>;
+                                                const key = c.key;
+                                                const active = ordering.replace('-', '') === key;
+                                                const desc = ordering.startsWith('-');
+                                                return (
+                                                    <th key={key} scope="col" aria-sort={active ? (desc ? 'descending' : 'ascending') : 'none'} className={`px-3 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>
+                                                        <button type="button" onClick={() => sortBy(key)}
+                                                            className={`inline-flex items-center gap-1 uppercase tracking-wide hover:text-gray-800 focus:outline-none focus-visible:underline dark:hover:text-gray-200 ${c.align === 'right' ? 'flex-row-reverse' : ''}`}>
+                                                            {c.label}
+                                                            {active ? (desc ? <ArrowDown size={13} aria-hidden="true" /> : <ArrowUp size={13} aria-hidden="true" />) : <ArrowUpDown size={12} aria-hidden="true" className="opacity-40" />}
+                                                        </button>
+                                                    </th>
+                                                );
+                                            })}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                        {firstLoad ? (
+                                            [0, 1, 2, 3, 4].map(i => (
+                                                <tr key={i} className="h-14"><td colSpan={COLUMNS.length} className="px-3"><div className="h-4 animate-pulse rounded bg-gray-100 dark:bg-gray-800" /></td></tr>
+                                            ))
+                                        ) : rows.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={COLUMNS.length} className="px-3 py-12 text-center">
+                                                    <p className="text-sm font-medium text-gray-900 dark:text-white">{hasFilters ? 'No records match these filters' : 'No records in this period'}</p>
+                                                    <p className="mt-1 text-[13px] text-gray-500 dark:text-gray-400">
+                                                        {hasFilters ? 'Try another search or status, or clear the filters.' : 'Choose a wider reporting period, for example This Year or All Time.'}
+                                                    </p>
+                                                </td>
+                                            </tr>
+                                        ) : rows.map(row => {
+                                            const note = amountNote(row);
+                                            return (
+                                                <tr key={row.key} className="h-14 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/40">
+                                                    <td className="px-3 py-2.5">
+                                                        <div className="truncate font-medium text-gray-900 dark:text-white" title={row.record_type}>{row.record_type}</div>
+                                                        {tab === 'all' && <div className="truncate text-xs text-gray-500 dark:text-gray-400">{row.category_label}</div>}
+                                                    </td>
+                                                    <td className="truncate px-3 py-2.5 tabular-nums text-gray-900 dark:text-gray-100" title={row.reference}>{row.reference || '—'}</td>
+                                                    <td className="px-3 py-2.5">
+                                                        <div className="truncate text-gray-900 dark:text-gray-100" title={row.project || row.party || undefined}>{row.project || row.party || '—'}</div>
+                                                        {row.project && row.party && <div className="truncate text-xs text-gray-500 dark:text-gray-400" title={row.party}>{row.party}</div>}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 tabular-nums text-gray-600 dark:text-gray-400">{toDMY(row.date)}</td>
+                                                    <td className="px-3 py-2.5 text-right tabular-nums">
+                                                        <div className="font-medium text-gray-900 dark:text-white">{money(row.amount, row.currency)}</div>
+                                                        {note && <div className="truncate text-xs text-gray-500 dark:text-gray-400" title={note}>{note}</div>}
+                                                    </td>
+                                                    <td className="px-3 py-2.5">
+                                                        <StatusBadge status={row.status_label} label={row.status_label} variant={statusVariant(row.status_label)} className="!px-2 !py-0.5 max-w-full truncate" />
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-right">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setDetail(row)}
+                                                            aria-label={`View ${row.record_type} ${row.reference}`}
+                                                            title="View details"
+                                                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+                                                        >
+                                                            <Eye size={16} />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {/* Totals + pagination */}
+                        {!error && data && data.count > 0 && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-gray-600 dark:text-gray-400">
+                                <p className="tabular-nums">
+                                    Showing {firstRow}–{lastRow} of {data.count.toLocaleString('en-IN')}
+                                    <span className="mx-1.5 text-gray-300 dark:text-gray-600" aria-hidden="true">·</span>
+                                    Total {data.totals.map(t => money(t.amount, t.currency)).join(' + ')}
+                                </p>
+                                {data.total_pages > 1 && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="tabular-nums">Page {data.page} of {data.total_pages}</span>
+                                        <button type="button" onClick={() => setPage(Math.max(1, data.page - 1))} disabled={data.page <= 1 || loading}
+                                            className={`${CONTROL} inline-flex h-9 items-center gap-1 px-3 font-medium disabled:opacity-50`}>
+                                            <ChevronLeft size={16} aria-hidden="true" /> Previous
+                                        </button>
+                                        <button type="button" onClick={() => setPage(Math.min(data.total_pages, data.page + 1))} disabled={data.page >= data.total_pages || loading}
+                                            className={`${CONTROL} inline-flex h-9 items-center gap-1 px-3 font-medium disabled:opacity-50`}>
+                                            Next <ChevronRight size={16} aria-hidden="true" />
+                                        </button>
                                     </div>
-                                    <div className="mt-4">
-                                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{card.label}</p>
-                                        <h3 className="text-2xl font-bold text-gray-900 mt-1 dark:text-white">{card.amount}</h3>
-                                    </div>
-                                </div>
-                            ))
+                                )}
+                            </div>
                         )}
                     </div>
-
-                    {/* Reports Tabs Section */}
-                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden dark:bg-gray-900 dark:border-gray-800">
-                        <div className="border-b border-gray-200 bg-gray-50/50 px-6 dark:border-gray-800 dark:bg-gray-800/50">
-                            <nav className="flex -mb-px space-x-8 overflow-x-auto no-scrollbar">
-                                {tabs.map((tab) => (
-                                    <button
-                                        key={tab}
-                                        onClick={() => setActiveTab(tab)}
-                                        className={`
-                    whitespace-nowrap py-5 px-1 border-b-2 font-semibold text-sm transition-all
-                    ${activeTab === tab
-                                                ? 'border-blue-600 text-blue-600 dark:border-violet-500 dark:text-violet-400'
-                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-700'
-                                            }
-                  `}
-                                    >
-                                        {tab}
-                                    </button>
-                                ))}
-                            </nav>
-                        </div>
-
-                        {/* Report Content Area */}
-                        <div className="overflow-x-auto">
-                            {renderTable()}
-                        </div>
-
-                        {/* Table Footer */}
-                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between dark:bg-gray-800 dark:border-gray-800">
-                            <p className="text-sm text-gray-500 dark:text-gray-400">
-                                {totalRows > 0 ? (
-                                    <>Showing <span className="font-medium text-gray-900 dark:text-gray-100">{firstRow}</span> to <span className="font-medium text-gray-900 dark:text-gray-100">{lastRow}</span> of <span className="font-medium text-gray-900 dark:text-gray-100">{totalRows}</span> results</>
-                                ) : (
-                                    <>No results found</>
-                                )}
-                            </p>
-                            <div className="flex items-center gap-2">
-                                {totalPages > 1 && (
-                                    <span className="text-sm text-gray-500 dark:text-gray-400 mr-1">
-                                        Page <span className="font-medium text-gray-900 dark:text-gray-100">{currentPageNo}</span> of {totalPages}
-                                    </span>
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={() => setPage(Math.max(1, currentPageNo - 1))}
-                                    disabled={currentPageNo <= 1}
-                                    className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-900"
-                                >
-                                    Previous
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setPage(Math.min(totalPages, currentPageNo + 1))}
-                                    disabled={currentPageNo >= totalPages}
-                                    className="px-3 py-1 border border-gray-300 rounded text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-900"
-                                >
-                                    Next
-                                </button>
-                            </div>
-                        </div>
-                    </div>
                 </div>
-            </Layout>
-        </>
+            </div>
+
+            {/* Record details */}
+            <Drawer
+                isOpen={!!detail}
+                onClose={() => setDetail(null)}
+                title={detail ? `${detail.record_type} ${detail.reference || ''}`.trim() : ''}
+                subtitle={detail ? `${detail.category_label} · ${toDMY(detail.date)}` : undefined}
+                size="md"
+                footer={detail?.project_no ? (
+                    <div className="flex justify-end">
+                        <button type="button" onClick={() => navigate(`/projects/${detail.project_no}`)}
+                            className="h-10 rounded-md bg-navy-900 px-4 text-sm font-semibold text-white hover:bg-navy-800">
+                            Open project
+                        </button>
+                    </div>
+                ) : undefined}
+            >
+                {detail && (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                            <StatusBadge status={detail.status_label} label={detail.status_label} variant={statusVariant(detail.status_label)} />
+                            <span className="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{money(detail.amount, detail.currency)}</span>
+                        </div>
+                        <dl className="divide-y divide-gray-100 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+                            {detailFields.map(field => (
+                                <div key={field.key} className="flex items-start justify-between gap-4 px-3 py-2.5 text-sm">
+                                    <dt className="text-gray-500 dark:text-gray-400">{field.label}</dt>
+                                    <dd className={`text-right font-medium text-gray-900 dark:text-gray-100 ${field.kind === 'text' ? '' : 'tabular-nums'}`}>
+                                        {fieldValue(detail, field)}
+                                    </dd>
+                                </div>
+                            ))}
+                        </dl>
+                    </div>
+                )}
+            </Drawer>
+        </Layout>
     );
 };
 
 export default ReportsPage;
-

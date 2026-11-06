@@ -344,6 +344,44 @@ HELPDESK_API_TIMEOUT_SECONDS = int(os.environ.get("HELPDESK_API_TIMEOUT_SECONDS"
 # GET /api/v1/project-assignments/.
 AIRA_WEBHOOK_URL = os.environ.get("AIRA_WEBHOOK_URL", "").strip()
 AIRA_PUSH_API_KEY = os.environ.get("AIRA_PUSH_API_KEY", "").strip()
+# AIRA push log: every push attempt (employee, URL, outcome, AIRA's HTTP status and reply - never
+# the key) goes to the console and to logs/aira_push.log, so a push that didn't arrive can be traced.
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "timestamped": {"format": "{asctime} {levelname} {message}", "style": "{"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "timestamped"},
+        "aira_push_file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "aira_push.log"),
+            "maxBytes": 2 * 1024 * 1024,
+            "backupCount": 5,
+            "encoding": "utf-8",
+            # Opened on the first write - runserver's reloader process never writes, so it never holds the file.
+            "delay": True,
+            "formatter": "timestamped",
+        },
+        # Resources tab Excel imports: who imported what into which project, and the outcome per run.
+        "resource_import_file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "resource_import.log"),
+            "maxBytes": 2 * 1024 * 1024,
+            "backupCount": 5,
+            "encoding": "utf-8",
+            "delay": True,
+            "formatter": "timestamped",
+        },
+    },
+    "loggers": {
+        "hrms_integration.tasks": {"handlers": ["console", "aira_push_file"], "level": "INFO", "propagate": False},
+        "Project.resource_import": {"handlers": ["console", "resource_import_file"], "level": "INFO", "propagate": False},
+    },
+}
 # Automatic AIRA pulls (tab open / scheduled task) skip if one started within this many seconds.
 HRMS_AUTO_SYNC_MIN_INTERVAL_SECONDS = int(os.environ.get("HRMS_AUTO_SYNC_MIN_INTERVAL_SECONDS", 300))
 # Employee pickers (resources, expenses, task assignees) list only HRMS employees with Budgeting

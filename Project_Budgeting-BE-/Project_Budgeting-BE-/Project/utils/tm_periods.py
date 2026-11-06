@@ -14,10 +14,10 @@ month), so the sum of the months is the project total:
     expenses       Expense.expense_date (cost-bearing; employee/freelancer
                    categories excluded - that cost is the resource cost)
     vendor_bills   OutgoingPayment.payment_date (paid amounts only)
-    labour         task allocated hours x assignee rate, in the task's due-date
-                   month, else its creation month (utils/labour_cost.py)
-    resources      flat-fee / vendor / external project resources: assigned
-                   (monthly) cost for each started month they're active in
+    resources      every project resource (employee, freelancer, vendor,
+                   external): its assigned monthly cost - specific cost amount,
+                   else cost rate x hours per period - for each started month
+                   it's active in
     invoices       finances.Invoice.billing_period (cancelled ones excluded);
                    received = payments on those invoices, so partial payments count
 
@@ -30,8 +30,6 @@ from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
-
-from .labour_cost import is_task_costed, task_labour_lines
 
 ZERO = Decimal("0.00")
 Q2 = Decimal("0.01")
@@ -184,30 +182,15 @@ def _collect(project, periods, today, with_items=False):
                 "vendor": pay['vendor__name'],
             })
 
-    for line in task_labour_lines(project):
-        m = bucket(line.date)
-        totals[m]['labour'] += line.cost
-        totals[m]['labour_hours'] += line.hours
-        if line.unrated:
-            totals[m]['unrated_hours'] += line.hours
-        if with_items:
-            items[m]['labour'].append({
-                "task": line.task_id, "title": line.title, "assignee": line.assignee,
-                "is_freelancer": line.is_freelancer, "date": line.date, "hours": line.hours,
-                "rate": line.rate, "cost": line.cost.quantize(Q2), "unrated": line.unrated,
-            })
-
-    # Resources not costed from tasks: their monthly assigned cost, for each
-    # month that has started and that they're staffed in. Future months keep
-    # actual cost at 0 and carry the same amount as planned (committed) cost.
+    # Resources: their monthly assigned cost, for each month that has started
+    # and that they're staffed in. Future months keep actual cost at 0 and
+    # carry the same amount as planned (committed) cost.
     assignments = (
         project.resource_assignments
         .filter(is_active=True, milestone__isnull=True)
         .exclude(status='removed')
     )
     for a in assignments:
-        if is_task_costed(a):
-            continue
         for p in periods:
             if a.start_date > p.period_end or (a.end_date and a.end_date < p.period_start):
                 continue
@@ -215,6 +198,8 @@ def _collect(project, periods, today, with_items=False):
                 totals[p.month]['planned_resources'] += a.assigned_cost
                 continue
             totals[p.month]['resources'] += a.assigned_cost
+            if a.resource_type in ('employee', 'freelancer'):
+                totals[p.month][f'{a.resource_type}_resources'] += a.assigned_cost
             if with_items:
                 items[p.month]['resources'].append({
                     "id": a.id, "name": a.resource_name, "resource_type": a.resource_type,
@@ -229,8 +214,7 @@ def _pct(part, whole):
 
 
 def _period_row(project, period, costs, invoices, current):
-    labour = costs['labour'].quantize(Q2)
-    resource_cost = labour + costs['resources']
+    resource_cost = costs['resources'].quantize(Q2)
     expenses = costs['expenses']
     vendor_bills = costs['vendor_bills']
     actual_cost = resource_cost + expenses + vendor_bills
@@ -270,15 +254,15 @@ def _period_row(project, period, costs, invoices, current):
         "amounts_overridden": period.amounts_overridden,
         "budget_amount": budget,
         "billing_amount": period.billing_amount,
-        "labour_cost": labour,
-        "labour_hours": costs['labour_hours'].quantize(Q2),
-        "unrated_hours": costs['unrated_hours'].quantize(Q2),
-        "assigned_resource_cost": costs['resources'],
         "resource_cost": resource_cost,
+        # Part of resource_cost - for the project's cost breakdown.
+        "employee_cost": costs['employee_resources'].quantize(Q2),
+        "freelancer_cost": costs['freelancer_resources'].quantize(Q2),
         "expenses": expenses,
         "vendor_bills": vendor_bills,
         "actual_cost": actual_cost,
-        "planned_cost": costs['planned_resources'],  # future months: committed resource cost, not yet incurred
+        # Future months: committed resource cost, not yet incurred.
+        "planned_cost": costs['planned_resources'].quantize(Q2),
         "remaining_budget": budget - actual_cost,
         "budget_used_percent": _pct(actual_cost, budget),
         "invoiced_amount": invoiced,
@@ -307,8 +291,8 @@ def _period_row(project, period, costs, invoices, current):
 
 
 TOTAL_FIELDS = (
-    'budget_amount', 'billing_amount', 'labour_cost', 'labour_hours', 'unrated_hours',
-    'assigned_resource_cost', 'resource_cost', 'expenses', 'vendor_bills', 'actual_cost', 'planned_cost',
+    'budget_amount', 'billing_amount', 'resource_cost', 'employee_cost', 'freelancer_cost',
+    'expenses', 'vendor_bills', 'actual_cost', 'planned_cost',
     'remaining_budget', 'invoiced_amount', 'revenue', 'received_amount', 'outstanding_amount', 'profit',
 )
 
@@ -369,7 +353,6 @@ def period_detail(project, period, today=None):
     row["items"] = {
         "expenses": items[period.month]['expenses'],
         "vendor_bills": items[period.month]['vendor_bills'],
-        "labour": items[period.month]['labour'],
         "resources": items[period.month]['resources'],
         "invoices": [
             {

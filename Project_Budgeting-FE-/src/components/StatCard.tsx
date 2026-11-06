@@ -69,17 +69,18 @@ export const StatCard: React.FC<StatCardProps> = ({
       onClick={onClick}
       className={`bg-white ${box} transition-shadow dark:bg-gray-900 ${compact ? 'min-w-0' : 'hover:shadow-md'} ${onClick ? 'cursor-pointer' : ''} ${className}`}
     >
-      <div className={`flex items-center justify-between gap-2 ${compact ? 'mb-2' : 'mb-3'}`}>
-        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</span>
+      {/* compact: ~108px tall - 13px label, 24px value on a 28px line, 12px caption, 16px padding */}
+      <div className={`flex items-center justify-between gap-2 ${compact ? 'mb-1.5' : 'mb-3'}`}>
+        <span className={`${compact ? 'text-[13px]' : 'text-sm'} font-medium text-gray-500 dark:text-gray-400`}>{label}</span>
         {icon && (
-          <div className={`${compact ? 'w-6 h-6 rounded-md @max-[11rem]:hidden' : 'w-9 h-9 rounded-lg'} shrink-0 ${ICON_TONES[iconTone]} flex items-center justify-center`}>
+          <div className={`${compact ? 'w-5 h-5 rounded @max-[11rem]:hidden [&>svg]:h-3.5 [&>svg]:w-3.5' : 'w-9 h-9 rounded-lg'} shrink-0 ${ICON_TONES[iconTone]} flex items-center justify-center`}>
             {icon}
           </div>
         )}
       </div>
       <div className="flex items-end justify-between gap-2">
         <span
-          className={compact ? 'min-w-0 truncate text-2xl font-semibold tabular-nums text-gray-900 dark:text-white' : 'text-2xl font-bold text-gray-900 dark:text-white'}
+          className={compact ? 'min-w-0 truncate text-2xl leading-7 font-semibold tabular-nums text-gray-900 dark:text-white' : 'text-2xl font-bold text-gray-900 dark:text-white'}
           title={compact ? value : undefined}
         >
           {value}

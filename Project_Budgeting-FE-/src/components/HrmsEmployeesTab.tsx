@@ -1,6 +1,6 @@
 import { formatDate as toDMY, formatDateTime as toDMYTime } from '../utils/date';
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronDown, Info, Loader2, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, Info, Loader2, RefreshCw, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ReusableTable } from './ReusableTable';
 import type { Column } from './ReusableTable';
@@ -10,7 +10,7 @@ import axiosInstance from '../utils/axiosInstance';
 import { parseApiErrors } from '../utils/parseApiErrors';
 import type { Role } from '../types';
 import {
-  getHrmsEmployees, grantHrmsAccess, revokeHrmsAccess, autoSyncHrmsEmployees, syncHrmsEmployees, needsSetup,
+  getHrmsEmployees, grantHrmsAccess, revokeHrmsAccess, autoSyncHrmsEmployees, syncHrmsEmployees,
   type HrmsEmployee, type HrmsSyncRun,
 } from '../services/hrms';
 
@@ -26,14 +26,9 @@ const LABEL_CLASS = 'block text-base font-medium text-gray-900 mb-2 dark:text-gr
 
 const PAGE_SIZE = 25;
 
-const SELECT_CLASS = 'pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-violet-500';
-
 const formatDateTime = (value: string | null) => toDMYTime(value);
 
 const errorMessage = (err: unknown) => parseApiErrors(err).general || 'Something went wrong. Please try again.';
-
-type HrmsStatus = 'active' | 'removed' | 'all';
-type AccessFilter = 'all' | 'granted' | 'setup' | 'none';
 
 /**
  * Administration > HRMS Employees. Lists employees fetched from AIRA HRMS. There is no
@@ -51,8 +46,6 @@ const HrmsEmployeesTab: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<HrmsStatus>('active');
-  const [accessFilter, setAccessFilter] = useState<AccessFilter>('all');
   const [page, setPage] = useState(1);
 
   const [editing, setEditing] = useState<HrmsEmployee | null>(null);
@@ -105,20 +98,16 @@ const HrmsEmployeesTab: React.FC = () => {
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return employees.filter((e) => {
-      if (statusFilter === 'active' && !e.is_active_in_hrms) return false;
-      if (statusFilter === 'removed' && e.is_active_in_hrms) return false;
-      if (accessFilter === 'granted' && !e.is_eligible) return false;
-      if (accessFilter === 'setup' && !needsSetup(e)) return false;
-      if (accessFilter === 'none' && e.is_eligible) return false;
+      // Only employees still active in AIRA; those who left are hidden (their access is revoked).
+      if (!e.is_active_in_hrms) return false;
       return !q || [e.full_name, e.email, e.employee_id, e.department, e.designation, e.branch]
         .some((v) => (v || '').toLowerCase().includes(q));
     });
-  }, [employees, searchQuery, statusFilter, accessFilter]);
+  }, [employees, searchQuery]);
 
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const activeRoles = roles.filter((r) => r.is_active);
   const activeModules = modules.filter((m) => m.is_active !== false);
-  const setupCount = employees.filter(needsSetup).length;
 
   // Manual "Refresh from HRMS" - always pulls from AIRA now (the automatic pull may skip).
   const handleRefresh = async () => {
@@ -245,23 +234,6 @@ const HrmsEmployeesTab: React.FC = () => {
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-800 whitespace-nowrap dark:text-white">HRMS Employees</h2>
         <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
-          <div className="relative">
-            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value as HrmsStatus); setPage(1); }} className={SELECT_CLASS}>
-              <option value="active">Active in HRMS</option>
-              <option value="removed">Not in HRMS</option>
-              <option value="all">All</option>
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none dark:text-gray-500" />
-          </div>
-          <div className="relative">
-            <select value={accessFilter} onChange={(e) => { setAccessFilter(e.target.value as AccessFilter); setPage(1); }} className={SELECT_CLASS}>
-              <option value="all">Any Access</option>
-              <option value="granted">Has Access</option>
-              <option value="setup">Needs Module &amp; Rate{setupCount ? ` (${setupCount})` : ''}</option>
-              <option value="none">No Access</option>
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none dark:text-gray-500" />
-          </div>
           <div className="relative flex-grow xl:flex-grow-0">
             <input
               type="text"

@@ -159,12 +159,8 @@ export interface FixedFinancialSummary {
     engagement_type: 'fixed';
     contract_value: number;
     budget: number;
+    /** Assigned cost of the project's resources (Resources tab). */
     resource_cost: number;
-    /** Cost of task allocated hours x assignee cost rate - part of resource_cost. */
-    labour_cost: number;
-    allocated_hours: number;
-    /** Allocated hours with no cost rate (unassigned task, or no assignment rate / user charges/hour). */
-    unrated_hours: number;
     actual_cost: number;
     billed_amount: number;
     received_amount: number;
@@ -193,9 +189,6 @@ export interface TMFinancialSummary {
     remaining_budget: number;
     budget_used_percent: number | null;
     resource_cost: number;
-    labour_cost: number;
-    allocated_hours: number;
-    unrated_hours: number;
     misc_expenses: number;
     vendor_bills_amount: number;
     /** Billed amount excluding tax. */
@@ -233,11 +226,11 @@ export interface TMPeriodRow {
     amounts_overridden: boolean;
     budget_amount: number;
     billing_amount: number;
-    labour_cost: number;
-    labour_hours: number;
-    unrated_hours: number;
-    assigned_resource_cost: number;
+    /** Assigned monthly cost of the resources staffed this month (started months only). */
     resource_cost: number;
+    /** Employee / freelancer part of resource_cost. */
+    employee_cost: number;
+    freelancer_cost: number;
     expenses: number;
     vendor_bills: number;
     actual_cost: number;
@@ -268,8 +261,7 @@ export interface TMPeriodRow {
 }
 
 export type TMPeriodTotals = Pick<TMPeriodRow,
-    'budget_amount' | 'billing_amount' | 'labour_cost' | 'labour_hours' | 'unrated_hours' |
-    'assigned_resource_cost' | 'resource_cost' | 'expenses' | 'vendor_bills' | 'actual_cost' | 'planned_cost' |
+    'budget_amount' | 'billing_amount' | 'resource_cost' | 'employee_cost' | 'freelancer_cost' | 'expenses' | 'vendor_bills' | 'actual_cost' | 'planned_cost' |
     'remaining_budget' | 'budget_used_percent' | 'invoiced_amount' | 'revenue' | 'received_amount' |
     'outstanding_amount' | 'profit' | 'profit_margin'
 > & { months: number; months_invoiced: number; months_paid: number };
@@ -288,7 +280,6 @@ export interface TMPeriodDetail extends TMPeriodRow {
     items: {
         expenses: { id: number; date: string; amount: number; category: string; description: string }[];
         vendor_bills: { id: number; date: string; amount: number; vendor_bill: number; bill_no: string; vendor: string }[];
-        labour: { task: number; title: string; assignee: string; is_freelancer: boolean; date: string; hours: number; rate: number; cost: number; unrated: boolean }[];
         resources: { id: number; name: string | null; resource_type: string; role: string; amount: number }[];
         invoices: {
             id: number; invoice_no: string; status: string; issue_date: string; due_date: string;

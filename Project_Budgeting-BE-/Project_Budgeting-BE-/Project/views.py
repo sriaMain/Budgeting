@@ -4,6 +4,7 @@ from rest_framework import status, permissions
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from urllib3 import request
+from .permissions import CanManageResources, is_resource_manager
 from .models import (Project, ProjectBudget, BudgetLine, Milestone, ResourceAssignment, Task, Timesheet,
                       TimesheetEntry, TaskTimerLog, TaskExtraHoursRequest)
 from .serializers import (ProjectCreateSerializer, ProjectBudgetSerializer, BudgetLineSerializer,
@@ -390,6 +391,11 @@ class ProjectPOCOptionsAPIView(APIView):
                 # AIRA HRMS department / designation - lets resource pickers filter employees.
                 "department": (hrms.department if hrms else "") or "",
                 "designation": (hrms.designation if hrms else "") or "",
+                # Resource pickers: AIRA employee ID, HRMS status and the default cost rate.
+                "code": hrms.employee_id if hrms else None,
+                "active": hrms.is_active_in_hrms if hrms else account.is_active,
+                "default_cost_rate": account.charges_per_hour,
+                "rate_unit": "hourly" if account.charges_per_hour is not None else None,
             })
 
         vendors = Vendor.objects.filter(status="approved").order_by("name")
@@ -399,15 +405,35 @@ class ProjectPOCOptionsAPIView(APIView):
                 "type": "vendor",
                 "name": vendor.name,
                 "subtitle": vendor.get_vendor_type_display(),
+                "code": vendor.vendor_reference_no,
+                "active": not vendor.is_archived,
             })
 
-        freelancers = Freelancer.objects.filter(status__in=["completed", "active"]).order_by("full_name")
+        from django.db.models import Prefetch
+        from freelancer_onboarding.models import FreelancerRateCard
+        today = timezone.localdate()
+        current_cards = Prefetch(
+            "rate_cards",
+            queryset=FreelancerRateCard.objects.filter(is_active=True, effective_from__lte=today)
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=today)).order_by("-effective_from"),
+            to_attr="current_rate_cards",
+        )
+        freelancers = (
+            Freelancer.objects.filter(status__in=["completed", "active"])
+            .prefetch_related(current_cards).order_by("full_name")
+        )
         for freelancer in freelancers:
+            card = freelancer.current_rate_cards[0] if freelancer.current_rate_cards else None
             options.append({
                 "id": freelancer.id,
                 "type": "freelancer",
                 "name": freelancer.full_name,
                 "subtitle": freelancer.professional_title or "Freelancer",
+                "code": freelancer.freelancer_code,
+                "skills": (freelancer.skills or "")[:120],
+                "active": True,
+                "default_cost_rate": card.cost_rate if card else None,
+                "rate_unit": card.pricing_model if card else None,
             })
 
         return Response(options)
@@ -762,12 +788,19 @@ class ResourceAssignmentListCreateAPIView(APIView):
     GET  /projects/<project_no>/resources/?milestone=all   -> every milestone's resources
     GET  /projects/<project_no>/resources/?milestone=any   -> all of the project's resources
     POST /projects/<project_no>/resources/                 -> add an assignment (`milestone` optional)
+
+    With `page` it's the Resources tab's table instead (Project/resource_service.py): server-side
+    search / resource_type / milestone (id | none) / status / date_from (assignment start on or after)
+    / date_to (assignment end on or before) / ordering, paged, plus the filtered totals and the whole
+    project's resource count and cost.
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request, project_no):
         project = get_object_or_404(Project, project_no=project_no)
+        if 'page' in request.query_params:
+            return self._table(request, project)
         assignments = project.resource_assignments.filter(is_active=True).select_related('milestone')
         milestone = request.query_params.get('milestone')
         if milestone == 'any':
@@ -782,6 +815,30 @@ class ResourceAssignmentListCreateAPIView(APIView):
             ResourceAssignmentSerializer(assignments, many=True).data,
             status=status.HTTP_200_OK
         )
+
+    def _table(self, request, project):
+        from . import resource_service as rs
+        try:
+            filters = rs.parse_filters(request.query_params, project)
+        except rs.ResourceFilterError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        page, page_size = rs.paging(request.query_params)
+        rows = rs.matching_rows(project, filters)
+        count = len(rows)
+        total_pages = max(1, -(-count // page_size))
+        page = min(page, total_pages)
+        return Response({
+            "count": count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "results": rows[(page - 1) * page_size: page * page_size],
+            "filtered": rs.totals(rows),
+            "summary": rs.project_summary(project),
+            "currency": rs.project_currency(project),
+            "period": rs.period_text(filters),
+            "can_import": is_resource_manager(request.user),
+        }, status=status.HTTP_200_OK)
 
     def post(self, request, project_no):
         project = get_object_or_404(Project, project_no=project_no)
@@ -846,26 +903,78 @@ class ResourceMasterRateAPIView(APIView):
         if resource_type not in ('employee', 'freelancer', 'vendor') or not resource_id:
             return Response({"error": "resource_type and resource_id are required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        result = {"cost_rate": None, "billing_rate": None, "rate_unit": None, "source": None}
+        from .resource_service import master_rate
         if resource_type == 'employee':
-            account = get_object_or_404(Account, pk=resource_id)
-            if account.charges_per_hour is not None:
-                result.update(cost_rate=account.charges_per_hour, rate_unit='hourly', source='Employee cost rate')
+            get_object_or_404(Account, pk=resource_id)
         elif resource_type == 'freelancer':
             from freelancer_onboarding.models import Freelancer
-            freelancer = get_object_or_404(Freelancer, pk=resource_id)
-            today = timezone.localdate()
-            card = (
-                freelancer.rate_cards.filter(is_active=True, effective_from__lte=today)
-                .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=today))
-                .order_by('-effective_from').first()
-            )
-            if card:
-                result.update(
-                    cost_rate=card.cost_rate, billing_rate=card.billing_rate,
-                    rate_unit=card.pricing_model, source=f"Rate card ({card.get_pricing_model_display()})",
-                )
-        return Response(result, status=status.HTTP_200_OK)
+            get_object_or_404(Freelancer, pk=resource_id)
+        return Response(master_rate(resource_type, resource_id), status=status.HTTP_200_OK)
+
+
+def _xlsx_response(content, filename):
+    from django.http import HttpResponse
+    response = HttpResponse(
+        content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+    return response
+
+
+class ResourceExportAPIView(APIView):
+    """GET /projects/<project_no>/resources/export/ - every assignment matching the Resources tab's
+    filters (same query params), not just one page: a Summary sheet and a Resources sheet."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        from . import resource_service as rs
+        project = get_object_or_404(Project, project_no=project_no)
+        try:
+            filters = rs.parse_filters(request.query_params, project)
+        except rs.ResourceFilterError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        rows = rs.matching_rows(project, filters)
+        return _xlsx_response(rs.build_export(project, filters, rows), rs.export_filename(project, filters))
+
+
+class ResourceImportTemplateAPIView(APIView):
+    """GET /projects/<project_no>/resources/import-template/ - the Excel template for this project
+    (its milestone names, dropdowns, instructions)."""
+    permission_classes = [IsAuthenticated, CanManageResources]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        from . import resource_service as rs
+        project = get_object_or_404(Project, project_no=project_no)
+        return _xlsx_response(rs.build_template(project), f"Resource_Import_Template_{project.pk}.xlsx")
+
+
+class ResourceImportAPIView(APIView):
+    """POST /projects/<project_no>/resources/import/ (multipart `file`).
+    commit=false (default): validate only - every row comes back valid / duplicate / error.
+    commit=true: create the valid rows; duplicates are skipped and invalid rows failed, each with
+    its reasons. Only resource assignments are created - never employees, freelancers or vendors."""
+    permission_classes = [IsAuthenticated, CanManageResources]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request, project_no):
+        from . import resource_service as rs
+        project = get_object_or_404(Project, project_no=project_no)
+        upload = request.FILES.get('file')
+        if upload is None:
+            return Response({"error": "Choose an Excel file to import."}, status=status.HTTP_400_BAD_REQUEST)
+        commit = str(request.data.get('commit', '')).lower() in ('1', 'true', 'yes')
+        try:
+            rows = rs.run_import(project, upload, request.user) if commit else rs.check_import(project, upload)
+        except rs.ImportFileError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            "committed": commit,
+            "counts": rs.counts(rows),
+            "rows": [r.as_dict() for r in rows],
+        }, status=status.HTTP_200_OK)
 
 
 class ProjectGenerateTMInvoiceAPIView(APIView):
@@ -1112,43 +1221,22 @@ class ProjectFinancialSummaryAPIView(APIView):
         pb = getattr(project, 'budget', None)
         return pb.cost_budget if pb else Decimal("0.00")
 
-    def _resource_costs(self, project, assignments):
-        """Resource cost = labour cost of the project's tasks (allocated hours x assignee rate -
-        see Project/utils/labour_cost.py) + the assigned cost of the given assignments that
-        aren't costed from task hours (flat-fee / vendor / external).
-        Returns (total, by_type, labour)."""
-        from .utils.labour_cost import allocated_labour_cost, is_task_costed
-        labour = allocated_labour_cost(project)
-        by_type = {
-            'employee': labour.cost - labour.freelancer_cost,
-            'freelancer': labour.freelancer_cost,
-            'vendor': Decimal("0.00"),
-            'external': Decimal("0.00"),
-        }
-        for a in assignments:
-            if is_task_costed(a):
-                continue
-            by_type[a.resource_type] = by_type.get(a.resource_type, Decimal("0.00")) + a.assigned_cost
-        return sum(by_type.values(), Decimal("0.00")), by_type, labour
-
     def _milestone_resource_costs(self, project):
-        """Resource cost of a Fixed Budget project, over every resource on it (Resources tab)
-        with or without a milestone - those on archived milestones excluded."""
+        """Resource cost of a Fixed Budget project: the assigned cost (specific cost amount, else
+        cost rate x planned hours) of every resource on it (Resources tab), with or without a
+        milestone - removed ones and those on archived milestones excluded.
+        Returns (total, by_type)."""
         assignments = (
             project.resource_assignments
             .filter(is_active=True)
             .exclude(status='removed')
             .exclude(milestone__is_active=False)
         )
-        return self._resource_costs(project, assignments)
-
-    @staticmethod
-    def _labour_fields(labour):
-        return {
-            "labour_cost": labour.cost,
-            "allocated_hours": labour.hours,
-            "unrated_hours": labour.unrated_hours,
-        }
+        by_type = {key: Decimal("0.00") for key, _ in ResourceAssignment.RESOURCE_TYPE_CHOICES}
+        for a in assignments:
+            by_type[a.resource_type] = by_type.get(a.resource_type, Decimal("0.00")) + a.assigned_cost
+        by_type = {key: value.quantize(Decimal("0.01")) for key, value in by_type.items()}
+        return sum(by_type.values(), Decimal("0.00")), by_type
 
     def _outgoing_payments(self, project):
         """Actual money paid out for this project so far - vendor bill
@@ -1204,8 +1292,8 @@ class ProjectFinancialSummaryAPIView(APIView):
         # figures below - see _cost_budget_for_project().
         contract_value = self._cost_budget_for_project(project)
 
-        # Resource cost = task allocated hours x assignee rate + assigned cost of flat-fee / non-employee resources.
-        resource_cost, by_type, labour = self._milestone_resource_costs(project)
+        # Resource cost = assigned cost of every resource added to the project / its milestones.
+        resource_cost, by_type = self._milestone_resource_costs(project)
         employee_cost = by_type['employee']
         freelancer_cost = by_type['freelancer']
 
@@ -1243,7 +1331,6 @@ class ProjectFinancialSummaryAPIView(APIView):
             "contract_value": contract_value,
             "budget": budget,
             "resource_cost": resource_cost,
-            **self._labour_fields(labour),
             "expenses_amount": expense_cost,
             "bills_amount": bills_paid,
             "actual_cost": actual_cost,
@@ -1264,22 +1351,19 @@ class ProjectFinancialSummaryAPIView(APIView):
     def _tm_summary(self, project):
         """Project totals = the sum of the project's monthly periods (Project/utils/tm_periods.py),
         so the monthly table and this summary can never disagree."""
-        from .utils.labour_cost import allocated_labour_cost
         from .utils.tm_periods import period_financials, sync_tm_periods
 
         sync_tm_periods(project)
         _, totals = period_financials(project)
-        # Same tasks as the periods' labour - only used for the employee / freelancer split.
-        labour = allocated_labour_cost(project)
 
         resource_cost = totals['resource_cost']
         cost_breakdown, misc_expenses = self._cost_breakdown(
             project.expenses.cost_bearing(),
             resource_cost,
-            labour.cost - labour.freelancer_cost,
-            labour.freelancer_cost,
+            totals['employee_cost'],
+            totals['freelancer_cost'],
         )
-        cost_breakdown["vendor_resource_cost"] = totals['assigned_resource_cost']
+        cost_breakdown["vendor_resource_cost"] = resource_cost - totals['employee_cost'] - totals['freelancer_cost']
 
         revenue = totals['revenue']
         gross_margin = revenue - resource_cost
@@ -1303,9 +1387,6 @@ class ProjectFinancialSummaryAPIView(APIView):
             "remaining_budget": totals['remaining_budget'],
             "budget_used_percent": totals['budget_used_percent'],
             "resource_cost": resource_cost,
-            "labour_cost": totals['labour_cost'],
-            "allocated_hours": totals['labour_hours'],
-            "unrated_hours": totals['unrated_hours'],
             "misc_expenses": misc_expenses,
             "vendor_bills_amount": totals['vendor_bills'],
             "total_cost": totals['actual_cost'],

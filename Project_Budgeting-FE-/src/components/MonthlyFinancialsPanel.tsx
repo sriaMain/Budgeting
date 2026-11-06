@@ -57,8 +57,7 @@ const costNote = (p: TMPeriodRow) => {
         return n(p.planned_cost) > 0 ? `Planned ${money(p.planned_cost)}` : 'Not started';
     }
     const parts = [
-        ['Labour', p.labour_cost],
-        ['Resources', p.assigned_resource_cost],
+        ['Resources', p.resource_cost],
         ['Expenses', p.expenses],
         ['Bills', p.vendor_bills],
     ].filter(([, v]) => n(v) > 0).map(([label, v]) => `${label} ${money(v)}`);
@@ -140,7 +139,7 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
 
     const openDetail = async (period: TMPeriodRow) => {
         setIsLoadingDetail(true);
-        setDetail({ ...period, items: { expenses: [], vendor_bills: [], labour: [], resources: [], invoices: [] } });
+        setDetail({ ...period, items: { expenses: [], vendor_bills: [], resources: [], invoices: [] } });
         setBudgetInput(String(n(period.budget_amount)));
         setBillingInput(String(n(period.billing_amount)));
         try {
@@ -364,7 +363,7 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                 </table>
             </div>
             <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Actual cost is noted per month (labour from task hours, resources, expenses, vendor bills); upcoming months show their planned resource cost, which only counts once the month starts.
+                Actual cost is noted per month (resources from the Resources tab, expenses, vendor bills); upcoming months show their planned resource cost, which only counts once the month starts.
                 Remaining is the month's budget minus its actual cost; Outstanding is invoiced but not yet received. Profit uses invoiced amounts excluding tax. Click a month for its details.
             </p>
 
@@ -381,8 +380,7 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8">
                             <dl>
                                 <DetailRow label="Budget" value={`${money(detail.budget_amount)} ${currency}`} />
-                                <DetailRow label="Labour (task hours x rate)" value={money(detail.labour_cost)} />
-                                <DetailRow label="Other resources" value={money(detail.assigned_resource_cost)} />
+                                <DetailRow label="Resources" value={money(detail.resource_cost)} />
                                 <DetailRow label="Expenses" value={money(detail.expenses)} />
                                 <DetailRow label="Vendor bills (paid)" value={money(detail.vendor_bills)} />
                                 <DetailRow label="Actual cost" value={money(detail.actual_cost)} strong />
@@ -408,12 +406,6 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                                 <DetailRow label="Status" value={<>{detail.invoice_status} · <Pill cls={PAYMENT_BADGE[detail.payment_status].cls}>{PAYMENT_BADGE[detail.payment_status].label}</Pill></>} />
                             </dl>
                         </div>
-
-                        {n(detail.unrated_hours) > 0 && (
-                            <p className="text-xs text-amber-600 dark:text-amber-400">
-                                {n(detail.unrated_hours).toFixed(2)} allocated task hours this month have no cost rate (unassigned task, or assignee without a rate) and aren't costed.
-                            </p>
-                        )}
 
                         <DrawerSection>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -483,20 +475,10 @@ export const MonthlyFinancialsPanel: React.FC<MonthlyFinancialsPanelProps> = ({ 
                                         </li>
                                     ))}
                                 </ItemList>
-                                <ItemList title="Labour (tasks)" empty="No tasks fall in this month." count={detail.items.labour.length}>
-                                    {detail.items.labour.map(t => (
-                                        <li key={t.task} className="py-1.5 flex justify-between gap-3 text-sm">
-                                            <span className="min-w-0 truncate text-gray-700 dark:text-gray-300">
-                                                {t.title} <span className="text-xs text-gray-500">· {t.assignee || 'Unassigned'}{t.is_freelancer ? ' (freelancer)' : ''} · {n(t.hours).toFixed(2)} h × {money(t.rate)} · {toDMY(t.date)}</span>
-                                            </span>
-                                            <span className={`tabular-nums ${t.unrated ? 'text-amber-600 dark:text-amber-400' : ''}`}>{t.unrated ? 'No rate' : money(t.cost)}</span>
-                                        </li>
-                                    ))}
-                                </ItemList>
-                                <ItemList title="Other resources" empty="None this month." count={detail.items.resources.length}>
+                                <ItemList title="Resources" empty="None this month." count={detail.items.resources.length}>
                                     {detail.items.resources.map(r => (
                                         <li key={r.id} className="py-1.5 flex justify-between gap-3 text-sm">
-                                            <span className="text-gray-700 dark:text-gray-300">{r.name || 'Resource'} <span className="text-xs text-gray-500">· {r.resource_type}{r.role ? ` · ${r.role}` : ''}</span></span>
+                                            <span className="text-gray-700 dark:text-gray-300">{r.name || 'Resource'} <span className="text-xs text-gray-500">· {r.resource_type}</span></span>
                                             <span className="tabular-nums">{money(r.amount)}</span>
                                         </li>
                                     ))}

@@ -1,3 +1,4 @@
+import json
 import logging
 import threading
 from collections import namedtuple
@@ -56,41 +57,66 @@ def render_push(employee):
     })
 
 
+def _confirmed(response):
+    """AIRA confirms a saved list in its reply: {"status": "success", "data": {...}} (what it sends)
+    or {"success": true, ...} (what its message described) - anything else wasn't saved."""
+    try:
+        body = response.json()
+        return body.get('status') == 'success' or body.get('success') is True
+    except (ValueError, AttributeError):
+        return False
+
+
 def send_push(employee):
-    """One push attempt. outcome: sent | failed (400 / 401 / other 4xx - never retried) |
-    retry (429, 5xx, timeout, network). The key is never logged."""
+    """One push attempt, logged (console + logs/aira_push.log) with the employee, URL, HTTP status and
+    AIRA's reply - the key is never logged. outcome: sent (2xx with success: true) | failed (400 /
+    401 / other 4xx, or 2xx without success: true - never retried) | retry (429, 5xx, timeout, network)."""
     payload = render_push(employee)
+    url = settings.AIRA_WEBHOOK_URL
+    who = f"{employee.employee_id} ({len(json.loads(payload)['projects'])} projects) -> POST {url}"
     try:
         response = requests.post(
-            settings.AIRA_WEBHOOK_URL,
+            url,
             data=payload,
             headers={'X-API-Key': settings.AIRA_PUSH_API_KEY, 'Content-Type': 'application/json',
                      'Accept': 'application/json'},
             timeout=PUSH_TIMEOUT_SECONDS,
         )
     except requests.RequestException as exc:
+        logger.warning("AIRA push %s: no response (%s)", who, exc.__class__.__name__)
         return PushResult('retry', exc.__class__.__name__, payload, None)
     code = response.status_code
+    reply = response.text[:500]
     if 200 <= code < 300:
-        return PushResult('sent', f"HTTP {code}", payload, response)
+        if _confirmed(response):
+            logger.info("AIRA push %s: HTTP %s, saved: %s", who, code, reply)
+            return PushResult('sent', f"HTTP {code}", payload, response)
+        logger.error("AIRA push %s: HTTP %s without success: true, not saved - not retrying: %s", who, code, reply)
+        return PushResult('failed', f"HTTP {code} without success: true", payload, response)
     if code == 429 or code >= 500:
+        logger.warning("AIRA push %s: HTTP %s: %s", who, code, reply)
         return PushResult('retry', f"HTTP {code}", payload, response)
     if code == 401:
-        logger.error("AIRA push: HTTP 401, AIRA_PUSH_API_KEY is wrong or inactive - not retrying")
+        logger.error("AIRA push %s: HTTP 401, AIRA_PUSH_API_KEY is wrong or inactive - not retrying", who)
     else:
-        logger.error("AIRA push for %s: HTTP %s, body rejected - not retrying: %s",
-                     employee.employee_id, code, response.text[:500])
+        logger.error("AIRA push %s: HTTP %s, body rejected - not retrying: %s", who, code, reply)
     return PushResult('failed', f"HTTP {code}", payload, response)
 
 
 def push_account(account_id):
     if not push_configured():
+        logger.warning("AIRA push skipped for account %s: AIRA_WEBHOOK_URL / AIRA_PUSH_API_KEY not set", account_id)
         return PushResult('skipped', "AIRA push not configured", None, None)
     from .models import HrmsEmployee
 
     employee = HrmsEmployee.objects.filter(account_id=account_id).first()
     if employee is None:
+        logger.info("AIRA push skipped for account %s: not linked to an AIRA employee", account_id)
         return PushResult('skipped', "not an AIRA employee", None, None)
+    if not employee.is_active_in_hrms:
+        # AIRA no longer has this employee_id (left, or AIRA re-issued IDs) - it would reject the push.
+        logger.info("AIRA push skipped for %s: no longer in AIRA's employee list", employee.employee_id)
+        return PushResult('skipped', "no longer in AIRA", None, None)
     return send_push(employee)
 
 
@@ -100,7 +126,10 @@ def push_employee_projects(self, account_id):
     result = push_account(account_id)
     if result.outcome == 'retry':
         if not self.request.is_eager and self.request.retries < self.max_retries:
-            raise self.retry(countdown=60 * 2 ** self.request.retries)
+            wait = 60 * 2 ** self.request.retries
+            logger.info("AIRA push for account %s: retry %s/%s in %s min",
+                        account_id, self.request.retries + 1, self.max_retries, wait // 60)
+            raise self.retry(countdown=wait)
         logger.warning("AIRA push for account %s gave up: %s", account_id, result.detail)
     return f"{result.outcome}: {result.detail}"
 
@@ -123,6 +152,8 @@ def _dev_push(account_id, attempt=0):
         connection.close()  # this thread's own connection
     if result.outcome == 'retry':
         if attempt < PUSH_MAX_RETRIES:
+            logger.info("AIRA push for account %s: retry %s/%s in %s min",
+                        account_id, attempt + 1, PUSH_MAX_RETRIES, 2 ** attempt)
             _schedule(60 * 2 ** attempt, _dev_push, account_id, attempt + 1)
         else:
             logger.warning("AIRA push for account %s gave up: %s", account_id, result.detail)

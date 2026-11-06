@@ -28,13 +28,12 @@ interface Milestone {
     billing_amount: string | number;
     status: string;
     status_display: string;
-    /** Resource cost + expenses + paid bills (server-computed). Resource cost includes labour_cost. */
+    /** Resource cost + expenses + paid bills (server-computed). */
     actual_cost: string | number;
-    /** Cost of this milestone's tasks (allocated hours x assignee cost rate). */
-    labour_cost?: string | number;
-    allocated_hours?: string | number;
-    /** Allocated hours with no cost rate to price them (unassigned or no rate). */
-    unrated_hours?: string | number;
+    /** Assigned cost of the resources added to this milestone (Resources tab). */
+    resource_cost?: string | number;
+    /** Expenses + paid vendor bills tagged to this milestone. */
+    expense_cost?: string | number;
     margin: string | number;
     /** This milestone's share of the quotation (= billing_amount). */
     quotation_amount?: string | number;
@@ -693,14 +692,10 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                         <td className={`px-4 py-2 text-right ${overBudget ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-900 dark:text-white'}`}>
                                             {num(m.actual_cost).toLocaleString()} {currency}
                                             {overBudget && <span className="ml-1 text-[10px] uppercase">Over</span>}
-                                            {num(m.allocated_hours) > 0 && (
-                                                <p className="text-[11px] font-normal text-gray-500 dark:text-gray-400" title="Labour cost = allocated hours of this milestone's tasks x assignee rate">
-                                                    {num(m.allocated_hours).toFixed(2)} h allocated · {num(m.labour_cost).toLocaleString()} {currency}
-                                                </p>
-                                            )}
-                                            {num(m.unrated_hours) > 0 && (
-                                                <p className="text-[11px] font-normal text-amber-600 dark:text-amber-400" title="Set a cost rate on the resource assignment, the user's charges per hour, or the freelancer's hourly rate">
-                                                    {num(m.unrated_hours).toFixed(2)} h without a rate
+                                            {num(m.actual_cost) > 0 && (
+                                                <p className="text-[11px] font-normal text-gray-500 dark:text-gray-400" title="Resources = assigned cost of the resources added to this milestone (Resources tab); Expenses = expenses + paid vendor bills">
+                                                    Resources {num(m.resource_cost).toLocaleString()}
+                                                    {num(m.expense_cost) > 0 && ` · Expenses ${num(m.expense_cost).toLocaleString()}`}
                                                 </p>
                                             )}
                                         </td>

@@ -497,12 +497,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     status_display = serializers.CharField(source='get_status_display', read_only=True)
 
-    # Actual cost = resource_cost + expenses_amount + bills_amount, where
-    # resource_cost = labour_cost (task allocated hours x rate) + assigned_resource_cost.
-    labour_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
-    allocated_hours = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
-    unrated_hours = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
-    assigned_resource_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    # Actual cost = resource_cost (assigned cost of the milestone's resources) + expenses_amount + bills_amount.
     resource_cost = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     expenses_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     bills_amount = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
@@ -559,10 +554,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'is_active',
-            'labour_cost',
-            'allocated_hours',
-            'unrated_hours',
-            'assigned_resource_cost',
             'resource_cost',
             'expenses_amount',
             'bills_amount',
@@ -744,6 +735,9 @@ class ResourceAssignmentSerializer(serializers.ModelSerializer):
         milestone = data.get('milestone', getattr(self.instance, 'milestone', None))
         if milestone and project and milestone.project_id != project.pk:
             raise serializers.ValidationError({"milestone": "Milestone must belong to this project."})
+        # Fixed Budget resources are costed in their milestone's Actual Cost, so each one needs a milestone.
+        if project and project.engagement_type == 'fixed' and not milestone:
+            raise serializers.ValidationError({"milestone": "Select the milestone this resource works on."})
         if resource_type == 'external':
             name = data.get('external_name', getattr(self.instance, 'external_name', ''))
             if not (name or '').strip():
@@ -761,6 +755,16 @@ class ResourceAssignmentSerializer(serializers.ModelSerializer):
             if resource_type == 'employee':
                 if not Account.objects.filter(pk=resource_id).exists():
                     raise serializers.ValidationError({"resource_id": "No employee found with this ID."})
+                # New assignments only for employees still active in AIRA HRMS; an existing one can
+                # still be edited (e.g. marked Completed) after the person has left.
+                person_changed = (
+                    not self.instance or self.instance.resource_type != 'employee'
+                    or self.instance.resource_id != resource_id
+                )
+                from .resource_service import employee_can_be_assigned
+                if person_changed and not employee_can_be_assigned(resource_id):
+                    raise serializers.ValidationError(
+                        {"resource_id": "This employee isn't active in AIRA HRMS, so they can't get new assignments."})
             elif resource_type == 'vendor':
                 from accounts.models import Vendor
                 if not Vendor.objects.filter(pk=resource_id).exists():
@@ -772,6 +776,26 @@ class ResourceAssignmentSerializer(serializers.ModelSerializer):
                 from freelancer_onboarding.models import Freelancer
                 if not Freelancer.objects.filter(pk=resource_id).exists():
                     raise serializers.ValidationError({"resource_id": "No freelancer found with this ID."})
+
+        # One open assignment per person per milestone (or project level) for any period.
+        status_value = data.get('status', getattr(self.instance, 'status', 'active'))
+        if project and resource_type and status_value in ('active', 'on_hold'):
+            from .resource_service import fmt_date, overlapping_assignment
+            existing = overlapping_assignment(
+                project, resource_type, data.get('resource_id', resource_id),
+                data.get('external_name', getattr(self.instance, 'external_name', '')),
+                milestone.pk if milestone else None,
+                data.get('start_date', getattr(self.instance, 'start_date', None)),
+                data.get('end_date', getattr(self.instance, 'end_date', None)),
+                exclude_id=self.instance.pk if self.instance else None,
+            )
+            if existing:
+                where = f"milestone {existing.milestone.name}" if existing.milestone_id else "this project"
+                raise serializers.ValidationError({"non_field_errors": [
+                    f"This resource is already assigned to {where} from {fmt_date(existing.start_date)} to "
+                    f"{fmt_date(existing.end_date) or 'ongoing'}. Edit that assignment, or pick dates that "
+                    "don't overlap."
+                ]})
 
         return data
 

@@ -5,7 +5,6 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from django.utils import timezone
-from django.utils.functional import cached_property
 from decimal import Decimal
 
 
@@ -386,8 +385,7 @@ class ProjectPeriod(models.Model):
 
         Expense.expense_date             -> expenses
         OutgoingPayment.payment_date     -> vendor bills (paid)
-        Task due date (else created)     -> labour (allocated hours x rate)
-        ResourceAssignment active months -> flat-fee / vendor / external resource cost
+        ResourceAssignment active months -> resource cost (assigned cost per month)
         finances.Invoice.billing_period  -> invoiced / received / outstanding
     """
 
@@ -431,15 +429,15 @@ class Milestone(models.Model):
     underlying transactions:
 
         Milestone -> Invoice (finances.Invoice.milestone) -> InvoicePayment
-        Milestone -> Task (milestone) -> allocated hours x assignee cost rate -> labour_cost
-        Milestone -> ResourceAssignment (milestone) -> flat / non-employee cost -> assigned_resource_cost
-        resource_cost = labour_cost + assigned_resource_cost
+        Milestone -> ResourceAssignment (milestone) -> assigned cost -> resource_cost
         Milestone -> Expense (finances.Expense.milestone) -> expenses_amount
         Milestone -> VendorBill (finances.VendorBill.milestone) -> paid amount -> bills_amount
         actual_cost = resource_cost + expenses_amount + bills_amount
 
-    Employees and freelancers on a rate are costed on the allocated hours of this milestone's
-    tasks assigned to them - see Project/utils/labour_cost.py.
+    Every resource added to the milestone (employee, freelancer, vendor or
+    external) counts at its assigned cost: its specific cost amount, else
+    cost rate x planned hours. Tasks live in the helpdesk, so task hours are
+    not costed here.
     """
 
     STATUS_CHOICES = [
@@ -526,43 +524,13 @@ class Milestone(models.Model):
     # financial summary (FinancialSummaryAPIView.RESOURCE_COST_CATEGORIES).
     RESOURCE_EXPENSE_CATEGORIES = ('employee_cost', 'freelancer')
 
-    @cached_property
-    def _labour(self):
-        from .utils.labour_cost import allocated_labour_cost
-        return allocated_labour_cost(self.project, milestone=self)
-
-    @property
-    def labour_cost(self):
-        """Cost of this milestone's tasks (allocated hours x assignee cost rate)."""
-        return self._labour.cost
-
-    @property
-    def allocated_hours(self):
-        """Total allocated hours of this milestone's tasks."""
-        return self._labour.hours
-
-    @property
-    def unrated_hours(self):
-        """Allocated hours with no cost rate to price them (unassigned, or no assignment rate / charges/hour)."""
-        return self._labour.unrated_hours
-
-    @property
-    def assigned_resource_cost(self):
-        """Assigned cost of resources not costed from task hours - flat-fee and vendor /
-        external resources. Removed ones excluded."""
-        from .utils.labour_cost import is_task_costed
-        return sum(
-            (
-                a.assigned_cost
-                for a in self.resource_assignments.filter(is_active=True).exclude(status='removed')
-                if not is_task_costed(a)
-            ),
-            Decimal("0.00"),
-        )
-
     @property
     def resource_cost(self):
-        return (self.labour_cost + self.assigned_resource_cost).quantize(Decimal("0.01"))
+        """Cost of the resources added to this milestone (Resources tab): each one's
+        assigned cost - its specific cost amount, else cost rate x planned hours.
+        Removed ones excluded."""
+        assignments = self.resource_assignments.filter(is_active=True).exclude(status='removed')
+        return sum((a.assigned_cost for a in assignments), Decimal("0.00")).quantize(Decimal("0.01"))
 
     @property
     def expenses_amount(self):
