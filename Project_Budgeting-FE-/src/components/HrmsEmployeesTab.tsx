@@ -202,8 +202,14 @@ const HrmsEmployeesTab: React.FC = () => {
       header: 'Department / Designation',
       accessor: (e) => (
         <div>
-          <div>{e.department || '—'}</div>
-          <div className="text-xs text-gray-500 dark:text-gray-400">{e.designation}{e.branch ? ` · ${e.branch}` : ''}</div>
+          {/* Shown exactly as AIRA HRMS sends them - an empty value means AIRA has none on record. */}
+          {e.department
+            ? <div>{e.department}</div>
+            : <div className="text-gray-400 dark:text-gray-500" title="AIRA HRMS sent no department for this employee">No department in AIRA</div>}
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {e.designation || <span title="AIRA HRMS sent no designation for this employee">No designation in AIRA</span>}
+            {e.branch ? ` · ${e.branch}` : ''}
+          </div>
           {(e.date_of_joining || e.employment_type) && (
             <div className="text-xs text-gray-500 dark:text-gray-400">
               {e.employment_type ? e.employment_type.replace(/_/g, ' ') : ''}
