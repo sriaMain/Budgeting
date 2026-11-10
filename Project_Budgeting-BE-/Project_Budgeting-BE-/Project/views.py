@@ -939,6 +939,20 @@ class ResourceExportAPIView(APIView):
         return _xlsx_response(rs.build_export(project, filters, rows), rs.export_filename(project, filters))
 
 
+class ProjectInvoiceExportAPIView(APIView):
+    """GET /projects/<project_no>/invoices/export/?search= - the project's Invoices tab as Excel
+    (the same invoices and search as the tab): a Summary sheet and an Invoices sheet."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        from . import invoice_export as ie
+        project = get_object_or_404(Project.objects.select_related('client'), project_no=project_no)
+        search = request.query_params.get('search', '')
+        rows = [ie.row(invoice, project) for invoice in ie.matching_invoices(project, search)]
+        return _xlsx_response(ie.build_export(project, rows, search), ie.export_filename(project))
+
+
 class ResourceImportTemplateAPIView(APIView):
     """GET /projects/<project_no>/resources/import-template/ - the Excel template for this project
     (its milestone names, dropdowns, instructions)."""

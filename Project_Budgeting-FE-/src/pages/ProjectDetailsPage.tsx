@@ -2,7 +2,7 @@ import { formatDate as toDMY } from '../utils/date';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Layout } from '../components/Layout';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Filter, ArrowLeft, Building2, Clock, Hourglass, Wallet, AlertTriangle, Pencil } from 'lucide-react';
+import { Plus, Search, Filter, ArrowLeft, Building2, Clock, Hourglass, Wallet, AlertTriangle, Pencil, Download } from 'lucide-react';
 import axiosInstance from '../utils/axiosInstance';
 import { ReusableTable, type Column } from '../components/ReusableTable';
 import { StatusBadge } from '../components/StatusBadge';
@@ -23,6 +23,7 @@ import { paymentStatusVariant } from '../utils/paymentStatus';
 import { BillDrawer } from '../components/BillDrawer';
 import { ExpenseDrawer } from '../components/ExpenseDrawer';
 import { toast } from 'react-hot-toast';
+import { errorText, saveDownload } from '../utils/resources';
 
 interface ProjectDetailsPageProps {
     userRole: 'admin' | 'user' | 'manager';
@@ -54,6 +55,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const [taskConsumedHours, setTaskConsumedHours] = useState(0);
     const [invoices, setInvoices] = useState<any[]>([]);
     const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
+    const [isExportingInvoices, setIsExportingInvoices] = useState(false);
     const [payments, setPayments] = useState<any[]>([]);
     const [isLoadingPayments, setIsLoadingPayments] = useState(false);
     const [paymentSummary, setPaymentSummary] = useState<any>(null);
@@ -163,6 +165,24 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
             refreshInvoices();
         }
     }, [activeTab, refreshInvoices]);
+
+    // Excel of the Invoices tab, built on the server (Project/invoice_export.py) with the tab's search.
+    const exportInvoices = async () => {
+        if (!projectId) return;
+        setIsExportingInvoices(true);
+        try {
+            const search = invoiceSearch.trim();
+            const res = await axiosInstance.get<Blob>(`/projects/${projectId}/invoices/export/`, {
+                params: search ? { search } : {},
+                responseType: 'blob',
+            });
+            toast.success(`Downloaded ${saveDownload(res, 'Invoices.xlsx')}`);
+        } catch (err) {
+            toast.error(await errorText(err, 'Export failed'));
+        } finally {
+            setIsExportingInvoices(false);
+        }
+    };
 
     // Fetch payments for all project invoices
     const fetchProjectPayments = async () => {
@@ -782,10 +802,10 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                             Invoices accordion section too (not removed); this is additive. */}
                         {activeTab === 'Invoices' && (
                             <div className="space-y-4">
-                                <div className="flex items-center justify-between gap-3">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
                                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Invoices</h3>
-                                    <div className="flex items-center gap-3">
-                                        <div className="relative w-64">
+                                    <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+                                        <div className="relative w-full sm:w-64">
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
                                             <input
                                                 type="text"
@@ -795,6 +815,16 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                                 className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-900 dark:text-gray-100"
                                             />
                                         </div>
+                                        <button
+                                            type="button"
+                                            onClick={exportInvoices}
+                                            disabled={isExportingInvoices || isLoadingInvoices || invoices.length === 0}
+                                            title={invoices.length === 0 ? 'No invoices to export' : 'Download the invoices listed below as Excel'}
+                                            className="flex items-center gap-2 whitespace-nowrap px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                                        >
+                                            <Download className="w-4 h-4" aria-hidden="true" />
+                                            {isExportingInvoices ? 'Exporting…' : 'Export Excel'}
+                                        </button>
                                         <button
                                             onClick={() => {
                                                 // T&M: bill one month of the project at its billing amount
