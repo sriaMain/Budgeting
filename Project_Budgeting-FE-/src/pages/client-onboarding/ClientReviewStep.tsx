@@ -101,13 +101,13 @@ export const ClientReviewStep: React.FC<ClientReviewStepProps> = ({
   const identityRows: ReviewRow[] = [
     ...(indian
       ? [
-          { label: 'PAN', value: form.pan, missing: missing(form.pan, true) },
+          { label: 'PAN', value: form.pan },
           { label: 'GSTIN', value: form.gstin },
         ]
       : [{ label: taxRule?.label ?? 'Tax ID', value: form.tax_id, missing: missing(form.tax_id, !!taxRule?.required) }]),
     ...(!individual
       ? [
-          { label: 'Registration number', value: form.registration_no, missing: missing(form.registration_no, form.client_type === 'company' || form.client_type === 'government') },
+          { label: 'Registration number', value: form.registration_no },
           { label: 'Authorised signatory', value: [form.authorised_signatory_name, form.authorised_signatory_role].filter(Boolean).join(' · '), missing: missing(form.authorised_signatory_name, true) },
         ]
       : []),
@@ -125,15 +125,16 @@ export const ClientReviewStep: React.FC<ClientReviewStepProps> = ({
   const accountShown = form.bank.account_number
     ? `New number ending ${form.bank.account_number.slice(-4)}`
     : record?.bank_account_number_masked || '';
+  // Bank details are optional for clients, so none of them is flagged as missing.
   const bankRows: ReviewRow[] = [
     { label: 'Bank country', value: form.bank.bank_country || form.country },
-    { label: 'Account holder', value: form.bank.account_holder_name, missing: missing(form.bank.account_holder_name, true) },
-    { label: 'Bank', value: [form.bank.bank_name, form.bank.branch_name].filter(Boolean).join(' · '), missing: missing(form.bank.bank_name, true) },
-    ...(applies.account_number ? [{ label: bankRules?.account_number?.label || 'Account number', value: accountShown, missing: !accountShown }] : []),
-    ...(applies.ifsc_code ? [{ label: 'IFSC code', value: form.bank.ifsc_code, missing: missing(form.bank.ifsc_code, true) }] : []),
-    ...(applies.routing_code && bankRules?.routing ? [{ label: bankRules.routing.label, value: form.bank.routing_code, missing: missing(form.bank.routing_code, bankRules.routing.required) }] : []),
-    ...(applies.swift_code ? [{ label: 'SWIFT / BIC', value: form.bank.swift_code, missing: missing(form.bank.swift_code, bankRules?.swift === 'required') }] : []),
-    ...(applies.iban ? [{ label: 'IBAN', value: form.bank.iban, missing: missing(form.bank.iban, bankRules?.iban === 'required') }] : []),
+    { label: 'Account holder', value: form.bank.account_holder_name },
+    { label: 'Bank', value: [form.bank.bank_name, form.bank.branch_name].filter(Boolean).join(' · ') },
+    ...(applies.account_number ? [{ label: bankRules?.account_number?.label || 'Account number', value: accountShown }] : []),
+    ...(applies.ifsc_code ? [{ label: 'IFSC code', value: form.bank.ifsc_code }] : []),
+    ...(applies.routing_code && bankRules?.routing ? [{ label: bankRules.routing.label, value: form.bank.routing_code }] : []),
+    ...(applies.swift_code ? [{ label: 'SWIFT / BIC', value: form.bank.swift_code }] : []),
+    ...(applies.iban ? [{ label: 'IBAN', value: form.bank.iban }] : []),
     { label: 'Verification', value: bankingVerificationStatusLabel(form.banking_verification_status) },
   ];
 

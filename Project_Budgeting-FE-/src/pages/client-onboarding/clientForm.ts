@@ -353,11 +353,8 @@ export function validateStep(step: WizardStepKey, form: ClientFormState, ctx: Va
     if (isIndianCountry(form.country)) {
       const pan = form.pan.trim().toUpperCase();
       const gstin = form.gstin.trim().toUpperCase();
-      if (!pan) {
-        if (full) e.pan = 'PAN is required';
-      } else if (!PAN_REGEX.test(pan)) {
-        e.pan = 'Enter a valid PAN (10 characters, e.g. AAAAA9999A)';
-      }
+      // PAN is optional; checked only when entered.
+      if (pan && !PAN_REGEX.test(pan)) e.pan = 'Enter a valid PAN (10 characters, e.g. AAAAA9999A)';
       if (gstin) {
         if (!GSTIN_REGEX.test(gstin)) e.gstin = 'Enter a valid 15-character GSTIN (e.g. 22AAAAA0000A1Z5)';
         else if (pan && PAN_REGEX.test(pan) && gstin.slice(2, 12) !== pan) e.gstin = "The GSTIN doesn't match the PAN (characters 3-12 of a GSTIN are the PAN)";
@@ -365,9 +362,6 @@ export function validateStep(step: WizardStepKey, form: ClientFormState, ctx: Va
     } else if (ctx.countryConfig) {
       const taxError = validateTaxId(form.tax_id, ctx.countryConfig, individual ? 'individual' : 'business', full ? undefined : false);
       if (taxError) e.tax_id = taxError;
-    }
-    if (full && (form.client_type === 'company' || form.client_type === 'government') && !form.registration_no.trim()) {
-      e.registration_no = 'Registration number is required';
     }
     if (full && !individual && !form.authorised_signatory_name.trim()) {
       e.authorised_signatory_name = 'Authorised signatory name is required';
@@ -382,10 +376,14 @@ export function validateStep(step: WizardStepKey, form: ClientFormState, ctx: Va
   }
 
   if (step === 'banking') {
-    const found = bankErrors(form.bank, ctx.bankConfig, { partial: !full, hasSavedAccount: ctx.hasSavedAccount });
+    // Bank details are optional: only values that were entered are checked.
+    const found = bankErrors(form.bank, ctx.bankConfig, { partial: true, hasSavedAccount: ctx.hasSavedAccount });
     Object.entries(found).forEach(([key, message]) => {
       if (message && BANK_FIELD[key]) e[BANK_FIELD[key]] = message;
     });
+    if (full && form.bank.account_number.trim() && !form.bank.confirm_account_number.trim() && !e.confirm_account_number) {
+      e.confirm_account_number = 'Re-enter the account number to confirm it';
+    }
     const accountType = form.bank.account_type;
     const types = ctx.bankConfig?.bank.account_types;
     if (accountType && types && !types.some(([value]) => value === accountType)) {

@@ -243,13 +243,12 @@ def submission_issues(company, slots=None) -> list[dict]:
     if company.currency not in rules.BILLING_CURRENCIES:
         add(STEP_BASIC, "currency", "Select the billing currency.")
 
-    # Identity & KYC
+    # Identity & KYC. PAN and the registration number (CIN / LLPIN) are optional, but are
+    # checked for format when entered.
     if is_indian(company):
         pan = (company.pan or "").strip().upper()
         gstin = (company.gstin or "").strip().upper()
-        if not pan:
-            add(STEP_IDENTITY, "pan", "PAN is required.")
-        elif not re.match(rules.PAN_REGEX, pan):
+        if pan and not re.match(rules.PAN_REGEX, pan):
             add(STEP_IDENTITY, "pan", "Enter a valid PAN (10 characters, e.g. AAAAA9999A).")
         if gstin:
             if not re.match(rules.GSTIN_REGEX, gstin):
@@ -267,8 +266,6 @@ def submission_issues(company, slots=None) -> list[dict]:
             message = rules.validate_tax_id(tax_id, code, entity)
             if message:
                 add(STEP_IDENTITY, "tax_id", message)
-    if registration_required(company.client_type) and _blank(company.registration_no):
-        add(STEP_IDENTITY, "registration_no", "Registration number (CIN / LLPIN / company number) is required.")
     if not individual and _blank(company.authorised_signatory_name):
         add(STEP_IDENTITY, "authorised_signatory_name", "Authorised signatory name is required.")
 
@@ -322,6 +319,8 @@ def bank_country_code(company) -> str:
 
 
 def _bank_issues(company, add) -> None:
+    """Bank details are optional for clients: nothing is required, but any value entered must be
+    valid for the bank's country (partial=True skips the required checks)."""
     bank_country = (company.bank_country or "").strip()
     if bank_country and not rules.resolve_country(bank_country):
         add(STEP_BANKING, "bank_country", "Select the bank's country from the list.")
@@ -329,7 +328,7 @@ def _bank_issues(company, add) -> None:
     code = bank_country_code(company)
     data = {key: (getattr(company, field) or "") for key, field in BANK_FIELD_MAP.items()}
     data["_has_saved_account_number"] = bool(company.bank_account_number)
-    for key, message in rules.validate_bank_details(data, code, partial=False).items():
+    for key, message in rules.validate_bank_details(data, code, partial=True).items():
         add(STEP_BANKING, BANK_FIELD_MAP.get(key, key), message)
     account_type = (company.bank_account_type or "").strip()
     if account_type:

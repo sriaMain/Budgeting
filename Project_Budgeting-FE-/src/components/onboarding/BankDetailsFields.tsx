@@ -24,6 +24,8 @@ interface BankDetailsFieldsProps {
   verificationStatus?: string;
   /** Called with the IFSC lookup result (e.g. to fill bank city / state fields elsewhere). */
   onIfscResolved?: (details: IfscDetails) => void;
+  /** No field is required (no "*" markers); entered values are still checked. */
+  optional?: boolean;
 }
 
 type IfscState =
@@ -46,8 +48,9 @@ const same = (a?: string, b?: string) => (a || '').trim().toLowerCase() === (b |
 
 export const BankDetailsFields: React.FC<BankDetailsFieldsProps> = ({
   idPrefix, value, onChange, errors = {}, disabled, maskedAccountNumber, onRevealAccountNumber, showBankCountry = true,
-  verificationStatus, onIfscResolved,
+  verificationStatus, onIfscResolved, optional = false,
 }) => {
+  const req = (required: boolean) => required && !optional;
   const { config } = useCountryConfig(value.bank_country);
   const bank = config?.bank;
   const applies = applicableBankFields(config);
@@ -176,7 +179,7 @@ export const BankDetailsFields: React.FC<BankDetailsFieldsProps> = ({
           <CountrySelect
             id={`${idPrefix}-bank_country`}
             label="Bank country"
-            required
+            required={req(true)}
             value={value.bank_country}
             onChange={(name) => changeCountry(name)}
             error={errors.bank_country}
@@ -186,7 +189,7 @@ export const BankDetailsFields: React.FC<BankDetailsFieldsProps> = ({
           />
         )}
         {text('account_holder_name', 'Account holder name', {
-          required: true,
+          required: req(true),
           placeholder: 'Exactly as on the bank account',
           hint: 'Must match the bank\'s records. It is checked by a reviewer - not verified automatically.',
           autoComplete: 'name',
@@ -196,7 +199,7 @@ export const BankDetailsFields: React.FC<BankDetailsFieldsProps> = ({
           <FieldShell
             label={bank.routing.label}
             htmlFor={`${idPrefix}-ifsc_code`}
-            required
+            required={req(true)}
             error={errorFor('ifsc_code')}
             hint={ifsc.kind === 'idle' ? bank.routing.help : undefined}
           >
@@ -238,9 +241,9 @@ export const BankDetailsFields: React.FC<BankDetailsFieldsProps> = ({
         )}
 
         {applies.routing_code && bank?.routing &&
-          text('routing_code', bank.routing.label, { required: bank.routing.required, placeholder: bank.routing.example, hint: bank.routing.help })}
+          text('routing_code', bank.routing.label, { required: req(!!bank.routing.required), placeholder: bank.routing.example, hint: bank.routing.help })}
 
-        {text('bank_name', 'Bank name', { required: true, autoComplete: 'off' })}
+        {text('bank_name', 'Bank name', { required: req(true), autoComplete: 'off' })}
         {text('branch_name', 'Branch', { placeholder: applies.ifsc_code ? 'Filled from the IFSC' : 'Branch name (if applicable)' })}
         {text('bank_address', 'Bank / branch address', { className: 'md:col-span-2' })}
 
@@ -266,7 +269,7 @@ export const BankDetailsFields: React.FC<BankDetailsFieldsProps> = ({
               <FieldShell
                 label={bank?.account_number?.label || 'Account number'}
                 htmlFor={`${idPrefix}-account_number`}
-                required={!maskedAccountNumber}
+                required={req(!maskedAccountNumber)}
                 error={errorFor('account_number')}
                 hint={maskedAccountNumber ? `On file: ${maskedAccountNumber}. Leave blank to keep it.` : bank?.account_number?.help}
               >
@@ -335,7 +338,7 @@ export const BankDetailsFields: React.FC<BankDetailsFieldsProps> = ({
 
         {applies.swift_code &&
           text('swift_code', 'SWIFT / BIC', {
-            required: bank?.swift === 'required',
+            required: req(bank?.swift === 'required'),
             upper: true,
             maxLength: 11,
             placeholder: 'e.g. DEUTDEFF',
@@ -343,7 +346,7 @@ export const BankDetailsFields: React.FC<BankDetailsFieldsProps> = ({
           })}
         {applies.iban &&
           text('iban', 'IBAN', {
-            required: bank?.iban === 'required',
+            required: req(bank?.iban === 'required'),
             upper: true,
             maxLength: 42,
             placeholder: config?.code ? `${config.code}…` : '',

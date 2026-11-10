@@ -191,7 +191,6 @@ interface IdentityStepProps extends StepBaseProps {
 export const IdentityStep: React.FC<IdentityStepProps> = ({ form, errors, readOnly, setField, countryConfig, verification }) => {
   const individual = form.client_type === 'individual';
   const indian = isIndianCountry(form.country);
-  const registrationRequired = form.client_type === 'company' || form.client_type === 'government';
   const taxRule = countryConfig?.tax[individual ? 'individual' : 'business'];
   const toCode = (value: string, max: number) => value.toUpperCase().replace(/\s/g, '').slice(0, max);
 
@@ -212,7 +211,7 @@ export const IdentityStep: React.FC<IdentityStepProps> = ({ form, errors, readOn
             <div>
               <InputField
                 id="client-pan"
-                label="PAN *"
+                label="PAN"
                 value={form.pan}
                 onChange={(e) => setField('pan', toCode(e.target.value, 10))}
                 error={errors.pan}
@@ -263,7 +262,7 @@ export const IdentityStep: React.FC<IdentityStepProps> = ({ form, errors, readOn
             <div className="md:col-span-2">
               <InputField
                 id="client-registration_no"
-                label={`${indian ? 'CIN / LLPIN / registration number' : 'Company registration number'}${registrationRequired ? ' *' : ''}`}
+                label={indian ? 'CIN / LLPIN / registration number' : 'Company registration number'}
                 value={form.registration_no}
                 onChange={(e) => setField('registration_no', e.target.value.slice(0, 50))}
                 error={errors.registration_no}
@@ -371,7 +370,7 @@ export const BankingStep: React.FC<BankingStepProps> = ({
   <div className="space-y-4">
     <FormSection
       title="Bank account"
-      description="The client's bank account (for refunds and payment matching). Changing it after verification sends it back for verification."
+      description="Optional. The client's bank account (for refunds and payment matching). Changing it after verification sends it back for verification."
     >
       {noBankingPermission && (
         <p className="mb-4 text-xs rounded-md bg-gray-50 px-3 py-2 text-gray-600 dark:bg-gray-800/60 dark:text-gray-300">
@@ -387,6 +386,7 @@ export const BankingStep: React.FC<BankingStepProps> = ({
         maskedAccountNumber={maskedAccountNumber || undefined}
         onRevealAccountNumber={onRevealAccountNumber}
         verificationStatus={form.banking_verification_status}
+        optional
       />
     </FormSection>
 
