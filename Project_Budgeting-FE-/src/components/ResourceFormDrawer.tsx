@@ -141,6 +141,14 @@ const ProfileCard: React.FC<{
     </div>
 );
 
+/** A titled block of the add / edit form; blocks after the first get a divider. */
+const FormSection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+    <section className="space-y-4 border-t border-gray-100 pt-5 first-of-type:border-t-0 first-of-type:pt-0 dark:border-gray-800">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{title}</h3>
+        {children}
+    </section>
+);
+
 const Detail: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
     <div className="flex justify-between gap-4 border-b border-gray-100 py-2 text-[13px] last:border-b-0 dark:border-gray-800">
         <dt className="text-gray-500 dark:text-gray-400">{label}</dt>
@@ -355,26 +363,28 @@ export const ResourceFormDrawer: React.FC<Props> = ({
             onClose={onClose}
             title={title}
             subtitle={subtitle}
-            size="md"
+            size="lg"
             footer={(
                 <div className="flex w-full items-center justify-between gap-3">
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                         Resource cost: <span className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{money(effectiveAmount, currency)}</span>
                     </p>
                     <div className="flex gap-2">
-                        <button type="button" onClick={onClose} disabled={isSaving} className="h-10 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button>
-                        <button type="button" onClick={save} disabled={isSaving} className="h-10 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                        <button type="button" onClick={onClose} disabled={isSaving} className="h-10 whitespace-nowrap rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button>
+                        <button type="button" onClick={save} disabled={isSaving} className="h-10 whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
                             {isSaving ? 'Saving...' : kind === 'edit' ? 'Save Changes' : 'Add Resource'}
                         </button>
                     </div>
                 </div>
             )}
         >
-            <fieldset disabled={isSaving} className="space-y-4">
+            {/* min-w-0: a fieldset otherwise grows to its widest child and scrolls sideways. */}
+            <fieldset disabled={isSaving} className="min-w-0 space-y-5">
                 {formError && (
                     <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">{formError}</div>
                 )}
 
+                <FormSection title="Resource">
                 <div>
                     <span className={labelClass}>Resource Type<Req /></span>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Resource type">
@@ -449,23 +459,33 @@ export const ResourceFormDrawer: React.FC<Props> = ({
                         active={picked.type === 'employee' ? picked.active ?? null : null}
                         rate={rateText(picked.default_cost_rate, picked.rate_unit, currency) || undefined} />
                 )}
+                </FormSection>
 
-                {isFixed ? (
+                <FormSection title="Assignment">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {isFixed ? (
+                        <div>
+                            <label htmlFor="res-milestone" className={labelClass}>Milestone<Req /></label>
+                            <select id="res-milestone" value={form.milestone} onChange={(e) => set({ milestone: e.target.value })}
+                                className={`${inputClass} ${errors.milestone ? errorBorder : ''}`}>
+                                <option value="" disabled>Select milestone</option>
+                                {milestones.map((m) => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
+                            </select>
+                            <FieldError text={errors.milestone} />
+                        </div>
+                    ) : (
+                        <div>
+                            <label htmlFor="res-allocation" className={labelClass}>Allocation %</label>
+                            <input id="res-allocation" type="number" min={0} max={100} value={form.allocation} onChange={(e) => set({ allocation: e.target.value })} className={`${inputClass} text-right`} />
+                        </div>
+                    )}
                     <div>
-                        <label htmlFor="res-milestone" className={labelClass}>Milestone<Req /></label>
-                        <select id="res-milestone" value={form.milestone} onChange={(e) => set({ milestone: e.target.value })}
-                            className={`${inputClass} ${errors.milestone ? errorBorder : ''}`}>
-                            <option value="" disabled>Select milestone</option>
-                            {milestones.map((m) => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
+                        <label htmlFor="res-status" className={labelClass}>Status</label>
+                        <select id="res-status" value={form.status} onChange={(e) => set({ status: e.target.value })} className={inputClass}>
+                            {STATUS_CHOICES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
-                        <FieldError text={errors.milestone} />
                     </div>
-                ) : (
-                    <div>
-                        <label htmlFor="res-allocation" className={labelClass}>Allocation %</label>
-                        <input id="res-allocation" type="number" min={0} max={100} value={form.allocation} onChange={(e) => set({ allocation: e.target.value })} className={`${inputClass} text-right`} />
-                    </div>
-                )}
+                </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
@@ -479,8 +499,10 @@ export const ResourceFormDrawer: React.FC<Props> = ({
                         <FieldError text={errors.endDate} />
                     </div>
                 </div>
+                </FormSection>
 
-                <div className="space-y-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/40">
+                <FormSection title="Cost">
+                <div className="space-y-3">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                         <div>
                             <label htmlFor="res-rate" className={labelClass}>Cost Rate / hour<Req /></label>
@@ -519,18 +541,11 @@ export const ResourceFormDrawer: React.FC<Props> = ({
                         ) : 'Cost amount = rate × hours. Type an amount to override it for this project only.'}
                     </p>
                     <FieldError text={errors.costAmount} />
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                        The resource cost is the assigned cost only (never timers or timesheets) and counts in the {isFixed ? 'milestone and project' : 'project'} Actual Cost automatically.
+                    </p>
                 </div>
-
-                <div>
-                    <label htmlFor="res-status" className={labelClass}>Status</label>
-                    <select id="res-status" value={form.status} onChange={(e) => set({ status: e.target.value })} className={inputClass}>
-                        {STATUS_CHOICES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
-                </div>
-
-                <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                    The resource cost is the assigned cost only (never timers or timesheets) and counts in the {isFixed ? 'milestone and project' : 'project'} Actual Cost automatically.
-                </p>
+                </FormSection>
             </fieldset>
         </Drawer>
     );

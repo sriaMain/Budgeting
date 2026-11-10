@@ -178,9 +178,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                                 onMouseEnter={() => setActiveIndex(index)}
                                 className={`w-full text-left px-4 py-2 flex items-baseline gap-2 ${size === 'default' ? '' : 'text-sm'} ${index === activeIndex ? 'bg-gray-50 dark:bg-gray-700' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                             >
-                                <span className="text-gray-900 truncate dark:text-gray-100">{option.label}</span>
+                                <span className="text-gray-900 truncate shrink-0 max-w-full dark:text-gray-100">{option.label}</span>
                                 {option.sublabel && (
-                                    <span className="text-xs text-gray-500 shrink-0 dark:text-gray-400">— {option.sublabel}</span>
+                                    <span className="text-xs text-gray-500 truncate min-w-0 dark:text-gray-400" title={option.sublabel}>— {option.sublabel}</span>
                                 )}
                             </button>
                         </li>
@@ -205,10 +205,11 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 className={`w-full ${TRIGGER_SIZE[size]} bg-white border text-left focus:outline-none ${focusRing} ${triggerBorder} disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between gap-2 dark:bg-gray-800`}
             >
                 {value ? (
-                    <span className="flex items-baseline gap-2 truncate">
-                        <span className="text-gray-900 truncate dark:text-gray-100">{value.label}</span>
+                    // The name keeps its room; a long sublabel is cut with "..." instead of widening the field.
+                    <span className="flex min-w-0 flex-1 items-baseline gap-2" title={value.sublabel ? `${value.label} — ${value.sublabel}` : value.label}>
+                        <span className="text-gray-900 truncate shrink-0 max-w-full dark:text-gray-100">{value.label}</span>
                         {value.sublabel && (
-                            <span className="text-xs text-gray-500 shrink-0 dark:text-gray-400">— {value.sublabel}</span>
+                            <span className="text-xs text-gray-500 truncate min-w-0 dark:text-gray-400">— {value.sublabel}</span>
                         )}
                     </span>
                 ) : (
