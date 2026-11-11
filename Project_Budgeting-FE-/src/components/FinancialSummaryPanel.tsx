@@ -13,6 +13,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { PeriodSummaryCard } from './project/PeriodSummaryCard';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
 import type {
@@ -27,6 +28,9 @@ interface FinancialSummaryPanelProps {
     projectId: string;
     engagementType: 'fixed' | 'time_and_material';
     currency?: string;
+    /** Project Details date filter: shows a "selected period" panel above the project totals. */
+    dateFrom?: string;
+    dateTo?: string;
 }
 
 const n = (v: number | string | undefined | null) => Number(v) || 0;
@@ -88,7 +92,10 @@ const OVERVIEW_ROW = 'grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4';
 /** Overview (wide) beside Profitability (narrow) on large screens. */
 const PAGE_GRID = 'grid grid-cols-1 lg:grid-cols-3 gap-x-10 gap-y-8';
 
-export const FinancialSummaryPanel: React.FC<FinancialSummaryPanelProps> = ({ projectId, currency = 'INR' }) => {
+export const FinancialSummaryPanel: React.FC<FinancialSummaryPanelProps> = ({ projectId, currency = 'INR', dateFrom = '', dateTo = '' }) => {
+    const periodCard = (dateFrom || dateTo)
+        ? <PeriodSummaryCard projectId={projectId} currency={currency} dateFrom={dateFrom} dateTo={dateTo} />
+        : null;
     const [summary, setSummary] = useState<Summary | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     // T&M monthly spending budget (Project.monthly_budget) - separate from the billing amount
@@ -142,6 +149,7 @@ export const FinancialSummaryPanel: React.FC<FinancialSummaryPanelProps> = ({ pr
         const s = summary as FixedSummary;
         return (
             <div className="space-y-8">
+                {periodCard}
                 <div className={PAGE_GRID}>
                     <section className="lg:col-span-2">
                         <SectionHeading
@@ -180,6 +188,7 @@ export const FinancialSummaryPanel: React.FC<FinancialSummaryPanelProps> = ({ pr
     const overBudget = n(t.remaining_budget) < 0;
     return (
         <div className="space-y-8">
+            {periodCard}
             <div className={PAGE_GRID}>
                 <section className="lg:col-span-2">
                     <SectionHeading

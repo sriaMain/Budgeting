@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MoreHorizontal } from 'lucide-react';
+import { ChevronDown, MoreHorizontal } from 'lucide-react';
 
 export interface ActionMenuItem {
   label: string;
@@ -9,12 +9,17 @@ export interface ActionMenuItem {
   danger?: boolean;
   /** Draws a divider above this item. */
   separatorBefore?: boolean;
+  disabled?: boolean;
+  /** Small icon before the label. */
+  icon?: React.ReactNode;
 }
 
 interface ActionMenuProps {
   /** Accessible name of the "⋯" button, e.g. "Actions for Website Revamp". */
   label: string;
   items: ActionMenuItem[];
+  /** Show a labelled button (e.g. "More actions") instead of the bare "⋯" icon. */
+  triggerText?: string;
 }
 
 /**
@@ -22,7 +27,7 @@ interface ActionMenuProps {
  * trigger, flipping up near the bottom of the screen) so scrolling table containers never clip it.
  * Keyboard: Enter/Space opens, Up/Down moves, Escape closes and returns focus.
  */
-export const ActionMenu: React.FC<ActionMenuProps> = ({ label, items }) => {
+export const ActionMenu: React.FC<ActionMenuProps> = ({ label, items, triggerText }) => {
   const [open, setOpen] = useState(false);
   // Off-screen (not hidden) until placed, so the first item can take focus straight away.
   const [style, setStyle] = useState<React.CSSProperties>({ position: 'fixed', top: -9999, left: -9999 });
@@ -98,13 +103,15 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ label, items }) => {
         ref={triggerRef}
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        aria-label={label}
-        title="More actions"
+        aria-label={triggerText ? undefined : label}
+        title={triggerText ? undefined : 'More actions'}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        className={triggerText
+          ? 'inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'
+          : 'flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200'}
       >
-        <MoreHorizontal size={16} aria-hidden="true" />
+        {triggerText ? <>{triggerText}<ChevronDown size={14} aria-hidden="true" /></> : <MoreHorizontal size={16} aria-hidden="true" />}
       </button>
       {open && createPortal(
         // Portal events still bubble to React parents (e.g. a clickable row) - stop them here.
@@ -123,11 +130,13 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ label, items }) => {
               <button
                 type="button"
                 role="menuitem"
+                disabled={item.disabled}
                 onClick={() => { close(); item.onSelect(); }}
-                className={`block w-full px-3 py-1.5 text-left text-sm focus:outline-none ${item.danger
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0 [&>svg]:text-gray-400 ${item.danger
                   ? 'text-risk-600 hover:bg-red-50 focus:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10 dark:focus:bg-red-500/10'
                   : 'text-gray-700 hover:bg-gray-50 focus:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:bg-gray-700'}`}
               >
+                {item.icon}
                 {item.label}
               </button>
             </React.Fragment>

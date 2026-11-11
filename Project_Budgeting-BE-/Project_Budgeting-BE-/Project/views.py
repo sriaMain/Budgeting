@@ -939,18 +939,88 @@ class ResourceExportAPIView(APIView):
         return _xlsx_response(rs.build_export(project, filters, rows), rs.export_filename(project, filters))
 
 
-class ProjectInvoiceExportAPIView(APIView):
-    """GET /projects/<project_no>/invoices/export/?search= - the project's Invoices tab as Excel
-    (the same invoices and search as the tab): a Summary sheet and an Invoices sheet."""
+class ProjectInvoiceListAPIView(APIView):
+    """GET /projects/<project_no>/invoices/ - the Invoices tab: the project's invoices with the page's
+    filters (invoice date range, status, payment status, milestone, search), sorted and paged, plus
+    totals over every matching invoice (Draft and Cancelled not billed)."""
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request, project_no):
         from . import invoice_export as ie
+        from .project_filters import FilterError, applied, page_of
         project = get_object_or_404(Project.objects.select_related('client'), project_no=project_no)
-        search = request.query_params.get('search', '')
-        rows = [ie.row(invoice, project) for invoice in ie.matching_invoices(project, search)]
-        return _xlsx_response(ie.build_export(project, rows, search), ie.export_filename(project))
+        try:
+            f = ie.parse_filters(request.query_params, project)
+        except FilterError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        rows = ie.matching_rows(project, f)
+        out = page_of(rows, f)
+        out["totals"] = [{"currency": c, **t} for c, t in sorted(ie.totals_by_currency(rows).items())]
+        out["status_counts"] = ie.status_counts(rows)
+        out["filters"] = applied(f)
+        return Response(out)
+
+
+class ProjectInvoiceExportAPIView(APIView):
+    """GET /projects/<project_no>/invoices/export/ - the Invoices tab as Excel, with the same filters
+    as the list (every matching invoice, not one page): a Summary sheet and an Invoices sheet."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        from . import invoice_export as ie
+        from .project_filters import FilterError
+        project = get_object_or_404(Project.objects.select_related('client'), project_no=project_no)
+        try:
+            f = ie.parse_filters(request.query_params, project)
+        except FilterError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return _xlsx_response(ie.build_export(project, ie.matching_rows(project, f), f), ie.export_filename(project))
+
+
+class ProjectFilterOptionsAPIView(APIView):
+    """GET /projects/<project_no>/filter-options/ - the values the Project Details filter toolbar
+    offers: the project's milestones and assigned resources, and every tab's status lists."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        from finances.models import Expense, InvoicePayment, VendorBill
+        from . import project_filters as pf
+        from . import resource_service as rs
+        project = get_object_or_404(Project, project_no=project_no)
+        assignments = list(project.resource_assignments.filter(is_active=True))
+        found = rs.profiles(assignments)
+        resources, seen = [], set()
+        for a in assignments:
+            key = f"external:{a.external_name}" if a.resource_type == 'external' else f"{a.resource_type}:{a.resource_id}"
+            if key in seen:
+                continue
+            seen.add(key)
+            prof = rs.profile_of(a, found)
+            resources.append({"value": key, "label": prof.name, "code": prof.code, "type": a.resource_type})
+        resources.sort(key=lambda r: (r["label"] or '').lower())
+
+        def opts(pairs):
+            return [{"value": v, "label": l} for v, l in pairs]
+
+        return Response({
+            "milestones": [{"value": str(m.pk), "label": m.name}
+                           for m in project.milestones.filter(is_active=True).order_by('sequence', 'id')],
+            "resources": resources,
+            "statuses": {
+                "invoices": opts((s, s) for s in ('Draft', 'Issued', 'Partially Paid', 'Paid', 'Overdue', 'Cancelled')),
+                "expenses": opts(Expense.STATUS_CHOICES),
+                "bills": opts(VendorBill.STATUS_CHOICES),
+                "payments": opts(InvoicePayment.STATUS_CHOICES),
+                "resources": opts(ResourceAssignment.STATUS_CHOICES),
+                "milestones": opts(Milestone.STATUS_CHOICES),
+            },
+            "payment_statuses": opts(pf.PAYMENT_STATUSES.items()),
+            "billing_statuses": opts(pf.BILLING_STATUSES.items()),
+            "financial_statuses": opts(pf.FINANCIAL_STATUSES.items()),
+        })
 
 
 class ResourceImportTemplateAPIView(APIView):
@@ -1224,11 +1294,63 @@ class ProjectFinancialSummaryAPIView(APIView):
     RESOURCE_COST_CATEGORIES = {'freelancer', 'employee_cost'}
 
     def get(self, request, project_no):
+        from .project_filters import FilterError, parse
         project = get_object_or_404(Project, project_no=project_no)
+        try:
+            f = parse(request.query_params, project)
+        except FilterError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         if project.engagement_type == 'time_and_material':
-            return Response(self._tm_summary(project), status=status.HTTP_200_OK)
-        return Response(self._fixed_summary(project), status=status.HTTP_200_OK)
+            data = self._tm_summary(project)
+        else:
+            data = self._fixed_summary(project)
+        # The Project Details date filter: what happened inside the range, next to the
+        # project-to-date figures above (which never change with the filter).
+        data["period"] = self._period_summary(project, f) if f.has_dates else None
+        return Response(data, status=status.HTTP_200_OK)
+
+    def _period_summary(self, project, f):
+        """Money in and out between From and To, each record by its own date: invoices by invoice
+        date (Cancelled left out), receipts and bill payments by payment date (confirmed receipts
+        only), expenses by expense date, resources by assignment period (the Resources tab's rule:
+        starting on/after From and ending on/before To)."""
+        from finances.models import InvoicePayment, OutgoingPayment
+        from . import resource_service as rs
+
+        def dated(qs, field):
+            if f.date_from:
+                qs = qs.filter(**{f"{field}__gte": f.date_from})
+            if f.date_to:
+                qs = qs.filter(**{f"{field}__lte": f.date_to})
+            return qs
+
+        zero = Decimal("0.00")
+        invoices = dated(project.invoice_set.exclude(status='Cancelled'), 'issue_date')
+        invoiced = invoices.aggregate(t=Sum('total_amount'))['t'] or zero
+        invoiced_base = invoices.aggregate(t=Sum('sub_total'))['t'] or zero
+        received = dated(
+            InvoicePayment.objects.confirmed().filter(invoice__project=project), 'payment_date'
+        ).aggregate(t=Sum('amount'))['t'] or zero
+
+        expense_qs = dated(project.expenses.cost_bearing(), 'expense_date')  # every expense, as the project summary
+        _, expenses = self._cost_breakdown(expense_qs, zero, zero, zero)
+        bills_paid = dated(
+            OutgoingPayment.objects.filter(Q(vendor_bill__project=project) | Q(vendor_bill__purchase_order__project=project)),
+            'payment_date',
+        ).aggregate(t=Sum('amount'))['t'] or zero
+        resource_rows = rs.matching_rows(project, rs.ResourceFilters(date_from=f.date_from, date_to=f.date_to))
+        resource_cost = rs.totals(resource_rows)['total_cost']
+        actual = resource_cost + expenses + bills_paid
+        return {
+            "date_from": f.date_from, "date_to": f.date_to,
+            "invoiced_amount": invoiced, "invoiced_base_amount": invoiced_base, "invoice_count": invoices.count(),
+            "received_amount": received,
+            "resource_cost": resource_cost, "resource_count": len(resource_rows),
+            "expenses_amount": expenses, "bills_paid_amount": bills_paid,
+            "actual_cost": actual,
+            "net_cash": received - bills_paid,
+        }
 
     def _cost_budget_for_project(self, project):
         """Tax AND profit excluded - see ProjectBudget.cost_budget."""
@@ -1311,19 +1433,24 @@ class ProjectFinancialSummaryAPIView(APIView):
         employee_cost = by_type['employee']
         freelancer_cost = by_type['freelancer']
 
+        # Budget is the milestones' budgets once there are milestones, else the project's own.
+        # Invoices and expenses are always the WHOLE project's: one raised without a milestone
+        # (e.g. Generate Invoice from the quotation) is still billed / spent. The part not linked to
+        # any active milestone is reported separately so the milestone table reconciles with these
+        # totals (milestone totals + not linked = project totals).
         if milestones.exists():
             budget = milestones.aggregate(total=Sum('budget_amount'))['total'] or Decimal("0.00")
-            expense_qs = project.expenses.cost_bearing().filter(milestone__in=milestones)
-            billed_amount = sum((m.billed_amount for m in milestones), Decimal("0.00"))
-            received_amount = sum((m.received_amount for m in milestones), Decimal("0.00"))
         else:
-            # No milestones yet - fall back to the project's overall budget
-            # and invoices/expenses linked straight to the project.
             budget = self._cost_budget_for_project(project)
-            expense_qs = project.expenses.cost_bearing()
-            direct_invoices = project.invoice_set.exclude(status='Cancelled')
-            billed_amount = direct_invoices.aggregate(total=Sum('total_amount'))['total'] or Decimal("0.00")
-            received_amount = direct_invoices.aggregate(total=Sum('paid_amount'))['total'] or Decimal("0.00")
+        expense_qs = project.expenses.cost_bearing()
+        project_invoices = project.invoice_set.exclude(status='Cancelled')
+        billed_amount = project_invoices.aggregate(total=Sum('total_amount'))['total'] or Decimal("0.00")
+        received_amount = project_invoices.aggregate(total=Sum('paid_amount'))['total'] or Decimal("0.00")
+        unlinked_invoices = project_invoices.exclude(milestone__in=milestones)
+        unlinked_billed = unlinked_invoices.aggregate(total=Sum('total_amount'))['total'] or Decimal("0.00")
+        unlinked_received = unlinked_invoices.aggregate(total=Sum('paid_amount'))['total'] or Decimal("0.00")
+        _, unlinked_expenses = self._cost_breakdown(
+            expense_qs.exclude(milestone__in=milestones), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"))
 
         cost_breakdown, expense_cost = self._cost_breakdown(
             expense_qs, resource_cost, employee_cost, freelancer_cost
@@ -1360,6 +1487,12 @@ class ProjectFinancialSummaryAPIView(APIView):
             "net_cash_position": received_amount - outgoing_payments,
             "cost_breakdown": cost_breakdown,
             "invoice_breakdown": self._invoice_breakdown(project),
+            # Included in the totals above, but not linked to any active milestone.
+            "not_linked": {
+                "billed_amount": unlinked_billed,
+                "received_amount": unlinked_received,
+                "expenses_amount": unlinked_expenses,
+            },
         }
 
     def _tm_summary(self, project):

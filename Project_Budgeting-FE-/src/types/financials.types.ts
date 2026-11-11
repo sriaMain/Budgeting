@@ -155,12 +155,32 @@ export interface CostBreakdown {
     by_gl_account: { gl_account: string; amount: number }[];
 }
 
+/** GET /projects/<id>/financial-summary/?date_from&date_to - money in and out inside the range,
+ * each record by its own date (null when no dates are given). */
+export interface PeriodSummary {
+    date_from: string | null;
+    date_to: string | null;
+    invoiced_amount: number;
+    invoiced_base_amount: number;
+    invoice_count: number;
+    received_amount: number;
+    resource_cost: number;
+    resource_count: number;
+    expenses_amount: number;
+    bills_paid_amount: number;
+    actual_cost: number;
+    net_cash: number;
+}
+
 export interface FixedFinancialSummary {
     engagement_type: 'fixed';
     contract_value: number;
     budget: number;
     /** Assigned cost of the project's resources (Resources tab). */
     resource_cost: number;
+    /** Expenses (not resource-cost categories) and paid vendor bills. */
+    expenses_amount: number;
+    bills_amount: number;
     actual_cost: number;
     billed_amount: number;
     received_amount: number;
@@ -174,6 +194,7 @@ export interface FixedFinancialSummary {
     net_cash_position: number;
     cost_breakdown: CostBreakdown;
     invoice_breakdown: InvoiceBreakdownRow[];
+    period?: PeriodSummary | null;
 }
 
 export interface TMFinancialSummary {
@@ -208,6 +229,7 @@ export interface TMFinancialSummary {
     net_cash_position: number;
     cost_breakdown: CostBreakdown;
     invoice_breakdown: InvoiceBreakdownRow[];
+    period?: PeriodSummary | null;
 }
 
 export type ProjectFinancialSummary = FixedFinancialSummary | TMFinancialSummary;

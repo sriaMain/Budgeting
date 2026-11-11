@@ -60,6 +60,7 @@ class ResourceFilters:
     date_from: date | None = None  # assignment start date on/after
     date_to: date | None = None    # assignment end date on/before
     ordering: str = '-start_date'
+    resource: str = ''  # '' | '<resource_type>:<id>' | 'external:<name>' (Project Details filter toolbar)
 
 
 ORDERINGS = (
@@ -98,10 +99,15 @@ def parse_filters(params, project):
     ordering = (params.get('ordering') or '-start_date').strip()
     if ordering.lstrip('-') not in ORDERINGS:
         raise ResourceFilterError(f"Sort by one of: {', '.join(ORDERINGS)}.")
+    resource = (params.get('resource') or '').strip()
+    if resource:
+        kind, _, ref = resource.partition(':')
+        if kind not in RESOURCE_TYPES or not ref or (kind != 'external' and not ref.isdigit()):
+            raise ResourceFilterError("Resource must look like 'employee:12' (type:id).")
     return ResourceFilters(
         search=(params.get('search') or '').strip()[:100],
         resource_type=resource_type, milestone=milestone, status=status,
-        date_from=date_from, date_to=date_to, ordering=ordering,
+        date_from=date_from, date_to=date_to, ordering=ordering, resource=resource,
     )
 
 
@@ -240,6 +246,9 @@ def matching_rows(project, f):
         qs = qs.filter(start_date__gte=f.date_from)
     if f.date_to:
         qs = qs.filter(end_date__lte=f.date_to)  # an ongoing assignment (no end date) doesn't end by To Date
+    if f.resource:
+        kind, _, ref = f.resource.partition(':')
+        qs = qs.filter(resource_type=kind, **({'external_name__iexact': ref} if kind == 'external' else {'resource_id': int(ref)}))
     assignments = list(qs)
     found = profiles(assignments)
     rows = [assignment_row(a, profile_of(a, found)) for a in assignments]

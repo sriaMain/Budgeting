@@ -46,13 +46,19 @@ interface DataTableProps<T> {
     pageSize?: number;
     total?: number;
     onPageChange?: (page: number) => void;
+    /** Whole row opens something (click or Enter). */
+    onRowClick?: (row: T) => void;
+    /** Compact 48px rows instead of 60px. */
+    dense?: boolean;
+    /** Scroll inside the table (max 70% of the screen height) with the header kept in view. */
+    stickyHeader?: boolean;
 }
 
 const ALIGN = { left: 'text-left', right: 'text-right', center: 'text-center' } as const;
 
 export function DataTable<T>({
     columns, rows, rowKey, label, loading = false, error, onRetry, empty, sort, onSort, minWidth = 960,
-    footer, rowClassName, page, pageSize, total, onPageChange,
+    footer, rowClassName, page, pageSize, total, onPageChange, onRowClick, dense = false, stickyHeader = false,
 }: DataTableProps<T>) {
     const pages = page && pageSize && total !== undefined ? Math.max(1, Math.ceil(total / pageSize)) : 1;
     const showPager = page !== undefined && pageSize !== undefined && total !== undefined && onPageChange && total > 0;
@@ -69,10 +75,10 @@ export function DataTable<T>({
 
     return (
         <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-            <div className="relative overflow-x-auto" aria-busy={loading || undefined}>
+            <div className={`relative overflow-x-auto ${stickyHeader ? 'max-h-[70vh] overflow-y-auto' : ''}`} aria-busy={loading || undefined}>
                 <table className="w-full border-collapse text-[13px]" style={{ minWidth }} aria-label={label}>
-                    <thead>
-                        <tr className="h-11 border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-800/60">
+                    <thead className={stickyHeader ? 'sticky top-0 z-10' : undefined}>
+                        <tr className="h-11 border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-800">
                             {columns.map((col) => {
                                 const align = ALIGN[col.align || 'left'];
                                 const active = sort && col.sortKey && sort.key === col.sortKey;
@@ -120,10 +126,13 @@ export function DataTable<T>({
                         ) : rows.map((row) => (
                             <tr
                                 key={rowKey(row)}
-                                className={`h-[60px] border-b border-gray-100 last:border-b-0 hover:bg-gray-50/70 dark:border-gray-800 dark:hover:bg-gray-800/40 ${rowClassName ? rowClassName(row) : ''}`}
+                                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                                onKeyDown={onRowClick ? (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) onRowClick(row); } : undefined}
+                                tabIndex={onRowClick ? 0 : undefined}
+                                className={`${dense ? 'h-12' : 'h-[60px]'} border-b border-gray-100 last:border-b-0 hover:bg-gray-50/70 dark:border-gray-800 dark:hover:bg-gray-800/40 ${onRowClick ? 'cursor-pointer focus:outline-none focus-visible:bg-blue-50/60 dark:focus-visible:bg-blue-500/10' : ''} ${rowClassName ? rowClassName(row) : ''}`}
                             >
                                 {columns.map((col) => (
-                                    <td key={col.key} className={`px-4 py-2.5 align-middle text-gray-700 dark:text-gray-300 ${ALIGN[col.align || 'left']} ${col.className || ''}`}>
+                                    <td key={col.key} className={`px-4 ${dense ? 'py-1.5' : 'py-2.5'} align-middle text-gray-700 dark:text-gray-300 ${ALIGN[col.align || 'left']} ${col.className || ''}`}>
                                         {col.cell(row)}
                                     </td>
                                 ))}

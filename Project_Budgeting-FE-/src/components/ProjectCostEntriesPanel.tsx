@@ -25,6 +25,7 @@ import type { CostEntry } from '../types/financials.types';
 import { Drawer } from './Drawer';
 import { drawerInputClass, drawerLabelClass, FieldHint, DrawerFormFooter } from './drawerForm';
 import { projectMonths, monthForDate } from '../utils/projectMonths';
+import { filterParams, type ProjectFilterValues } from '../hooks/useProjectFilters';
 
 interface ProjectCostEntriesPanelProps {
     projectId: string;
@@ -33,6 +34,10 @@ interface ProjectCostEntriesPanelProps {
     /** Project dates (YYYY-MM-DD) - give a T&M project its months. */
     projectStart?: string | null;
     projectEnd?: string | null;
+    /** Project Details filter toolbar (date range, status, milestone, search - applied on the server);
+     * when given, this tab's own search / date / milestone inputs are hidden. */
+    filters?: ProjectFilterValues;
+    onClearFilters?: () => void;
 }
 
 const ALL = '';
@@ -48,7 +53,7 @@ const STATUS_META: Record<string, { label: string; variant: 'success' | 'warning
 
 const selectClass = 'px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
 
-export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = ({ projectId, currency = 'INR', engagementType = 'fixed', projectStart, projectEnd }) => {
+export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = ({ projectId, currency = 'INR', engagementType = 'fixed', projectStart, projectEnd, filters, onClearFilters }) => {
     const isTM = engagementType === 'time_and_material';
     const months = useMemo(() => (isTM ? projectMonths(projectStart, projectEnd) : []), [isTM, projectStart, projectEnd]);
     const entryMonth = (e: CostEntry) => monthForDate(months, e.date);
@@ -78,11 +83,12 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
     const [milestones, setMilestones] = useState<{ id: number; name: string }[]>([]);
     const [isSavingTags, setIsSavingTags] = useState(false);
 
+    const serverParams = useMemo(() => (filters ? filterParams(filters) : {}), [filters]);
     const fetchEntries = useCallback(async () => {
         if (!projectId) return;
         setIsLoading(true);
         try {
-            const res = await axiosInstance.get<{ entries: CostEntry[] }>(`/projects/${projectId}/cost-entries/`);
+            const res = await axiosInstance.get<{ entries: CostEntry[] }>(`/projects/${projectId}/cost-entries/`, { params: serverParams });
             setEntries(res.data.entries || []);
         } catch (error) {
             console.error('Error fetching expenses and bills:', error);
@@ -90,7 +96,7 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
         } finally {
             setIsLoading(false);
         }
-    }, [projectId]);
+    }, [projectId, serverParams]);
 
     useEffect(() => {
         fetchEntries();
@@ -134,13 +140,14 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
     }, [entries]);
 
     const visibleEntries = useMemo(() => {
-        const q = search.trim().toLowerCase();
+        // With the page filters, search / dates / milestone / status were applied on the server.
+        const q = filters ? '' : search.trim().toLowerCase();
         const rows = entries.filter((e) => {
             if (typeFilter && e.type !== typeFilter) return false;
-            if (milestoneFilter && String(e.milestone ?? '') !== milestoneFilter) return false;
+            if (!filters && milestoneFilter && String(e.milestone ?? '') !== milestoneFilter) return false;
             if (monthFilter && monthForDate(months, e.date)?.value !== monthFilter) return false;
-            if (dateFrom && e.date < dateFrom) return false;
-            if (dateTo && e.date > dateTo) return false;
+            if (!filters && dateFrom && e.date < dateFrom) return false;
+            if (!filters && dateTo && e.date > dateTo) return false;
             if (!q) return true;
             return [e.ref_no, e.description, e.payee, e.milestone_name, e.category]
                 .some((v) => v?.toLowerCase().includes(q));
@@ -149,12 +156,16 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
             const cmp = a.date.localeCompare(b.date) || a.key.localeCompare(b.key);
             return sortDirection === 'asc' ? cmp : -cmp;
         });
-    }, [entries, search, typeFilter, milestoneFilter, monthFilter, months, dateFrom, dateTo, sortDirection]);
+    }, [entries, search, typeFilter, milestoneFilter, monthFilter, months, dateFrom, dateTo, sortDirection, filters]);
 
-    const hasFilters = !!(search || typeFilter || milestoneFilter || monthFilter || dateFrom || dateTo);
+    const pageFiltered = filters ? Object.values(filters).some(Boolean) : false;
+    const hasFilters = pageFiltered || !!(search || typeFilter || milestoneFilter || monthFilter || dateFrom || dateTo);
     const clearFilters = () => {
         setSearch(''); setTypeFilter(ALL); setMilestoneFilter(ALL); setMonthFilter(ALL); setDateFrom(''); setDateTo('');
+        if (pageFiltered) onClearFilters?.();
     };
+    const listedAmount = visibleEntries.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const listedPaid = visibleEntries.reduce((sum, e) => sum + (Number(e.paid_amount) || 0), 0);
 
     const money = (v: number) =>
         `${(Number(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
@@ -258,9 +269,9 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
                 </div>
             </div>
 
-            {/* Filters */}
+            {/* Filters (the page's filter toolbar covers search, dates and milestone when present) */}
             <div className="flex flex-wrap items-end gap-2">
-                <div className="relative w-full sm:w-64">
+                {!filters && <div className="relative w-full sm:w-64">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
                     <input
                         type="text"
@@ -269,15 +280,15 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
                         onChange={(e) => setSearch(e.target.value)}
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-900 dark:text-gray-100"
                     />
-                </div>
-                <label className="flex flex-col text-xs text-gray-500 dark:text-gray-400">
+                </div>}
+                {!filters && <label className="flex flex-col text-xs text-gray-500 dark:text-gray-400">
                     From
                     <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} className={selectClass} />
-                </label>
-                <label className="flex flex-col text-xs text-gray-500 dark:text-gray-400">
+                </label>}
+                {!filters && <label className="flex flex-col text-xs text-gray-500 dark:text-gray-400">
                     To
                     <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} className={selectClass} />
-                </label>
+                </label>}
                 <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className={selectClass} aria-label="Type">
                     <option value={ALL}>All types</option>
                     <option value="expense">Expenses</option>
@@ -288,13 +299,13 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
                         <option value={ALL}>All months</option>
                         {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                     </select>
-                ) : (
+                ) : !filters && (
                     <select value={milestoneFilter} onChange={(e) => setMilestoneFilter(e.target.value)} className={selectClass} aria-label="Milestone">
                         <option value={ALL}>All Milestones</option>
                         {milestoneFilterOptions.map(([id, name]) => <option key={id} value={String(id)}>{name}</option>)}
                     </select>
                 )}
-                {hasFilters && (
+                {(typeFilter || monthFilter || (!filters && hasFilters)) && (
                     <button type="button" onClick={clearFilters} className="px-2 py-2 text-sm text-blue-600 dark:text-blue-400 hover:underline">
                         Clear
                     </button>
@@ -312,6 +323,11 @@ export const ProjectCostEntriesPanel: React.FC<ProjectCostEntriesPanelProps> = (
                 onRowClick={openEntry}
                 emptyMessage={hasFilters ? 'No expenses or bills match these filters' : 'No expenses or bills for this project yet'}
             />
+            {!isLoading && visibleEntries.length > 0 && (
+                <p className="text-right text-[13px] text-gray-600 dark:text-gray-400" aria-live="polite">
+                    {visibleEntries.length} {visibleEntries.length === 1 ? 'entry' : 'entries'} · Amount <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{money(listedAmount)}</span> · Paid <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{money(listedPaid)}</span>
+                </p>
+            )}
             {isTM && (
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                     Each charge counts in its month's actual cost: an expense by its date, a bill by the date it is paid.

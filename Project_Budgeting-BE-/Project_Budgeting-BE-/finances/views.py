@@ -942,7 +942,14 @@ class ProjectPaymentsListAPIView(APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request, project_id):
+        from Project.project_filters import FilterError, applied, parse
         project = get_object_or_404(Project, project_no=project_id)
+        # Project Details filter toolbar: payment date range, status (incoming payments' status;
+        # outgoing payments are always made), search (invoice / bill / expense no, vendor, reference).
+        try:
+            f = parse(request.query_params, project, statuses=[s for s, _ in InvoicePayment.STATUS_CHOICES])
+        except FilterError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         # =================================================
         # 🔹 INCOMING PAYMENTS (INVOICES)
@@ -1002,6 +1009,7 @@ class ProjectPaymentsListAPIView(APIView):
             {
                 "type": "purchase_order",
                 "id": p.id,
+                "vendor_bill_id": p.vendor_bill_id,
                 "bill_no": p.vendor_bill.bill_no,
                 "po_no": p.vendor_bill.purchase_order.po_no if p.vendor_bill.purchase_order else None,
                 "vendor": p.vendor.name,
@@ -1032,6 +1040,7 @@ class ProjectPaymentsListAPIView(APIView):
             {
                 "type": "expense",
                 "id": e.id,
+                "expense_id": e.expense_id,
                 "expense_no": e.expense.expense_no,
                 "category": e.expense.category,  # ✅ category is STRING
                 "amount": float(e.amount),
@@ -1044,6 +1053,30 @@ class ProjectPaymentsListAPIView(APIView):
         ]
 
         # =================================================
+        # 🔹 FILTERS (none: every payment, totals as before)
+        # =================================================
+        incoming_payments_data = [
+            p for p in incoming_payments_data
+            if (not f.status or p["status"] == f.status) and f.in_range(p["payment_date"])
+            and f.matches(p["invoice_no"], p["reference_no"], p["notes"], p["payment_method"])
+        ]
+        outgoing_po_data = [
+            p for p in outgoing_po_data
+            if (not f.status or f.status == InvoicePayment.STATUS_COMPLETED) and f.in_range(p["payment_date"])
+            and f.matches(p["bill_no"], p["po_no"], p["vendor"], p["reference_no"])
+        ]
+        outgoing_expense_data = [
+            p for p in outgoing_expense_data
+            if (not f.status or f.status == InvoicePayment.STATUS_COMPLETED) and f.in_range(p["payment_date"])
+            and f.matches(p["expense_no"], p["category"], p["reference_no"])
+        ]
+        total_incoming = Decimal(str(sum(
+            p["amount"] for p in incoming_payments_data if p["status"] == InvoicePayment.STATUS_COMPLETED
+        ))).quantize(Decimal("0.01"))
+        po_total = Decimal(str(sum(p["amount"] for p in outgoing_po_data))).quantize(Decimal("0.01"))
+        expense_total = Decimal(str(sum(p["amount"] for p in outgoing_expense_data))).quantize(Decimal("0.01"))
+
+        # =================================================
         # 🔹 FINAL TOTALS
         # =================================================
         total_outgoing = po_total + expense_total
@@ -1053,16 +1086,17 @@ class ProjectPaymentsListAPIView(APIView):
             "project_no": project.project_no,
             "project_name": project.project_name,
 
+            "filters": applied(f),
             "incoming": {
                 "invoice_count": invoices.count(),
-                "payment_count": invoice_payments.count(),
+                "payment_count": len(incoming_payments_data),
                 "total_received": str(total_incoming),
                 "payments": incoming_payments_data,
             },
 
             "outgoing": {
-                "purchase_order_payment_count": po_payments.count(),
-                "expense_payment_count": expense_payments.count(),
+                "purchase_order_payment_count": len(outgoing_po_data),
+                "expense_payment_count": len(outgoing_expense_data),
                 "total_paid": str(total_outgoing),
                 "payments": outgoing_po_data + outgoing_expense_data,
             },
@@ -1693,71 +1727,118 @@ class ProjectCostEntriesAPIView(APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request, project_id):
-        from finances.models import project_vendor_bills
-
+        from Project.project_filters import FilterError, applied
         project = get_object_or_404(Project, project_no=project_id)
+        try:
+            f = cost_entry_filters(request.query_params, project)
+        except FilterError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        entries = filter_cost_entries(project_cost_entries(project), f, request.query_params.get('type', ''))
+        return Response({
+            "entries": entries,
+            "totals": {
+                "count": len(entries),
+                "amount": round(sum(e["amount"] for e in entries), 2),
+                "paid_amount": round(sum(e["paid_amount"] for e in entries), 2),
+            },
+            "filters": applied(f),
+        }, status=status.HTTP_200_OK)
 
-        def gl_label(gl):
-            return f"{gl.code} - {gl.name}" if gl else None
 
-        entries = []
+COST_ENTRY_STATUSES = ('unpaid', 'partially_paid', 'paid')
 
-        expenses = (
-            Expense.objects.filter(project=project)
-            .select_related('gl_account', 'milestone', 'vendor', 'freelancer', 'employee', 'vendor_bill')
-            .prefetch_related('payments')
+
+def cost_entry_filters(params, project):
+    from Project.project_filters import parse
+    return parse(params, project, statuses=COST_ENTRY_STATUSES)
+
+
+def filter_cost_entries(entries, f, entry_type=''):
+    """The Expenses tab's filters on cost entries: entry date range, payment status, milestone,
+    search (reference, description, payee, category, GL account), and expense / bill type."""
+    out = []
+    for e in entries:
+        if entry_type in ('expense', 'bill') and e["type"] != entry_type:
+            continue
+        if f.status and e["status"] != f.status:
+            continue
+        if f.milestone == 'none' and e["milestone"]:
+            continue
+        if f.milestone_id and e["milestone"] != f.milestone_id:
+            continue
+        if not f.in_range(e["date"]):
+            continue
+        if not f.matches(e["ref_no"], e["description"], e["payee"], e["category"], e["gl_account_label"], e["milestone_name"]):
+            continue
+        out.append(e)
+    return out
+
+
+def project_cost_entries(project):
+    """The project's expenses and vendor bills as one list, newest first (see ProjectCostEntriesAPIView)."""
+    from finances.models import project_vendor_bills
+
+    def gl_label(gl):
+        return f"{gl.code} - {gl.name}" if gl else None
+
+    entries = []
+
+    expenses = (
+        Expense.objects.filter(project=project)
+        .select_related('gl_account', 'milestone', 'vendor', 'freelancer', 'employee', 'vendor_bill')
+        .prefetch_related('payments')
+    )
+    for e in expenses:
+        payee = (
+            (e.vendor.name if e.vendor else None)
+            or (e.freelancer.full_name if e.freelancer else None)
+            or (e.employee.get_full_name() if e.employee else None)
         )
-        for e in expenses:
-            payee = (
-                (e.vendor.name if e.vendor else None)
-                or (e.freelancer.full_name if e.freelancer else None)
-                or (e.employee.get_full_name() if e.employee else None)
-            )
-            entries.append({
-                "key": f"expense-{e.id}",
-                "type": "expense",
-                "id": e.id,
-                "ref_no": e.expense_no,
-                "date": e.expense_date,
-                "description": e.description,
-                "category": e.category,
-                "payee": payee,
-                "gl_account": e.gl_account_id,
-                "gl_account_label": gl_label(e.gl_account),
-                "milestone": e.milestone_id,
-                "milestone_name": e.milestone.name if e.milestone else None,
-                "amount": float(e.amount),
-                "paid_amount": float(e.total_paid()),
-                "status": e.status,
-                "linked_bill_no": e.vendor_bill.bill_no if e.vendor_bill else None,
-            })
+        entries.append({
+            "key": f"expense-{e.id}",
+            "type": "expense",
+            "id": e.id,
+            "ref_no": e.expense_no,
+            "date": e.expense_date,
+            "description": e.description,
+            "category": e.category,
+            "payee": payee,
+            "gl_account": e.gl_account_id,
+            "gl_account_label": gl_label(e.gl_account),
+            "milestone": e.milestone_id,
+            "milestone_name": e.milestone.name if e.milestone else None,
+            "amount": float(e.amount),
+            "paid_amount": float(e.total_paid()),
+            "status": e.status,
+            "linked_bill_no": e.vendor_bill.bill_no if e.vendor_bill else None,
+        })
 
-        bills = project_vendor_bills(project).select_related('vendor', 'gl_account', 'milestone', 'purchase_order')
-        linked_expense_by_bill = dict(
-            Expense.objects.filter(vendor_bill__in=bills).values_list('vendor_bill_id', 'expense_no')
-        )
-        for b in bills:
-            entries.append({
-                "key": f"bill-{b.id}",
-                "type": "bill",
-                "id": b.id,
-                "ref_no": b.bill_no,
-                "date": b.bill_date,
-                "description": b.description or (f"PO {b.purchase_order.po_no}" if b.purchase_order else ""),
-                "category": None,
-                "payee": b.vendor.name,
-                "gl_account": b.gl_account_id,
-                "gl_account_label": gl_label(b.gl_account),
-                "milestone": b.milestone_id,
-                "milestone_name": b.milestone.name if b.milestone else None,
-                "amount": float(b.total_amount),
-                "paid_amount": float(b.paid_amount),
-                "status": b.status,
-                "linked_expense_no": linked_expense_by_bill.get(b.id),
-            })
+    bills = project_vendor_bills(project).select_related('vendor', 'gl_account', 'milestone', 'purchase_order')
+    linked_expense_by_bill = dict(
+        Expense.objects.filter(vendor_bill__in=bills).values_list('vendor_bill_id', 'expense_no')
+    )
+    for b in bills:
+        entries.append({
+            "key": f"bill-{b.id}",
+            "type": "bill",
+            "id": b.id,
+            "ref_no": b.bill_no,
+            "date": b.bill_date,
+            "description": b.description or (f"PO {b.purchase_order.po_no}" if b.purchase_order else ""),
+            "category": None,
+            "payee": b.vendor.name,
+            "gl_account": b.gl_account_id,
+            "gl_account_label": gl_label(b.gl_account),
+            "milestone": b.milestone_id,
+            "milestone_name": b.milestone.name if b.milestone else None,
+            "amount": float(b.total_amount),
+            "paid_amount": float(b.paid_amount),
+            "status": b.status,
+            "linked_expense_no": linked_expense_by_bill.get(b.id),
+        })
 
-        entries.sort(key=lambda r: (r["date"], r["key"]), reverse=True)
-        return Response({"entries": entries}, status=status.HTTP_200_OK)
+    entries.sort(key=lambda r: (r["date"], r["key"]), reverse=True)
+    return entries
 
 
 class VendorBillTagsAPIView(APIView):

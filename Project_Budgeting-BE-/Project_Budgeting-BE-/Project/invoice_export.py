@@ -1,9 +1,11 @@
 """
-Excel export of a project's invoices (Project Details -> Invoices tab -> Export Excel).
+A project's invoices: the Invoices tab's list (GET /projects/<id>/invoices/) and its Excel export
+(GET /projects/<id>/invoices/export/), from one query so the two always agree.
 
-Lists the same invoices the tab shows (every status, newest first, the tab's search applied) with
-the same amounts: total, paid (confirmed payments) and outstanding come from the stored invoice
-fields. Totals leave out Draft and Cancelled invoices, which aren't amounts billed. Read-only.
+Every status is listed, newest first, with the page's filters applied (project_filters): invoice
+date range, status, payment status, milestone, search. Amounts are the stored invoice fields:
+total, paid (confirmed payments only) and outstanding. Totals leave out Draft and Cancelled
+invoices, which aren't amounts billed. Read-only.
 """
 from __future__ import annotations
 
@@ -14,10 +16,29 @@ from decimal import Decimal
 from django.db.models import Q
 from django.utils import timezone
 
+from . import project_filters as pf
 from .resource_service import BRAND, HEADER_FILL, fmt_date, money_format
 
 NOT_BILLED = ('Draft', 'Cancelled')
 ZERO = Decimal('0.00')
+INVOICE_STATUSES = ('Draft', 'Issued', 'Partially Paid', 'Paid', 'Overdue', 'Cancelled')
+ORDERINGS = ('invoice_no', 'issue_date', 'due_date', 'status', 'milestone', 'total_amount', 'paid_amount',
+             'balance_amount')
+SORT_KEYS = {
+    'invoice_no': lambda r: r['invoice_no'].lower(),
+    'issue_date': lambda r: r['issue_date'],
+    'due_date': lambda r: r['due_date'],
+    'status': lambda r: r['status'],
+    'milestone': lambda r: (r['billed_for'] or '').lower() or None,
+    'total_amount': lambda r: r['total_amount'],
+    'paid_amount': lambda r: r['paid_amount'],
+    'balance_amount': lambda r: r['balance_amount'],
+}
+DEFAULT_ORDERING = '-issue_date'
+
+
+def parse_filters(params, project) -> pf.ProjectFilters:
+    return pf.parse(params, project, statuses=INVOICE_STATUSES, orderings=ORDERINGS, default_ordering=DEFAULT_ORDERING)
 
 COLUMNS = (
     # header, key, kind, width
@@ -38,13 +59,32 @@ COLUMNS = (
 MONEY_KEYS = ('sub_total', 'discount_amount', 'tax_amount', 'total_amount', 'paid_amount', 'balance_amount')
 
 
-def matching_invoices(project, search: str = ''):
-    """The Invoices tab's list: all of the project's invoices, its search on number / status."""
+def matching_invoices(project, f: pf.ProjectFilters | None = None):
+    """The project's invoices matching the filters (every status when none), newest first."""
+    f = f or pf.ProjectFilters()
     qs = project.invoice_set.select_related('client', 'quote', 'milestone').order_by('-issue_date', '-id')
-    search = (search or '').strip()
-    if search:
-        qs = qs.filter(Q(invoice_no__icontains=search) | Q(status__icontains=search))
+    if f.status:
+        qs = qs.filter(status=f.status)
+    if f.payment_status:
+        qs = qs.filter(status__in=[s for s, ps in pf.INVOICE_PAYMENT_STATUS.items() if ps == f.payment_status])
+    if f.milestone == 'none':
+        qs = qs.filter(milestone__isnull=True)
+    elif f.milestone_id:
+        qs = qs.filter(milestone_id=f.milestone_id)
+    if f.date_from:
+        qs = qs.filter(issue_date__gte=f.date_from)
+    if f.date_to:
+        qs = qs.filter(issue_date__lte=f.date_to)
+    if f.search:
+        qs = qs.filter(Q(invoice_no__icontains=f.search) | Q(status__icontains=f.search)
+                       | Q(milestone__name__icontains=f.search) | Q(client__company_name__icontains=f.search))
     return list(qs)
+
+
+def matching_rows(project, f: pf.ProjectFilters | None = None) -> list:
+    f = f or pf.ProjectFilters()
+    rows = [row(invoice, project) for invoice in matching_invoices(project, f)]
+    return pf.sort_rows(rows, f, SORT_KEYS, DEFAULT_ORDERING)
 
 
 def invoice_currency(invoice, project) -> str:
@@ -64,16 +104,27 @@ def billed_for(invoice) -> str:
 
 def row(invoice, project) -> dict:
     return {
+        'id': invoice.pk,
         'invoice_no': invoice.invoice_no or f"Invoice #{invoice.pk}",
         'issue_date': invoice.issue_date,
         'due_date': invoice.due_date,
+        'status_value': invoice.status,
         'status': invoice.get_status_display(),
+        'payment_status': pf.INVOICE_PAYMENT_STATUS.get(invoice.status, ''),
+        'milestone_id': invoice.milestone_id,
         'billed_for': billed_for(invoice),
         'client': getattr(invoice.client, 'company_name', '') or '',
         'currency': invoice_currency(invoice, project),
         'billed': invoice.status not in NOT_BILLED,
         **{key: getattr(invoice, key) or ZERO for key in MONEY_KEYS},
     }
+
+
+def status_counts(rows) -> dict:
+    out: dict = {}
+    for r in rows:
+        out[r['status_value']] = out.get(r['status_value'], 0) + 1
+    return out
 
 
 def totals_by_currency(rows) -> dict:
@@ -94,11 +145,30 @@ def export_filename(project) -> str:
     return f"{name}_Invoices_{timezone.localdate().isoformat()}.xlsx"
 
 
-def build_export(project, rows, search: str = '') -> bytes:
+def filters_text(project, f: pf.ProjectFilters) -> str:
+    parts = []
+    if f.date_from or f.date_to:
+        parts.append(f"Invoice date {fmt_date(f.date_from) or 'start'} to {fmt_date(f.date_to) or 'today'}")
+    if f.status:
+        parts.append(f"Status: {f.status}")
+    if f.payment_status:
+        parts.append(f"Payment status: {pf.PAYMENT_STATUSES[f.payment_status]}")
+    if f.milestone == 'none':
+        parts.append("Milestone: not linked")
+    elif f.milestone_id:
+        m = project.milestones.filter(pk=f.milestone_id).first()
+        parts.append(f"Milestone: {m.name if m else f.milestone}")
+    if f.search:
+        parts.append(f'Search: "{f.search}"')
+    return ' · '.join(parts)
+
+
+def build_export(project, rows, f: pf.ProjectFilters | None = None) -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
+    f = f or pf.ProjectFilters()
     bold = Font(bold=True)
     fill = PatternFill('solid', fgColor=HEADER_FILL)
     generated = timezone.localtime().strftime('%d/%m/%Y %I:%M %p')
@@ -106,7 +176,7 @@ def build_export(project, rows, search: str = '') -> bytes:
     by_status: dict = {}
     for r in rows:
         by_status[r['status']] = by_status.get(r['status'], 0) + 1
-    filter_text = f'Search: "{search.strip()}"' if (search or '').strip() else 'None (all invoices)'
+    filter_text = filters_text(project, f) or 'None (all invoices)'
 
     wb = Workbook()
     ws = wb.active

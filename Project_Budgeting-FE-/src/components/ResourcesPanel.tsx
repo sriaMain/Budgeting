@@ -13,6 +13,7 @@ import { toast } from 'react-hot-toast';
 import { Download, Eye, Pencil, Plus, Search, Trash2, Upload, Users } from 'lucide-react';
 import axiosInstance from '../utils/axiosInstance';
 import { formatDate as toDMY } from '../utils/date';
+import type { ProjectFilterValues } from '../hooks/useProjectFilters';
 import { DataTable } from './DataTable';
 import type { DataColumn, DataTableSort } from './DataTable';
 import { EmptyState } from './EmptyState';
@@ -32,6 +33,9 @@ interface ResourcesPanelProps {
     engagementType?: 'fixed' | 'time_and_material';
     /** After add / edit / remove / import, so the page can refresh cost figures. */
     onChanged?: () => void;
+    /** Project Details filter toolbar (search, status, milestone, resource, assignment period);
+     * when given, it replaces this tab's own filter inputs (Resource Type stays here). */
+    pageFilters?: ProjectFilterValues;
 }
 
 const PAGE_SIZE = 25;
@@ -40,7 +44,7 @@ const labelClass = 'mb-1 block text-xs font-medium text-gray-600 dark:text-gray-
 const secondaryButton = 'inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800';
 const iconButton = 'inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white';
 
-export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, currency: currencyProp = 'INR', engagementType = 'fixed', onChanged }) => {
+export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, currency: currencyProp = 'INR', engagementType = 'fixed', onChanged, pageFilters }) => {
     const isFixed = engagementType === 'fixed';
 
     /* ---------------- filters (all applied on the server) ---------------- */
@@ -59,8 +63,12 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
     const [reloadKey, setReloadKey] = useState(0);
 
     const rangeError = draftFrom && draftTo && draftTo < draftFrom ? "To Date can't be earlier than From Date." : '';
-    const datesDirty = draftFrom !== dateFrom || draftTo !== dateTo;
-    const anyFilter = Boolean(search || resourceType || milestone || status || dateFrom || dateTo);
+    const datesDirty = !pageFilters && (draftFrom !== dateFrom || draftTo !== dateTo);
+    // The page's filters, when present, win over this tab's own inputs (which are then hidden).
+    const eff = pageFilters
+        ? { search: pageFilters.search, milestone: pageFilters.milestone, status: pageFilters.status, dateFrom: pageFilters.dateFrom, dateTo: pageFilters.dateTo, resource: pageFilters.resource }
+        : { search, milestone, status, dateFrom, dateTo, resource: '' };
+    const anyFilter = Boolean(eff.search || resourceType || eff.milestone || eff.status || eff.dateFrom || eff.dateTo || eff.resource);
 
     // Search applies 300 ms after typing stops (the page resets as soon as typing starts).
     useEffect(() => {
@@ -72,14 +80,15 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
         const p: Record<string, string | number> = {
             page, page_size: PAGE_SIZE, ordering: `${sort.direction === 'desc' ? '-' : ''}${sort.key}`,
         };
-        if (search) p.search = search;
+        if (eff.search) p.search = eff.search;
         if (resourceType) p.resource_type = resourceType;
-        if (milestone) p.milestone = milestone;
-        if (status) p.status = status;
-        if (dateFrom) p.date_from = dateFrom;
-        if (dateTo) p.date_to = dateTo;
+        if (eff.milestone) p.milestone = eff.milestone;
+        if (eff.status) p.status = eff.status;
+        if (eff.dateFrom) p.date_from = eff.dateFrom;
+        if (eff.dateTo) p.date_to = eff.dateTo;
+        if (eff.resource) p.resource = eff.resource;
         return p;
-    }, [page, sort, search, resourceType, milestone, status, dateFrom, dateTo]);
+    }, [page, sort, resourceType, eff.search, eff.milestone, eff.status, eff.dateFrom, eff.dateTo, eff.resource]);
 
     /* ---------------- data ---------------- */
     const requestKey = `${projectId}|${JSON.stringify(params)}|${reloadKey}`;
@@ -315,7 +324,18 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                 </div>
             </div>
 
-            {/* Filters */}
+            {/* Filters - with the page's filter toolbar only Resource Type is set here */}
+            {pageFilters ? (
+                <div className="flex flex-wrap items-end gap-2">
+                    <div className="w-full sm:w-56">
+                        <label htmlFor="res-type" className={labelClass}>Resource Type</label>
+                        <select id="res-type" value={resourceType} onChange={(e) => { setResourceType(e.target.value); setPage(1); }} className={controlClass}>
+                            <option value="">All types</option>
+                            {RESOURCE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>
+                    </div>
+                </div>
+            ) : (
             <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
                 <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-[minmax(200px,1.6fr)_repeat(3,minmax(130px,1fr))_repeat(2,minmax(140px,1fr))_auto]">
                     <div>
@@ -376,19 +396,20 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                 </div>
                 {rangeError && <p id="res-range-error" role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{rangeError}</p>}
             </div>
+            )}
 
             {/* What's shown */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-gray-600 dark:text-gray-400" aria-live="polite">
                 <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
-                    {dateFrom || dateTo
-                        ? `Assignment period: ${dateFrom ? toDMY(dateFrom) : 'any start'} – ${dateTo ? toDMY(dateTo) : 'any end'}`
+                    {eff.dateFrom || eff.dateTo
+                        ? `Assignment period: ${eff.dateFrom ? toDMY(eff.dateFrom) : 'any start'} – ${eff.dateTo ? toDMY(eff.dateTo) : 'any end'}`
                         : 'All assignment dates'}
                 </span>
                 {datesDirty && !rangeError && <span className="text-xs text-amber-600 dark:text-amber-400">Date changes not applied yet</span>}
                 {filtered && !error && (
                     <span>
                         {filtered.count.toLocaleString('en-IN')} {anyFilter ? 'matching' : 'listed'}
-                        {status !== 'removed' && ' (removed ones shown, not costed)'} · cost <span className="font-medium tabular-nums text-gray-900 dark:text-white">{money(filtered.total_cost, currency)}</span>
+                        {eff.status !== 'removed' && ' (removed ones shown, not costed)'} · cost <span className="font-medium tabular-nums text-gray-900 dark:text-white">{money(filtered.total_cost, currency)}</span>
                     </span>
                 )}
             </div>

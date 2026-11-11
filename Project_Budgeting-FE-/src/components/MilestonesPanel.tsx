@@ -11,6 +11,8 @@
 
 import { formatDate as toDMY } from '../utils/date';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ProjectFilterValues } from '../hooks/useProjectFilters';
+import { matchesMilestoneFilters } from '../utils/milestoneFilters';
 import axiosInstance from '../utils/axiosInstance';
 import { toast } from 'react-hot-toast';
 import { Drawer } from './Drawer';
@@ -69,6 +71,8 @@ interface MilestonesPanelProps {
     projectStart?: string;
     /** Called after a milestone is added/edited/archived/billed, so the page can refresh its own figures. */
     onChanged?: () => void;
+    /** Project Details filter toolbar (due date, status, financial / billing / payment status, search). */
+    pageFilters?: ProjectFilterValues;
 }
 
 const STATUS_OPTIONS = [
@@ -127,7 +131,7 @@ const emptyForm = {
     status: 'not_started',
 };
 
-export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, currency = 'INR', userBudget = 0, quotationAmount = 0, projectStart, onChanged }) => {
+export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, currency = 'INR', userBudget = 0, quotationAmount = 0, projectStart, onChanged, pageFilters }) => {
     const [milestones, setMilestones] = useState<Milestone[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     // Only the first load shows "Loading..."; background refreshes swap data in silently.
@@ -195,6 +199,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
         { budget: 0, billing: 0, actual: 0, billed: 0, billedBase: 0, received: 0 }
     ), [milestones]);
 
+    const shownMilestones = pageFilters ? milestones.filter((m) => matchesMilestoneFilters(m, pageFilters)) : milestones;
     const budgetBase = milestones.length > 0 ? num(milestones[0].project_budget_base ?? userBudget) : userBudget;
     const quotationBase = milestones.length > 0 ? num(milestones[0].quotation_base ?? quotationAmount) : quotationAmount;
     const pctOf = (base: number, pct: string) => Math.round(base * (Number(pct) || 0)) / 100;
@@ -592,6 +597,8 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                     <p className="p-4 text-sm text-gray-500 dark:text-gray-400">Loading milestones...</p>
                 ) : milestones.length === 0 ? (
                     <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No milestones yet. Use “+ Add Milestone”.</p>
+                ) : shownMilestones.length === 0 ? (
+                    <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No milestones match these filters.</p>
                 ) : (
                     <table className="w-full text-sm">
                         <thead>
@@ -613,7 +620,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                             </tr>
                         </thead>
                         <tbody>
-                            {milestones.map((m, index) => {
+                            {shownMilestones.map((m, index) => {
                                 const isEditing = editingId === m.id;
                                 const overBudget = num(m.actual_cost) > num(m.budget_amount) && num(m.budget_amount) > 0;
                                 const billedBase = num(m.billed_base_amount ?? m.billed_amount);

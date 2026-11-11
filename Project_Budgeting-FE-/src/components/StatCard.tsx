@@ -21,8 +21,17 @@ interface StatCardProps {
   caption?: React.ReactNode;
   /** Icon tint: blue (default), red for problems, amber for warnings. */
   iconTone?: 'blue' | 'risk' | 'amber';
+  /** Thin progress bar under the caption (0-100+; over 100 shows full). */
+  progress?: { percent: number; tone?: 'blue' | 'green' | 'amber' | 'risk'; label?: string };
   className?: string;
 }
+
+const BAR_TONES = {
+  blue: 'bg-blue-600 dark:bg-blue-400',
+  green: 'bg-green-600 dark:bg-green-400',
+  amber: 'bg-amber-500 dark:bg-amber-400',
+  risk: 'bg-red-600 dark:bg-red-400',
+};
 
 const ICON_TONES = {
   blue: 'bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400',
@@ -43,6 +52,7 @@ export const StatCard: React.FC<StatCardProps> = ({
   compact = false,
   caption,
   iconTone = 'blue',
+  progress,
   className = '',
 }) => {
   // compact cards are size containers: a very narrow one drops its decorative icon so the label fits.
@@ -106,6 +116,21 @@ export const StatCard: React.FC<StatCardProps> = ({
         </p>
       )}
       {caption && <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{caption}</p>}
+      {progress && (
+        <div
+          role="progressbar"
+          aria-label={progress.label ?? label}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(Math.max(0, Math.min(100, progress.percent)))}
+          className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
+        >
+          <div
+            className={`h-full rounded-full ${BAR_TONES[progress.tone ?? 'blue']}`}
+            style={{ width: `${Math.max(0, Math.min(100, progress.percent))}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 };
