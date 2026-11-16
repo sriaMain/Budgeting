@@ -74,6 +74,14 @@ def send_task_assignment_email(task_id, user_id):
 
 
 @shared_task
+def auto_update_statuses():
+    """Hourly (myproject/celery.py): ended resource assignments -> Completed, milestones follow
+    their resources. The screens also run this when they load (Project/status_automation.py)."""
+    from Project.status_automation import apply_status_rules
+    return apply_status_rules()
+
+
+@shared_task
 def check_running_timers():
     """Check all running timers and auto-stop if allocated hours exceeded"""
     from Project.models import TaskTimerLog

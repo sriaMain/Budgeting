@@ -4,7 +4,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { Search, Filter, Plus, ChevronDown, X, Briefcase, Clock, CheckCircle2, Wallet, PieChart, TrendingUp } from 'lucide-react';
-import { CreateProjectModal } from '../components/CreateProjectModal';
+import { InternalProjectDrawer } from '../components/project/InternalProjectDrawer';
+import { useAppSelector } from '../hooks/useAppSelector';
 import { ProjectHealthCard, type ProjectHealth } from '../components/ProjectHealthCard';
 import { MetricCard } from '../components/StatCard';
 import { EmptyState } from '../components/EmptyState';
@@ -18,6 +19,9 @@ interface Project {
 	project_no: number;
 	project_name: string;
 	project_type?: 'internal' | 'external';
+	/** 'internal' = Internal Project (no quotation / client billing). */
+	project_category?: 'client' | 'internal';
+	department?: string;
 	// Engagement model: Fixed Budget / Milestone-Based or Time & Material
 	engagement_type?: 'fixed' | 'time_and_material';
 	client?: number | null;
@@ -128,6 +132,8 @@ export default function ProjectsScreen(_props: { userRole?: string; currentPage?
 	const navigate = useNavigate();
 	const [searchParams, setSearchParams] = useSearchParams();
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+	const userRole = useAppSelector((state) => state.auth.userRole);
+	const canCreateInternal = userRole === 'admin' || userRole === 'manager';
 	const [companyGroups, setCompanyGroups] = useState<CompanyGroup[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [searchQuery, setSearchQuery] = useState(searchParams.get('q') ?? '');
@@ -228,7 +234,9 @@ export default function ProjectsScreen(_props: { userRole?: string; currentPage?
 							id: p.project_no, // Use project_no as id
 							project_no: p.project_no,
 							project_name: p.project_name,
-							project_type: 'external', // Default
+							project_type: p.project_type || 'external',
+							project_category: p.project_category || 'client',
+							department: p.department,
 							engagement_type: p.engagement_type,
 							client: null,
 							client_name: company.company_name,
@@ -321,16 +329,18 @@ export default function ProjectsScreen(_props: { userRole?: string; currentPage?
 		}
 	};
 
-	const newProjectButton = (
+	// Client projects are created from a confirmed quotation (Pipeline); here: internal projects,
+	// which Admins, Managers and Project Managers create directly (no quotation).
+	const newProjectButton = canCreateInternal ? (
 		<button
 			type="button"
 			onClick={() => setIsCreateModalOpen(true)}
 			className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-md bg-navy-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-navy-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-950"
 		>
 			<Plus size={16} aria-hidden="true" />
-			New Project
+			New Internal Project
 		</button>
-	);
+	) : undefined;
 
 	return (
 		<AppShell breadcrumb="Projects" title="Projects" actions={newProjectButton}>
@@ -424,7 +434,7 @@ export default function ProjectsScreen(_props: { userRole?: string; currentPage?
 											key={project.id}
 											name={project.project_name}
 											href={href}
-											engagementType={project.engagement_type}
+											engagementType={project.project_category === 'internal' ? 'internal' : project.engagement_type}
 											health={health}
 											budgetUsedPct={pct}
 											usedAmount={pct === null ? undefined : formatMoney(project.budget?.used_budget, projectCurrency)}
@@ -441,7 +451,8 @@ export default function ProjectsScreen(_props: { userRole?: string; currentPage?
 											}
 											actions={[
 												{ label: 'View project', onSelect: () => navigate(href) },
-												{ label: 'Edit details', onSelect: () => navigate(`/projects/edit/${project.project_no}`) },
+												// Internal projects are edited from their page (Edit Project), not the quotation editor.
+												{ label: 'Edit details', onSelect: () => navigate(project.project_category === 'internal' ? `${href}?edit=1` : `/projects/edit/${project.project_no}`) },
 											]}
 										/>
 									);
@@ -452,12 +463,10 @@ export default function ProjectsScreen(_props: { userRole?: string; currentPage?
 				</div>
 			)}
 
-			<CreateProjectModal
+			<InternalProjectDrawer
 				isOpen={isCreateModalOpen}
-				onClose={() => {
-					setIsCreateModalOpen(false);
-					fetchProjects(); // Refresh list after creation
-				}}
+				onClose={() => setIsCreateModalOpen(false)}
+				onSaved={() => fetchProjects()}
 			/>
 
 			{isFilterModalOpen && (

@@ -1,10 +1,10 @@
 /**
  * Project Details -> Invoices. Filtering, sorting, paging and totals run on the server
- * (GET /projects/<id>/invoices/); Export Excel sends the same filters, so the file matches.
- * Remount (key) when the page's filters change.
+ * (GET /projects/<id>/invoices/). Its Excel export (More Actions in the page header) sends the
+ * same filters, so the file matches. Remount (key) when the page's filters change.
  */
 import React, { useState } from 'react';
-import { Download, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import axiosInstance from '../../utils/axiosInstance';
 import { DataTable, type DataColumn, type DataTableSort } from '../DataTable';
@@ -14,6 +14,7 @@ import { filterParams, type ProjectFilterValues } from '../../hooks/useProjectFi
 import { formatDate as toDMY } from '../../utils/date';
 import { errorText, saveDownload } from '../../utils/resources';
 import { invoiceStatusVariant, PAYMENT_STATUS_LABEL } from '../../utils/statusStyles';
+import { type RegisterExport, useRegisterExport } from './tabExport';
 
 interface InvoiceRow {
     id: number;
@@ -45,6 +46,8 @@ interface Props {
     onGenerateInvoice: () => void;
     canGenerate: boolean;
     reloadToken: number;
+    /** Offers this tab's Excel export to the page's More Actions menu. */
+    registerExport?: RegisterExport;
 }
 
 const PAGE_SIZE = 25;
@@ -57,10 +60,9 @@ const money = (v: string | number, currency: string) => {
     }
 };
 
-export const ProjectInvoicesPanel: React.FC<Props> = ({ projectId, filters, onOpenInvoice, onGenerateInvoice, canGenerate, reloadToken }) => {
+export const ProjectInvoicesPanel: React.FC<Props> = ({ projectId, filters, onOpenInvoice, onGenerateInvoice, canGenerate, reloadToken, registerExport }) => {
     const [sort, setSort] = useState<DataTableSort>({ key: 'issue_date', direction: 'desc' });
     const [page, setPage] = useState(1);
-    const [exporting, setExporting] = useState(false);
     const query = filterParams(filters);
     const params = { ...query, page, page_size: PAGE_SIZE, ordering: `${sort.direction === 'desc' ? '-' : ''}${sort.key}`, _r: reloadToken };
     const { data, staleData, loading, error, reload } = useApiData<InvoiceListResponse>(`/projects/${projectId}/invoices/`, params, 'Failed to load invoices');
@@ -73,16 +75,15 @@ export const ProjectInvoicesPanel: React.FC<Props> = ({ projectId, filters, onOp
     };
 
     const exportExcel = async () => {
-        setExporting(true);
+        const toastId = toast.loading('Preparing the invoices Excel file…');
         try {
             const res = await axiosInstance.get<Blob>(`/projects/${projectId}/invoices/export/`, { params: query, responseType: 'blob' });
-            toast.success(`Downloaded ${saveDownload(res, 'Invoices.xlsx')}`);
+            toast.success(`Downloaded ${saveDownload(res, 'Invoices.xlsx')}`, { id: toastId });
         } catch (err) {
-            toast.error(await errorText(err, 'Export failed'));
-        } finally {
-            setExporting(false);
+            toast.error(await errorText(err, 'Export failed'), { id: toastId });
         }
     };
+    useRegisterExport(registerExport, 'Export Invoices (Excel)', !!shown?.count, exportExcel);
 
     const columns: DataColumn<InvoiceRow>[] = [
         { key: 'no', header: 'Invoice No', sortKey: 'invoice_no', width: '140px', cell: (r) => <span className="font-medium text-gray-900 dark:text-white">{r.invoice_no}</span> },
@@ -121,19 +122,12 @@ export const ProjectInvoicesPanel: React.FC<Props> = ({ projectId, filters, onOp
                 <p className="text-[13px] text-gray-500 dark:text-gray-400" aria-live="polite">
                     {loading && !shown ? 'Loading invoices…' : `${shown?.count ?? 0} ${shown?.count === 1 ? 'invoice' : 'invoices'}`}
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" onClick={exportExcel} disabled={exporting || !shown?.count}
-                        title={shown?.count ? 'Download the invoices matching the filters as Excel' : 'No invoices to export'}
-                        className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md border border-gray-300 bg-white px-3 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
-                        <Download size={14} aria-hidden="true" /> {exporting ? 'Exporting…' : 'Export Excel'}
+                {canGenerate && (
+                    <button type="button" onClick={onGenerateInvoice}
+                        className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md bg-blue-600 px-3 text-[13px] font-medium text-white hover:bg-blue-700">
+                        <Plus size={14} aria-hidden="true" /> Generate Invoice
                     </button>
-                    {canGenerate && (
-                        <button type="button" onClick={onGenerateInvoice}
-                            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md bg-blue-600 px-3 text-[13px] font-medium text-white hover:bg-blue-700">
-                            <Plus size={14} aria-hidden="true" /> Generate Invoice
-                        </button>
-                    )}
-                </div>
+                )}
             </div>
             <DataTable<InvoiceRow>
                 label="Invoices"

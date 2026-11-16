@@ -136,12 +136,34 @@ class Project(models.Model):
         blank=True,
         related_name='project'
     )
+
+    # --- Project category: a client project (from an approved quotation - billed to a client)
+    # or an internal project (created directly, no quotation, client or billing; it has an
+    # approved internal budget instead). Every project made before this field existed is a
+    # 'client' project, including older project_type='internal' ones created without a quote,
+    # so their screens don't change. Only the Internal Project form creates 'internal' ones.
+    CATEGORY_CHOICES = [
+        ('client', 'Client Project'),
+        ('internal', 'Internal Project'),
+    ]
+    project_category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='client')
+    # Owning department (internal projects) - a name from AIRA HRMS's department list.
+    department = models.CharField(max_length=150, blank=True)
+    description = models.TextField(blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     modified_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def is_internal(self):
+        """An Internal Project (project_category) - no quotation, client billing or revenue."""
+        return self.project_category == 'internal'
 
     def clean(self):
         if self.project_type == 'external' and not self.created_from_quotation:
             raise ValidationError("Quotation is required for external projects.")
+        if self.project_category == 'internal' and self.created_from_quotation_id:
+            raise ValidationError("Internal projects are not created from a quotation.")
 
     def save(self, *args, **kwargs):
         # ✅ AUTO-ASSIGN CLIENT AND ACCOUNTING ATTRIBUTION FROM QUOTATION
@@ -260,8 +282,13 @@ class ProjectBudget(models.Model):
         Margin was entered) already give exactly this - Contract Value
         itself excludes GST (Project.save() sets it from the quote's
         sub_total, not total_amount). Falls back to total_budget (still
-        tax/profit-inclusive) for T&M projects or ones with neither set."""
+        tax/profit-inclusive) for T&M projects or ones with neither set.
+
+        Internal projects: the Approved Internal Budget (total_budget) - they have no contract
+        value. Falls back to the rules above if it was never set."""
         project = self.project
+        if project and project.is_internal and self.total_budget:
+            return self.total_budget
         if project and project.engagement_type == 'fixed':
             if project.remaining_amount is not None:
                 return project.remaining_amount
@@ -278,8 +305,12 @@ class ProjectBudget(models.Model):
         plus whatever of the execution budget ends up unspent, both
         correctly flow into this figure - Contract Value is exactly Profit
         Margin + cost_budget by construction, so this is equivalent to
-        "profit already secured" + "remaining execution budget"."""
+        "profit already secured" + "remaining execution budget".
+
+        Internal projects earn no client revenue, so they have no profit (0)."""
         project = self.project
+        if project and project.is_internal:
+            return Decimal("0.00")
         if project and project.engagement_type == 'fixed' and project.contract_value is not None:
             revenue = project.contract_value
         else:

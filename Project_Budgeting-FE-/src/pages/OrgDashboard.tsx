@@ -16,7 +16,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { ReusableTable } from '../components/ReusableTable';
 import { ApprovalDrawer } from '../components/ApprovalDrawer';
 import { RecordPaymentModal } from '../components/RecordPaymentModal';
-import { CreateProjectModal } from '../components/CreateProjectModal';
+import { InternalProjectDrawer } from '../components/project/InternalProjectDrawer';
 import { formatCurrency, formatCurrencyCompact } from '../utils/format';
 import { CHART_CATEGORICAL, getChartChrome } from '../utils/chartTheme';
 import { useAppSelector } from '../hooks/useAppSelector';
@@ -84,6 +84,9 @@ const PORTFOLIO_TILES: { key: keyof AdminOverview['portfolio']; label: string; s
 export const OrgDashboard: React.FC = () => {
   const navigate = useNavigate();
   const username = useAppSelector((state) => state.auth.username);
+  const userRole = useAppSelector((state) => state.auth.userRole);
+  // "+ Create" (no quotation) = a new Internal Project: Admins, Managers and Project Managers.
+  const canCreateInternal = userRole === 'admin' || userRole === 'manager';
   const { theme } = useTheme();
   const chartChrome = getChartChrome(theme);
 
@@ -190,13 +193,16 @@ export const OrgDashboard: React.FC = () => {
           <p className="text-sm text-gray-500 dark:text-gray-400">Project Budgeting Overview</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setIsCreateModalOpen(true)}
-            className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800 transition-colors"
-          >
-            + Create
-          </button>
+          {canCreateInternal && (
+            <button
+              type="button"
+              onClick={() => setIsCreateModalOpen(true)}
+              title="New internal project (client projects are created from a confirmed quotation)"
+              className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800 transition-colors"
+            >
+              + Create
+            </button>
+          )}
           <button
             type="button"
             onClick={() => navigate('/reports')}
@@ -767,7 +773,7 @@ export const OrgDashboard: React.FC = () => {
         />
       )}
 
-      <CreateProjectModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
+      <InternalProjectDrawer isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
     </div>
   );
 };

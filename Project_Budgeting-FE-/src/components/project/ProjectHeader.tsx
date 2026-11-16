@@ -1,6 +1,7 @@
-/** Project Details header: ID, status, type, name, client, dates, Edit and More Actions. */
+/** Project Details header: ID, status, type, name, client (or department + project manager for an
+ * internal project), dates, Edit and More Actions. */
 import React from 'react';
-import { ArrowLeft, Building2, CalendarDays, Pencil } from 'lucide-react';
+import { ArrowLeft, Building2, CalendarDays, Network, Pencil, UserRound } from 'lucide-react';
 import { ActionMenu, type ActionMenuItem } from '../ActionMenu';
 import { formatDate as toDMY } from '../../utils/date';
 
@@ -8,6 +9,8 @@ interface Props {
     projectNo: string | number;
     name: string;
     clientName?: string;
+    department?: string;
+    managerName?: string | null;
     statusLabel?: string;
     statusClass: string;
     typeLabel: string;
@@ -21,7 +24,7 @@ interface Props {
 }
 
 export const ProjectHeader: React.FC<Props> = ({
-    projectNo, name, clientName, statusLabel, statusClass, typeLabel, typeClass, startDate, endDate, canEdit, onBack, onEdit, actions,
+    projectNo, name, clientName, department, managerName, statusLabel, statusClass, typeLabel, typeClass, startDate, endDate, canEdit, onBack, onEdit, actions,
 }) => (
     <header className="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-wrap items-start gap-3">
@@ -51,6 +54,18 @@ export const ProjectHeader: React.FC<Props> = ({
                         <div className="flex min-w-0 items-center gap-1">
                             <dt><Building2 size={13} aria-label="Client" className="shrink-0" /></dt>
                             <dd className="truncate" title={clientName}>{clientName}</dd>
+                        </div>
+                    )}
+                    {department && (
+                        <div className="flex min-w-0 items-center gap-1">
+                            <dt><Network size={13} aria-label="Department" className="shrink-0" /></dt>
+                            <dd className="truncate" title={`Department: ${department}`}>{department}</dd>
+                        </div>
+                    )}
+                    {managerName && (
+                        <div className="flex min-w-0 items-center gap-1">
+                            <dt><UserRound size={13} aria-label="Project manager" className="shrink-0" /></dt>
+                            <dd className="truncate" title={`Project manager: ${managerName}`}>{managerName}</dd>
                         </div>
                     )}
                     <div className="flex items-center gap-1">

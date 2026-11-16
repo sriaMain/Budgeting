@@ -13,7 +13,8 @@ from .views import (ProjectAPIView, ProjectBudgetAPIView, BudgetLineListCreateAP
   PauseTaskTimerAPIView, PendingExtraHoursAPIView, ReviewExtraHoursAPIView, RequestExtraHoursAPIView, ExtraHoursHistoryAPIView,
   TaskStatusChoicesView, ServiceUsersAPIView, TaskGroupedByStatusAPIView, TimesheetWeeklySummaryAPIView, TimesheetEmployeeAPIView, ProjectStatusChoicesView, ProjectNamesAPIView,
   MyTaskExtrasAPIView, MyActiveTimerAPIView, AdjustConsumedHoursAPIView, ProjectManagerOptionsAPIView, ProjectPOCOptionsAPIView,
-  ProjectHelpdeskTasksAPIView, HelpdeskTasksAPIView)
+  ProjectHelpdeskTasksAPIView, HelpdeskTasksAPIView,
+  ProjectDepartmentOptionsAPIView, ProjectActivityAPIView, InternalProjectReportExportAPIView)
 
 
 urlpatterns = [
@@ -39,6 +40,10 @@ urlpatterns = [
     path('projects/<int:project_no>/invoices/', ProjectInvoiceListAPIView.as_view(), name='project-invoice-list'),
     path('projects/<int:project_no>/invoices/export/', ProjectInvoiceExportAPIView.as_view(), name='project-invoice-export'),
     path('projects/<int:project_no>/filter-options/', ProjectFilterOptionsAPIView.as_view(), name='project-filter-options'),
+    # Internal projects (no quotation)
+    path('projects/department-options/', ProjectDepartmentOptionsAPIView.as_view(), name='project-department-options'),
+    path('projects/<int:project_no>/activity/', ProjectActivityAPIView.as_view(), name='project-activity'),
+    path('projects/<int:project_no>/internal-report/export/', InternalProjectReportExportAPIView.as_view(), name='project-internal-report-export'),
     path('projects/<int:project_no>/resources/import-template/', ResourceImportTemplateAPIView.as_view(), name='project-resource-import-template'),
     path('projects/<int:project_no>/resources/import/', ResourceImportAPIView.as_view(), name='project-resource-import'),
     path('projects/<int:project_no>/resources/<int:assignment_id>/', ResourceAssignmentDetailAPIView.as_view(), name='project-resource-detail'),

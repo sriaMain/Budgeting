@@ -32,6 +32,14 @@ class ProjectAPIView(APIView):
     # CREATE PROJECT
     # @transaction.atomic
     def post(self, request):
+        # Internal projects (no quotation): Admin / Manager / Project Manager only. Client
+        # projects (from a quotation) keep their existing rules.
+        from .internal_projects import can_manage_internal_projects
+        if request.data.get('project_category') == 'internal' and not can_manage_internal_projects(request.user):
+            return Response(
+                {"error": "Only Admins, Managers and Project Managers can create internal projects."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = ProjectCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         project = serializer.save()
@@ -96,7 +104,7 @@ class ProjectAPIView(APIView):
 
         projects = (
             Project.objects
-            .select_related("client", "budget", "call_center", "profit_center", "gl_account", "created_from_quotation")
+            .select_related("client", "budget", "call_center", "profit_center", "gl_account", "created_from_quotation", "project_manager")
             .prefetch_related(
                 "client__pocs",
                 "created_from_quotation__items",
@@ -139,7 +147,12 @@ class ProjectAPIView(APIView):
 
         for project in projects:
             client = project.client
-            company_name = client.company_name if client else "No Client"
+            if client:
+                company_name = client.company_name
+            elif project.is_internal:
+                company_name = "Internal Projects"
+            else:
+                company_name = "No Client"
 
             if company_name not in company_map:
                 company_map[company_name] = {
@@ -224,6 +237,13 @@ class ProjectAPIView(APIView):
             return Response(
                 {"error": "Project not found"},
                 status=status.HTTP_404_NOT_FOUND
+            )
+
+        from .internal_projects import can_manage_internal_projects
+        if project.is_internal and not can_manage_internal_projects(request.user):
+            return Response(
+                {"error": "Only Admins, Managers and Project Managers can edit internal projects."},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
         serializer = ProjectCreateSerializer(
@@ -645,6 +665,8 @@ class MilestoneListCreateAPIView(APIView):
 
     def get(self, request, project_no):
         project = get_object_or_404(Project, project_no=project_no)
+        from .status_automation import apply_status_rules
+        apply_status_rules(project)  # statuses follow the resources (and their end dates)
         milestones = project.milestones.filter(is_active=True)
         return Response(
             MilestoneSerializer(milestones, many=True).data,
@@ -799,6 +821,8 @@ class ResourceAssignmentListCreateAPIView(APIView):
 
     def get(self, request, project_no):
         project = get_object_or_404(Project, project_no=project_no)
+        from .status_automation import apply_status_rules
+        apply_status_rules(project)  # ended assignments -> Completed, milestones follow
         if 'page' in request.query_params:
             return self._table(request, project)
         assignments = project.resource_assignments.filter(is_active=True).select_related('milestone')
@@ -845,6 +869,8 @@ class ResourceAssignmentListCreateAPIView(APIView):
         serializer = ResourceAssignmentSerializer(data=request.data, context={'project': project})
         serializer.is_valid(raise_exception=True)
         assignment = serializer.save(project=project, created_by=request.user, updated_by=request.user)
+        from .status_automation import apply_status_rules
+        apply_status_rules(project)  # e.g. its milestone is now In Progress
         return Response(ResourceAssignmentSerializer(assignment).data, status=status.HTTP_201_CREATED)
 
 
@@ -869,6 +895,8 @@ class ResourceAssignmentDetailAPIView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         assignment = serializer.save(updated_by=request.user)
+        from .status_automation import apply_status_rules
+        apply_status_rules(assignment.project)
         return Response(ResourceAssignmentSerializer(assignment).data, status=status.HTTP_200_OK)
 
     def patch(self, request, project_no, assignment_id):
@@ -879,6 +907,8 @@ class ResourceAssignmentDetailAPIView(APIView):
         assignment.is_active = False
         assignment.updated_by = request.user
         assignment.save(update_fields=['is_active', 'updated_by', 'updated_at'])
+        from .status_automation import apply_status_rules
+        apply_status_rules(assignment.project)  # e.g. the rest are all Completed
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -930,11 +960,13 @@ class ResourceExportAPIView(APIView):
 
     def get(self, request, project_no):
         from . import resource_service as rs
+        from .status_automation import apply_status_rules
         project = get_object_or_404(Project, project_no=project_no)
         try:
             filters = rs.parse_filters(request.query_params, project)
         except rs.ResourceFilterError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        apply_status_rules(project)
         rows = rs.matching_rows(project, filters)
         return _xlsx_response(rs.build_export(project, filters, rows), rs.export_filename(project, filters))
 
@@ -977,6 +1009,62 @@ class ProjectInvoiceExportAPIView(APIView):
         except FilterError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return _xlsx_response(ie.build_export(project, ie.matching_rows(project, f), f), ie.export_filename(project))
+
+
+class ProjectDepartmentOptionsAPIView(APIView):
+    """GET /projects/department-options/ - department names for an internal project (AIRA HRMS
+    departments of active employees, plus ones already used on projects)."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from .internal_projects import can_manage_internal_projects, department_options
+        return Response({
+            "departments": department_options(),
+            "can_manage_internal_projects": can_manage_internal_projects(request.user),
+        })
+
+
+class ProjectActivityAPIView(APIView):
+    """GET /projects/<project_no>/activity/ - the project's history, newest first (Activity tab):
+    milestones, resources, expenses, vendor bills, payments and later finance changes.
+    ?search= (title / detail / who), ?date_from= / ?date_to= (event date), ?page=, ?page_size=."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        from django.utils import timezone as tz
+
+        from .internal_projects import project_activity
+        from .project_filters import FilterError, page_of, parse
+        project = get_object_or_404(Project, project_no=project_no)
+        try:
+            f = parse(request.query_params, project)
+        except FilterError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        events = project_activity(project)
+        if f.has_dates:
+            events = [e for e in events if f.in_range(tz.localtime(e['at']).date())]
+        if f.search:
+            events = [e for e in events if f.matches(e['title'], e['detail'], e['actor'])]
+        return Response(page_of(events, f), status=status.HTTP_200_OK)
+
+
+class InternalProjectReportExportAPIView(APIView):
+    """GET /projects/<project_no>/internal-report/export/ - the internal project's financial report
+    (Summary, Milestones, Resources, Costs) as Excel. Internal projects only."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, project_no):
+        from . import resource_service as rs
+        from .internal_projects import build_internal_report, report_filename
+        project = get_object_or_404(Project, project_no=project_no)
+        if not project.is_internal:
+            return Response({"error": "This report is for internal projects."}, status=status.HTTP_400_BAD_REQUEST)
+        summary = ProjectFinancialSummaryAPIView()._internal_summary(project)
+        rows = rs.matching_rows(project, rs.ResourceFilters(ordering='milestone'))
+        return _xlsx_response(build_internal_report(project, summary, rows), report_filename(project))
 
 
 class ProjectFilterOptionsAPIView(APIView):
@@ -1303,8 +1391,11 @@ class ProjectFinancialSummaryAPIView(APIView):
 
         if project.engagement_type == 'time_and_material':
             data = self._tm_summary(project)
+        elif project.is_internal:
+            data = self._internal_summary(project)
         else:
             data = self._fixed_summary(project)
+        data.setdefault("project_category", project.project_category)
         # The Project Details date filter: what happened inside the range, next to the
         # project-to-date figures above (which never change with the filter).
         data["period"] = self._period_summary(project, f) if f.has_dates else None
@@ -1494,6 +1585,52 @@ class ProjectFinancialSummaryAPIView(APIView):
                 "expenses_amount": unlinked_expenses,
             },
         }
+
+    def _internal_summary(self, project):
+        """Internal project (no quotation, no client billing): the same costs as a Fixed Budget
+        project - resources + expenses + paid vendor bills, nothing counted twice - measured
+        against the Approved Internal Budget (not the milestones' total), plus how much of it is
+        allocated to milestones and how far the milestones have got."""
+        from .internal_projects import milestone_progress, milestone_rows, pct
+        zero = Decimal("0.00")
+        data = self._fixed_summary(project)
+        approved = self._cost_budget_for_project(project)
+        actual = data['actual_cost']
+        rows = milestone_rows(project)
+        allocated = sum((r['budget'] for r in rows), zero)
+        project_level_resources = sum(
+            (a.assigned_cost for a in project.resource_assignments.filter(is_active=True, milestone__isnull=True)
+             .exclude(status='removed')), zero,
+        ).quantize(Decimal("0.01"))
+        data.update({
+            "project_category": "internal",
+            "approved_budget": approved,
+            "budget": approved,
+            "contract_value": None,
+            "remaining_budget": approved - actual,
+            "variance": approved - actual,
+            "is_over_budget": actual > approved,
+            "utilization_percent": pct(actual, approved),
+            "allocated_to_milestones": allocated,
+            "unallocated_budget": approved - allocated,
+            "milestone_progress": milestone_progress(rows),
+            "milestones": rows,
+            # Client billing / revenue / profit don't apply to an internal project.
+            "billed_amount": zero,
+            "received_amount": zero,
+            "outstanding_amount": zero,
+            "gross_margin": None,
+            "margin_percent": None,
+            "invoice_breakdown": [],
+            "net_cash_position": -data['outgoing_payments'],
+        })
+        data["not_linked"] = {
+            "billed_amount": zero,
+            "received_amount": zero,
+            "expenses_amount": data["not_linked"]["expenses_amount"],
+            "resource_cost": project_level_resources,
+        }
+        return data
 
     def _tm_summary(self, project):
         """Project totals = the sum of the project's monthly periods (Project/utils/tm_periods.py),

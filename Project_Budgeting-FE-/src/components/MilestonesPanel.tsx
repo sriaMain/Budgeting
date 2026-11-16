@@ -58,10 +58,18 @@ interface Milestone {
     outstanding_amount: string | number;
     billing_status: string;
     payment_status: string;
+    /** Expenses tagged to this milestone (resource categories excluded). */
+    expenses_amount?: string | number;
+    /** Paid vendor bill amounts tagged to this milestone. */
+    bills_amount?: string | number;
+    /** Who works on it (Resources tab, removed ones left out). */
+    assigned_resources?: { name: string; type: string; status: string }[];
 }
 
 interface MilestonesPanelProps {
     projectId: string;
+    /** Internal project (no quotation): allocated budget, progress and costs - no billing or payment. */
+    isInternal?: boolean;
     currency?: string;
     /** Project user budget (cost_budget) - Budget % is taken of this. */
     userBudget?: number;
@@ -129,15 +137,19 @@ const emptyForm = {
     budget_percent: '',
     bill_percent: '',
     status: 'not_started',
+    /** Internal projects: % done (completion_percent). */
+    progress: '0',
 };
 
-export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, currency = 'INR', userBudget = 0, quotationAmount = 0, projectStart, onChanged, pageFilters }) => {
+export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, isInternal = false, currency = 'INR', userBudget = 0, quotationAmount = 0, projectStart, onChanged, pageFilters }) => {
     const [milestones, setMilestones] = useState<Milestone[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     // Only the first load shows "Loading..."; background refreshes swap data in silently.
     const [hasLoaded, setHasLoaded] = useState(false);
 
-    const [showAddForm, setShowAddForm] = useState(false);
+    // The Add / Edit Milestone drawer (one form for both, like Add / Edit Resource).
+    const [formMode, setFormMode] = useState<null | { kind: 'add' } | { kind: 'edit'; id: number; name: string }>(null);
+    const editId = formMode?.kind === 'edit' ? formMode.id : null;
     const [form, setForm] = useState(emptyForm);
     const [formErrors, setFormErrors] = useState<Record<string, string>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -145,9 +157,6 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
     const [isPreparingForm, setIsPreparingForm] = useState(false);
     // Where the add form's Planned Start default came from
     const [startHint, setStartHint] = useState('');
-
-    const [editingId, setEditingId] = useState<number | null>(null);
-    const [editForm, setEditForm] = useState(emptyForm);
 
     const [invoiceModalMilestone, setInvoiceModalMilestone] = useState<Milestone | null>(null);
     const [invoiceAmount, setInvoiceAmount] = useState('');
@@ -221,7 +230,9 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
             bill: round2(Math.max(quotationBase - used.bill, 0)),
         };
     };
-    const addAvailable = availableFor(null);
+    // What this form may use: everything the other milestones haven't (when editing, this
+    // milestone's own share counts as available).
+    const formAvailable = availableFor(editId);
 
     const validateForm = (values: typeof emptyForm, excludeId: number | null = null) => {
         const errors: Record<string, string> = {};
@@ -251,6 +262,12 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
         } else if (quotationBase && pctOf(quotationBase, values.bill_percent) > available.bill + 0.005) {
             errors.bill_percent = `Only ${pctOfBase(available.bill, quotationBase)}% (${available.bill.toLocaleString()} ${currency}) of the quotation is left.`;
         }
+        if (isInternal) {
+            const progress = Number(values.progress);
+            if (values.progress === '' || !Number.isInteger(progress) || progress < 0 || progress > 100) {
+                errors.progress = 'Progress must be a whole number from 0 to 100.';
+            }
+        }
         return errors;
     };
 
@@ -261,8 +278,10 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
         planned_start_date: values.planned_start_date || null,
         planned_end_date: values.planned_end_date || null,
         budget_percent: values.budget_percent === '' ? 0 : parseFloat(values.budget_percent),
-        bill_percent: values.bill_percent === '' ? 0 : parseFloat(values.bill_percent),
+        // Internal projects have no quotation to bill against.
+        bill_percent: isInternal || values.bill_percent === '' ? 0 : parseFloat(values.bill_percent),
         status: values.status,
+        ...(isInternal ? { completion_percent: parseInt(values.progress, 10) || 0 } : {}),
     });
 
     // Open the add form pre-filled so milestones follow on from each other:
@@ -271,8 +290,8 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
     // budget / bill % the existing milestones haven't used yet. Defaults come
     // from a fresh fetch, so they're right even if the list was stale.
     const toggleAddForm = async () => {
-        if (showAddForm) {
-            setShowAddForm(false);
+        if (formMode) {
+            setFormMode(null);
             return;
         }
 
@@ -328,40 +347,12 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
             bill_percent: billLeft > 0 ? String(billLeft) : '',
         });
         setFormErrors({});
-        setShowAddForm(true);
+        setFormMode({ kind: 'add' });
     };
 
-    const handleAdd = async () => {
-        const errors = validateForm(form);
-        setFormErrors(errors);
-        if (Object.keys(errors).length > 0) return;
-
-        setIsSubmitting(true);
-        try {
-            const res = await axiosInstance.post<Milestone>(`/projects/${projectId}/milestones/`, buildPayload(form));
-            toast.success('Milestone added');
-            // Show the saved milestone right away, then refresh for the server's derived figures
-            if (res.data?.id) {
-                setMilestones((prev) => [...prev.filter((m) => m.id !== res.data.id), res.data]
-                    .sort((a, b) => num(a.sequence) - num(b.sequence) || a.id - b.id));
-            }
-            setForm(emptyForm);
-            setFormErrors({});
-            setShowAddForm(false);
-            fetchMilestones();
-            onChanged?.();
-        } catch (error: any) {
-            const data = error?.response?.data;
-            const msg = data?.sequence?.[0] || data?.budget_percent?.[0] || data?.bill_percent?.[0] || data?.budget_amount?.[0] || data?.name?.[0] || data?.detail || 'Failed to add milestone';
-            toast.error(msg);
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
+    // Edit opens the same drawer, filled in from the milestone.
     const startEdit = (milestone: Milestone) => {
-        setEditingId(milestone.id);
-        setEditForm({
+        setForm({
             name: milestone.name,
             description: milestone.description || '',
             sequence: String(milestone.sequence),
@@ -370,29 +361,52 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
             budget_percent: String(num(milestone.budget_percent)),
             bill_percent: String(num(milestone.bill_percent)),
             status: milestone.status,
+            progress: String(num(milestone.completion_percent)),
         });
+        setFormErrors({});
+        setStartHint('');
+        setFormMode({ kind: 'edit', id: milestone.id, name: milestone.name });
     };
 
-    const handleSaveEdit = async (id: number) => {
-        const errors = validateForm(editForm, id);
+    const handleSubmit = async () => {
+        const errors = validateForm(form, editId);
         setFormErrors(errors);
-        // The inline edit row has no error slots, so surface the first problem as a toast
-        const firstError = Object.values(errors)[0];
-        if (firstError) {
-            toast.error(firstError);
-            return;
-        }
+        if (Object.keys(errors).length > 0) return;
 
+        setIsSubmitting(true);
         try {
-            await axiosInstance.patch(`/projects/${projectId}/milestones/${id}/`, buildPayload(editForm));
-            toast.success('Milestone updated');
-            setEditingId(null);
+            if (editId != null) {
+                await axiosInstance.patch(`/projects/${projectId}/milestones/${editId}/`, buildPayload(form));
+                toast.success('Milestone updated');
+            } else {
+                const res = await axiosInstance.post<Milestone>(`/projects/${projectId}/milestones/`, buildPayload(form));
+                toast.success('Milestone added');
+                // Show the saved milestone right away, then refresh for the server's derived figures
+                if (res.data?.id) {
+                    setMilestones((prev) => [...prev.filter((m) => m.id !== res.data.id), res.data]
+                        .sort((a, b) => num(a.sequence) - num(b.sequence) || a.id - b.id));
+                }
+            }
+            setForm(emptyForm);
+            setFormErrors({});
+            setFormMode(null);
             fetchMilestones();
             onChanged?.();
-        } catch (error: any) {
-            const data = error?.response?.data;
-            const msg = data?.sequence?.[0] || data?.budget_percent?.[0] || data?.bill_percent?.[0] || data?.budget_amount?.[0] || data?.name?.[0] || data?.detail || 'Failed to update milestone';
-            toast.error(msg);
+        } catch (error: unknown) {
+            // Field errors arrive as {field: [msg]} or, via the custom exception handler, {error, errors: {field: msg}}.
+            const data = (error as { response?: { data?: Record<string, unknown> } })?.response?.data ?? {};
+            const fields = (data.errors && typeof data.errors === 'object' ? data.errors : data) as Record<string, unknown>;
+            const first = (v: unknown) => (Array.isArray(v) ? String(v[0] ?? '') : typeof v === 'string' ? v : '');
+            const serverErrors: Record<string, string> = {};
+            for (const key of ['name', 'sequence', 'status', 'planned_start_date', 'planned_end_date', 'budget_percent', 'bill_percent', 'budget_amount', 'completion_percent']) {
+                const msg = first(fields[key]);
+                if (msg) serverErrors[key === 'budget_amount' ? 'budget_percent' : key === 'completion_percent' ? 'progress' : key] = msg;
+            }
+            setFormErrors(serverErrors);
+            toast.error(Object.values(serverErrors)[0] || first(data.error) || first(data.detail)
+                || (editId != null ? 'Failed to update milestone' : 'Failed to add milestone'));
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -440,6 +454,113 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
         }
     };
 
+    // Internal projects: allocated budget, progress, who works on it and its costs - no billing.
+    const money0 = (v: number) => `${v.toLocaleString()} ${currency}`;
+    const internalTotals = shownMilestones.reduce(
+        (t, m) => ({
+            budget: t.budget + num(m.budget_amount),
+            resources: t.resources + num(m.resource_cost),
+            expenses: t.expenses + num(m.expenses_amount),
+            bills: t.bills + num(m.bills_amount),
+            actual: t.actual + num(m.actual_cost),
+        }),
+        { budget: 0, resources: 0, expenses: 0, bills: 0, actual: 0 },
+    );
+    const internalTable = (
+        <table className="w-full min-w-[1080px] text-sm">
+            <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-800 text-left text-xs text-gray-500 dark:text-gray-400 uppercase">
+                    <th className="px-4 py-2">#</th>
+                    <th className="px-4 py-2">Milestone</th>
+                    <th className="px-4 py-2">Status</th>
+                    <th className="px-4 py-2">Progress</th>
+                    <th className="px-4 py-2 text-right">Allocated Budget</th>
+                    <th className="px-4 py-2">Resources</th>
+                    <th className="px-4 py-2 text-right">Expenses</th>
+                    <th className="px-4 py-2 text-right">Vendor Bills</th>
+                    <th className="px-4 py-2 text-right">Actual Cost</th>
+                    <th className="px-4 py-2 text-right">Used %</th>
+                    <th className="px-4 py-2 text-right">Remaining</th>
+                    <th className="px-4 py-2 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {shownMilestones.map((m, index) => {
+                    const budget = num(m.budget_amount);
+                    const actual = num(m.actual_cost);
+                    const used = num(m.budget_utilization_percent);
+                    const remaining = num(m.remaining_budget ?? budget - actual);
+                    const progress = num(m.completion_percent);
+                    const people = m.assigned_resources ?? [];
+                    return (
+                        <tr key={m.id} className="border-b border-gray-100 dark:border-gray-800 align-top">
+                            <td className="px-4 py-2 text-gray-500 dark:text-gray-400">{index + 1}</td>
+                            <td className="px-4 py-2">
+                                <p className="text-gray-900 dark:text-white font-medium">{m.name}</p>
+                                <p className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+                                    {toDMY(m.planned_start_date, '—')} – {toDMY(m.planned_end_date, '—')}
+                                </p>
+                                {m.description && <p className="text-xs text-gray-500 dark:text-gray-400">{m.description}</p>}
+                            </td>
+                            <td className="px-4 py-2">
+                                <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded text-xs font-medium ${STATUS_BADGE[m.status] || 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
+                                    {m.status_display}
+                                </span>
+                            </td>
+                            <td className="px-4 py-2">
+                                <span className="tabular-nums text-gray-900 dark:text-white">{progress}%</span>
+                                <div role="progressbar" aria-label={`${m.name}: progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}
+                                    className="mt-1 h-1.5 w-20 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                                    <div className="h-full bg-violet-500" style={{ width: `${Math.min(progress, 100)}%` }} />
+                                </div>
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                                <span className="whitespace-nowrap">{money0(budget)}</span>
+                                <p className="text-[11px] text-gray-500 dark:text-gray-400">{num(m.budget_percent).toFixed(2)}% of approved</p>
+                            </td>
+                            <td className="px-4 py-2">
+                                <span className="whitespace-nowrap text-gray-900 dark:text-white">{people.length} {people.length === 1 ? 'resource' : 'resources'}</span>
+                                {people.length > 0 && (
+                                    <p className="max-w-[12rem] truncate text-[11px] text-gray-500 dark:text-gray-400" title={people.map((p) => p.name).join(', ')}>
+                                        {people.map((p) => p.name).join(', ')}
+                                    </p>
+                                )}
+                                <p className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{money0(num(m.resource_cost))}</p>
+                            </td>
+                            <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">{money0(num(m.expenses_amount))}</td>
+                            <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">{money0(num(m.bills_amount))}</td>
+                            <td className={`px-4 py-2 text-right tabular-nums whitespace-nowrap ${budget > 0 && actual > budget ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-900 dark:text-white'}`}>{money0(actual)}</td>
+                            <td className={`px-4 py-2 text-right ${used > 100 ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-900 dark:text-white'}`}>
+                                {used.toFixed(1)}%
+                                <div className="mt-1 h-1.5 w-16 ml-auto rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                                    <div className={`h-full ${used > 100 ? 'bg-red-500' : used > 80 ? 'bg-amber-500' : 'bg-green-500'}`} style={{ width: `${Math.min(used, 100)}%` }} />
+                                </div>
+                            </td>
+                            <td className={`px-4 py-2 text-right tabular-nums whitespace-nowrap ${remaining < 0 ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-900 dark:text-white'}`}>{money0(remaining)}</td>
+                            <td className="px-4 py-2 text-right whitespace-nowrap">
+                                <button type="button" onClick={() => startEdit(m)} aria-label={`Edit ${m.name}`} className="text-xs text-gray-600 dark:text-gray-400 hover:underline mr-2">Edit</button>
+                                <button type="button" onClick={() => handleArchive(m.id)} className="text-xs text-red-600 dark:text-red-400 hover:underline">Archive</button>
+                            </td>
+                        </tr>
+                    );
+                })}
+            </tbody>
+            <tfoot>
+                <tr className="bg-gray-50 dark:bg-gray-800 font-semibold">
+                    <td className="px-4 py-2" colSpan={4}>Total</td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">{money0(internalTotals.budget)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap">{money0(internalTotals.resources)}</td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">{money0(internalTotals.expenses)}</td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">{money0(internalTotals.bills)}</td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">{money0(internalTotals.actual)}</td>
+                    <td className="px-4 py-2 text-right">{internalTotals.budget > 0 ? ((internalTotals.actual / internalTotals.budget) * 100).toFixed(1) : '0.0'}%</td>
+                    <td className={`px-4 py-2 text-right whitespace-nowrap ${internalTotals.budget - internalTotals.actual < 0 ? 'text-red-600 dark:text-red-400' : ''}`}>{money0(internalTotals.budget - internalTotals.actual)}</td>
+                    <td />
+                </tr>
+            </tfoot>
+        </table>
+    );
+
     const renderStatusBadge = (map: Record<string, { label: string; className: string }>, key: string) => {
         const entry = map[key] || { label: key, className: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300' };
         return (
@@ -463,20 +584,22 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                 </button>
             </div>
 
-            {/* Add Milestone opens in a side drawer, like Add Resource. */}
+            {/* Add and Edit Milestone open in a side drawer, like Add / Edit Resource. */}
             <Drawer
-                isOpen={showAddForm}
-                onClose={() => setShowAddForm(false)}
-                title="Add Milestone"
-                subtitle="A phase of this fixed-budget project, with its share of the budget and billing"
+                isOpen={!!formMode}
+                onClose={() => setFormMode(null)}
+                title={editId != null ? 'Edit Milestone' : 'Add Milestone'}
+                subtitle={formMode?.kind === 'edit' ? formMode.name : isInternal
+                    ? 'A phase of this internal project, with its share of the approved budget'
+                    : 'A phase of this fixed-budget project, with its share of the budget and billing'}
                 size="md"
                 footer={(
                     <DrawerFormFooter
-                        summary={<>Remaining budget: <span className="font-semibold text-gray-800 dark:text-gray-200">{addAvailable.budget.toLocaleString()} {currency}</span></>}
-                        onCancel={() => setShowAddForm(false)}
-                        onSubmit={handleAdd}
-                        submitLabel="Add Milestone"
-                        busyLabel="Adding..."
+                        summary={<>{editId != null ? 'Available budget' : 'Remaining budget'}: <span className="font-semibold text-gray-800 dark:text-gray-200">{formAvailable.budget.toLocaleString()} {currency}</span></>}
+                        onCancel={() => setFormMode(null)}
+                        onSubmit={handleSubmit}
+                        submitLabel={editId != null ? 'Save Changes' : 'Add Milestone'}
+                        busyLabel={editId != null ? 'Saving...' : 'Adding...'}
                         isBusy={isSubmitting}
                     />
                 )}
@@ -514,6 +637,20 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                             {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
                     </div>
+                    {isInternal && (
+                        <div className="sm:col-span-2">
+                            <label htmlFor="ms-progress" className={drawerLabelClass}>Progress (%)</label>
+                            <div className="flex items-center gap-3">
+                                <input id="ms-progress" type="range" min={0} max={100} step={5} value={Number(form.progress) || 0}
+                                    onChange={(e) => setForm({ ...form, progress: e.target.value })} aria-label="Progress"
+                                    className="h-2 min-w-0 flex-1 accent-violet-600" />
+                                <input type="number" min={0} max={100} step={1} value={form.progress} aria-label="Progress percent"
+                                    onChange={(e) => setForm({ ...form, progress: e.target.value })}
+                                    className={`${drawerInputClass} w-20 text-right ${formErrors.progress ? drawerErrorBorder : ''}`} />
+                            </div>
+                            {formErrors.progress && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.progress}</p>}
+                        </div>
+                    )}
                     <div>
                         <label className={drawerLabelClass}>Planned Start</label>
                         <input
@@ -538,7 +675,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                         {formErrors.planned_end_date && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.planned_end_date}</p>}
                     </div>
                     <div className="sm:col-span-2">
-                        <label className={drawerLabelClass}>Budget Amount (%)</label>
+                        <label className={drawerLabelClass}>{isInternal ? 'Allocated Budget (%)' : 'Budget Amount (%)'}</label>
                         <input
                             type="number"
                             min={0}
@@ -550,14 +687,17 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                             className={`${drawerInputClass} ${formErrors.budget_percent ? drawerErrorBorder : ''}`}
                         />
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            = {pctOf(budgetBase, form.budget_percent).toLocaleString()} {currency} of user budget {budgetBase.toLocaleString()} {currency}
+                            {budgetBase
+                                ? <>= {pctOf(budgetBase, form.budget_percent).toLocaleString()} {currency} of {isInternal ? 'the approved budget' : 'user budget'} {budgetBase.toLocaleString()} {currency}</>
+                                : isInternal ? 'Set the project’s approved budget first (Edit Project).' : 'This project has no user budget, so leave Budget % at 0.'}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Remaining: <span className="font-medium text-gray-700 dark:text-gray-200">{addAvailable.budget.toLocaleString()} {currency} ({pctOfBase(addAvailable.budget, budgetBase)}%)</span>
-                            {form.budget_percent !== '' && ` → ${round2(addAvailable.budget - pctOf(budgetBase, form.budget_percent)).toLocaleString()} ${currency} after this`}
+                            {editId != null ? 'Available for this milestone' : 'Remaining'}: <span className="font-medium text-gray-700 dark:text-gray-200">{formAvailable.budget.toLocaleString()} {currency} ({pctOfBase(formAvailable.budget, budgetBase)}%)</span>
+                            {form.budget_percent !== '' && ` → ${round2(formAvailable.budget - pctOf(budgetBase, form.budget_percent)).toLocaleString()} ${currency} left after this`}
                         </p>
                         {formErrors.budget_percent && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.budget_percent}</p>}
                     </div>
+                    {!isInternal && (
                     <div className="sm:col-span-2">
                         <label className={drawerLabelClass}>Bill Amount (%)</label>
                         <input
@@ -571,14 +711,17 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                             className={`${drawerInputClass} ${formErrors.bill_percent ? drawerErrorBorder : ''}`}
                         />
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            = {pctOf(quotationBase, form.bill_percent).toLocaleString()} {currency} of quotation {quotationBase.toLocaleString()} {currency}
+                            {quotationBase
+                                ? <>= {pctOf(quotationBase, form.bill_percent).toLocaleString()} {currency} of quotation {quotationBase.toLocaleString()} {currency}</>
+                                : 'This project has no quotation amount, so leave Bill % at 0.'}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Remaining: <span className="font-medium text-gray-700 dark:text-gray-200">{addAvailable.bill.toLocaleString()} {currency} ({pctOfBase(addAvailable.bill, quotationBase)}%)</span>
-                            {form.bill_percent !== '' && ` → ${round2(addAvailable.bill - pctOf(quotationBase, form.bill_percent)).toLocaleString()} ${currency} after this`}
+                            {editId != null ? 'Available for this milestone' : 'Remaining'}: <span className="font-medium text-gray-700 dark:text-gray-200">{formAvailable.bill.toLocaleString()} {currency} ({pctOfBase(formAvailable.bill, quotationBase)}%)</span>
+                            {form.bill_percent !== '' && ` → ${round2(formAvailable.bill - pctOf(quotationBase, form.bill_percent)).toLocaleString()} ${currency} left after this`}
                         </p>
                         {formErrors.bill_percent && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{formErrors.bill_percent}</p>}
                     </div>
+                    )}
                     <div className="sm:col-span-2">
                         <label className={drawerLabelClass}>Description</label>
                         <textarea
@@ -599,7 +742,7 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                     <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No milestones yet. Use “+ Add Milestone”.</p>
                 ) : shownMilestones.length === 0 ? (
                     <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No milestones match these filters.</p>
-                ) : (
+                ) : isInternal ? internalTable : (
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-gray-200 dark:border-gray-800 text-left text-xs text-gray-500 dark:text-gray-400 uppercase">
@@ -621,7 +764,6 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                         </thead>
                         <tbody>
                             {shownMilestones.map((m, index) => {
-                                const isEditing = editingId === m.id;
                                 const overBudget = num(m.actual_cost) > num(m.budget_amount) && num(m.budget_amount) > 0;
                                 const billedBase = num(m.billed_base_amount ?? m.billed_amount);
                                 const quotation = num(m.quotation_amount ?? m.billing_amount);
@@ -634,67 +776,20 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                 return (
                                     <tr key={m.id} className="border-b border-gray-100 dark:border-gray-800 align-top">
                                         <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
-                                            {isEditing ? (
-                                                <input
-                                                    type="number"
-                                                    min={1}
-                                                    value={editForm.sequence}
-                                                    onChange={(e) => setEditForm({ ...editForm, sequence: e.target.value })}
-                                                    className="w-14 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm"
-                                                />
-                                            ) : index + 1 /* row position, so the series is always 1, 2, 3... */}
+                                            {index + 1 /* row position, so the series is always 1, 2, 3... */}
                                         </td>
                                         <td className="px-4 py-2">
-                                            {isEditing ? (
-                                                <input
-                                                    type="text"
-                                                    value={editForm.name}
-                                                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                                                    className="w-full px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm"
-                                                />
-                                            ) : (
-                                                <>
-                                                    <p className="text-gray-900 dark:text-white font-medium">{m.name}</p>
-                                                    {m.description && <p className="text-xs text-gray-500 dark:text-gray-400">{m.description}</p>}
-                                                </>
-                                            )}
+                                            <p className="text-gray-900 dark:text-white font-medium">{m.name}</p>
+                                            {m.description && <p className="text-xs text-gray-500 dark:text-gray-400">{m.description}</p>}
                                         </td>
                                         <td className="px-4 py-2">
-                                            {isEditing ? (
-                                                <select
-                                                    value={editForm.status}
-                                                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                                                    className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm"
-                                                >
-                                                    {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                                                </select>
-                                            ) : (
-                                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_BADGE[m.status] || 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
-                                                    {m.status_display}
-                                                </span>
-                                            )}
+                                            <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_BADGE[m.status] || 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}>
+                                                {m.status_display}
+                                            </span>
                                         </td>
                                         <td className="px-4 py-2 text-right">
-                                            {isEditing ? (
-                                                <div className="flex flex-wrap items-center justify-end gap-1">
-                                                    <input
-                                                        type="number"
-                                                        min={0}
-                                                        max={100}
-                                                        step="0.01"
-                                                        value={editForm.budget_percent}
-                                                        onChange={(e) => setEditForm({ ...editForm, budget_percent: e.target.value })}
-                                                        className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm text-right"
-                                                    />
-                                                    <span className="text-xs text-gray-500">%</span>
-                                                    <p className="basis-full text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">max {pctOfBase(availableFor(m.id).budget, budgetBase)}%</p>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <span>{num(m.budget_amount).toLocaleString()} {currency}</span>
-                                                    <p className="text-[11px] text-gray-500 dark:text-gray-400">{num(m.budget_percent).toFixed(2)}% of budget</p>
-                                                </>
-                                            )}
+                                            <span>{num(m.budget_amount).toLocaleString()} {currency}</span>
+                                            <p className="text-[11px] text-gray-500 dark:text-gray-400">{num(m.budget_percent).toFixed(2)}% of budget</p>
                                         </td>
                                         <td className={`px-4 py-2 text-right ${overBudget ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-900 dark:text-white'}`}>
                                             {num(m.actual_cost).toLocaleString()} {currency}
@@ -719,26 +814,8 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                             {remainingBudget.toLocaleString()} {currency}
                                         </td>
                                         <td className="px-4 py-2 text-right">
-                                            {isEditing ? (
-                                                <div className="flex flex-wrap items-center justify-end gap-1">
-                                                    <input
-                                                        type="number"
-                                                        min={0}
-                                                        max={100}
-                                                        step="0.01"
-                                                        value={editForm.bill_percent}
-                                                        onChange={(e) => setEditForm({ ...editForm, bill_percent: e.target.value })}
-                                                        className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-sm text-right"
-                                                    />
-                                                    <span className="text-xs text-gray-500">%</span>
-                                                    <p className="basis-full text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">max {pctOfBase(availableFor(m.id).bill, quotationBase)}%</p>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <span>{quotation.toLocaleString()} {currency}</span>
-                                                    <p className="text-[11px] text-gray-500 dark:text-gray-400">{num(m.bill_percent).toFixed(2)}% of quotation</p>
-                                                </>
-                                            )}
+                                            <span>{quotation.toLocaleString()} {currency}</span>
+                                            <p className="text-[11px] text-gray-500 dark:text-gray-400">{num(m.bill_percent).toFixed(2)}% of quotation</p>
                                         </td>
                                         <td className="px-4 py-2 text-right text-gray-900 dark:text-white">
                                             {billedBase.toLocaleString()} {currency}
@@ -755,18 +832,9 @@ export const MilestonesPanel: React.FC<MilestonesPanelProps> = ({ projectId, cur
                                         <td className="px-4 py-2">{renderStatusBadge(BILLING_BADGE, m.billing_status)}</td>
                                         <td className="px-4 py-2">{renderStatusBadge(PAYMENT_BADGE, m.payment_status)}</td>
                                         <td className="px-4 py-2 text-right whitespace-nowrap">
-                                            {isEditing ? (
-                                                <>
-                                                    <button onClick={() => handleSaveEdit(m.id)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline mr-2">Save</button>
-                                                    <button onClick={() => setEditingId(null)} className="text-xs text-gray-500 dark:text-gray-400 hover:underline">Cancel</button>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <button onClick={() => openInvoiceModal(m)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline mr-2">Bill</button>
-                                                    <button onClick={() => startEdit(m)} className="text-xs text-gray-600 dark:text-gray-400 hover:underline mr-2">Edit</button>
-                                                    <button onClick={() => handleArchive(m.id)} className="text-xs text-red-600 dark:text-red-400 hover:underline">Archive</button>
-                                                </>
-                                            )}
+                                            <button type="button" onClick={() => openInvoiceModal(m)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline mr-2">Bill</button>
+                                            <button type="button" onClick={() => startEdit(m)} aria-label={`Edit ${m.name}`} className="text-xs text-gray-600 dark:text-gray-400 hover:underline mr-2">Edit</button>
+                                            <button type="button" onClick={() => handleArchive(m.id)} className="text-xs text-red-600 dark:text-red-400 hover:underline">Archive</button>
                                         </td>
                                     </tr>
                                 );

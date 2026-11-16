@@ -141,20 +141,22 @@ class ResourceTableTests(ResourceTabBase):
 
 
 class ResourceRulesTests(ResourceTabBase):
+    # Future dates: an assignment whose period is already over is saved as Completed
+    # (Project/status_automation.py), and a Completed one never counts as a duplicate.
     def payload(self, **kw):
         values = {"resource_type": "employee", "resource_id": self.alice.pk, "milestone": self.m1.pk,
-                  "cost_rate": "500", "working_hours": "10", "start_date": "2026-02-01", "end_date": "2026-02-28"}
+                  "cost_rate": "500", "working_hours": "10", "start_date": "2030-02-01", "end_date": "2030-02-28"}
         values.update(kw)
         return values
 
     def test_overlapping_assignment_on_the_same_milestone_is_a_duplicate(self):
         self.assertEqual(self.api.post(self.url, self.payload(), format="json").status_code, 201)
-        resp = self.api.post(self.url, self.payload(start_date="2026-02-20", end_date="2026-03-10"), format="json")
+        resp = self.api.post(self.url, self.payload(start_date="2030-02-20", end_date="2030-03-10"), format="json")
         self.assertEqual(resp.status_code, 400)
         self.assertIn("already assigned", str(resp.data))
         # Not a duplicate: another milestone, dates that don't overlap, or a completed assignment.
         self.assertEqual(self.api.post(self.url, self.payload(milestone=self.m2.pk), format="json").status_code, 201)
-        self.assertEqual(self.api.post(self.url, self.payload(start_date="2026-03-01", end_date="2026-03-31"),
+        self.assertEqual(self.api.post(self.url, self.payload(start_date="2030-03-01", end_date="2030-03-31"),
                                        format="json").status_code, 201)
         self.assertEqual(self.api.post(self.url, self.payload(status="completed"), format="json").status_code, 201)
 
@@ -241,7 +243,8 @@ class ResourceImportTests(ResourceTabBase):
             # type, id, external name, milestone, rate, hours, amount, start, end, status
             ['Employee', '10000004', None, 'M1', None, 40, None, '01/02/2026', '28/02/2026', None],   # master rate 500
             ['Freelancer', self.freelancer.freelancer_code, None, 'm2', None, 16, None, date(2026, 3, 1), date(2026, 3, 31), 'Active'],
-            ['Vendor', self.vendor.vendor_reference_no, None, 'M2', None, None, 2500, '2026-03-01', '2026-03-31', 'On Hold'],
+            # Future dates, so it stays On Hold (an ended period would be saved as Completed).
+            ['Vendor', self.vendor.vendor_reference_no, None, 'M2', None, None, 2500, '2030-03-01', '2030-03-31', 'On Hold'],
             ['External', None, 'Contract QA', 'M1', 300, 10, None, '01/03/2026', '31/03/2026', 'Completed'],
             ['Employee', '20000001', None, 'M1', 450, 10, None, '15/02/2026', '20/02/2026', None],    # duplicate (DB)
             ['Employee', '10000004', None, 'M1', 500, 5, None, '10/02/2026', '12/02/2026', None],     # duplicate (row 2)

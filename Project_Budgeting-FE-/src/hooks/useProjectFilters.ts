@@ -7,8 +7,20 @@
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-export const PROJECT_TABS = ['Overview', 'Tasks', 'Expenses', 'Resources', 'Invoices', 'Milestones', 'Financials', 'Payments'] as const;
+export const PROJECT_TABS = [
+    'Overview', 'Tasks', 'Expenses', 'Resources', 'Invoices', 'Milestones', 'Budget', 'Financials', 'Payments', 'Activity',
+] as const;
 export type ProjectTab = typeof PROJECT_TABS[number];
+
+/** Tabs a project shows. Client projects: no Budget / Activity; T&M: no Milestones.
+ * Internal projects (no quotation): no client billing - no Invoices, Payments or Financials. */
+export const CLIENT_TABS: ProjectTab[] = ['Overview', 'Tasks', 'Expenses', 'Resources', 'Invoices', 'Milestones', 'Financials', 'Payments'];
+export const INTERNAL_TABS: ProjectTab[] = ['Overview', 'Tasks', 'Resources', 'Milestones', 'Expenses', 'Budget', 'Activity'];
+
+export function tabsFor(isFixed: boolean, isInternal: boolean): ProjectTab[] {
+    if (isInternal) return INTERNAL_TABS;
+    return CLIENT_TABS.filter((t) => t !== 'Milestones' || isFixed);
+}
 
 export interface ProjectFilterValues {
     dateFrom: string;
@@ -34,12 +46,22 @@ export const TAB_FIELDS: Record<ProjectTab, FilterField[]> = {
     Overview: ['dateFrom', 'dateTo'],
     Tasks: ['search', 'dateFrom', 'dateTo', 'status', 'resource', 'milestone'],
     Expenses: ['search', 'dateFrom', 'dateTo', 'status', 'milestone'],
-    Resources: ['search', 'dateFrom', 'dateTo', 'status', 'resource', 'milestone'],
+    // No Resource filter here: Search already finds a person by name or employee ID.
+    Resources: ['search', 'dateFrom', 'dateTo', 'status', 'milestone'],
     Invoices: ['search', 'dateFrom', 'dateTo', 'status', 'milestone', 'paymentStatus'],
     Milestones: ['search', 'dateFrom', 'dateTo', 'status', 'financialStatus', 'billingStatus', 'paymentStatus'],
+    Budget: [],
     Financials: ['dateFrom', 'dateTo'],
     Payments: ['search', 'dateFrom', 'dateTo', 'status'],
+    Activity: ['search', 'dateFrom', 'dateTo'],
 };
+
+/** The filters a tab shows for this project: an internal project's milestones have no billing or
+ * client payment status. */
+export function fieldsFor(tab: ProjectTab, isInternal: boolean): FilterField[] {
+    if (isInternal && tab === 'Milestones') return ['search', 'dateFrom', 'dateTo', 'status', 'financialStatus'];
+    return TAB_FIELDS[tab];
+}
 
 /** What each tab's date range filters on (shown as a hint next to the dates). */
 export const DATE_MEANING: Record<ProjectTab, string> = {
@@ -49,8 +71,10 @@ export const DATE_MEANING: Record<ProjectTab, string> = {
     Resources: 'Assignment starts on/after From and ends on/before To',
     Invoices: 'Invoice date',
     Milestones: 'Milestone due date',
+    Budget: '',
     Financials: 'Money in and out between these dates',
     Payments: 'Payment date',
+    Activity: 'When it happened',
 };
 
 const PER_TAB: FilterField[] = ['search', 'status'];
@@ -61,19 +85,20 @@ const URL_KEY: Record<FilterField, string> = {
 const urlKey = (field: FilterField, tab: ProjectTab) =>
     PER_TAB.includes(field) ? `${tab.toLowerCase()}_${URL_KEY[field]}` : URL_KEY[field];
 
-/** Old ?tab= values from earlier versions of the page. */
-export function normaliseTab(raw: string | null, isFixed: boolean): ProjectTab {
+/** The ?tab= value as one of this project's tabs (old values from earlier versions mapped). */
+export function normaliseTab(raw: string | null, isFixed: boolean, isInternal = false): ProjectTab {
     if (!raw) return 'Overview';
-    if (['Payment', 'Finances', 'Details'].includes(raw)) return 'Payments';
-    if (raw === 'Budget' || raw === 'Time') return 'Overview';
+    const allowed = tabsFor(isFixed, isInternal);
+    if (['Payment', 'Finances', 'Details'].includes(raw)) return allowed.includes('Payments') ? 'Payments' : 'Overview';
+    if (raw === 'Time') return 'Overview';
     const tab = PROJECT_TABS.find((t) => t === raw);
-    if (!tab || (tab === 'Milestones' && !isFixed)) return 'Overview';
-    return tab;
+    return tab && allowed.includes(tab) ? tab : 'Overview';
 }
 
-export function useProjectFilters(isFixed: boolean) {
+export function useProjectFilters(isFixed: boolean, isInternal = false) {
     const [params, setParams] = useSearchParams();
-    const tab = normaliseTab(params.get('tab'), isFixed);
+    const tab = normaliseTab(params.get('tab'), isFixed, isInternal);
+    const fields = useMemo(() => fieldsFor(tab, isInternal), [tab, isInternal]);
 
     const valuesFor = useCallback((t: ProjectTab): ProjectFilterValues => {
         const out = { ...EMPTY_FILTERS };
@@ -85,9 +110,9 @@ export function useProjectFilters(isFixed: boolean) {
     /** Only the filters this tab uses - what its API gets and what the count shows. */
     const effective = useMemo(() => {
         const out = { ...EMPTY_FILTERS };
-        TAB_FIELDS[tab].forEach((f) => { out[f] = applied[f]; });
+        fields.forEach((f) => { out[f] = applied[f]; });
         return out;
-    }, [applied, tab]);
+    }, [applied, fields]);
 
     const update = useCallback((mutate: (next: URLSearchParams) => void) => {
         setParams((prev) => {
@@ -101,23 +126,23 @@ export function useProjectFilters(isFixed: boolean) {
 
     /** Save this tab's filters (fields the tab doesn't use are left as they are). */
     const apply = useCallback((values: ProjectFilterValues) => update((next) => {
-        TAB_FIELDS[tab].forEach((f) => {
+        fields.forEach((f) => {
             const key = urlKey(f, tab);
             const v = values[f].trim();
             if (v) next.set(key, v); else next.delete(key);
         });
-    }), [update, tab]);
+    }), [update, tab, fields]);
 
     /** Clear every filter on every tab. */
     const clearAll = useCallback(() => update((next) => {
         [...next.keys()].filter((k) => k !== 'tab').forEach((k) => next.delete(k));
     }), [update]);
 
-    const activeCount = TAB_FIELDS[tab].filter((f) => effective[f]).length;
+    const activeCount = fields.filter((f) => effective[f]).length;
     /** Filters set for other tabs (kept, not used here). */
     const elsewhereCount = [...params.keys()].filter((k) => k !== 'tab').length - activeCount;
 
-    return { tab, setTab, applied, effective, apply, clearAll, activeCount, elsewhereCount: Math.max(0, elsewhereCount) };
+    return { tab, setTab, fields, applied, effective, apply, clearAll, activeCount, elsewhereCount: Math.max(0, elsewhereCount) };
 }
 
 /** The API query parameters for these filters (only non-empty ones). */

@@ -30,6 +30,13 @@ def _queue(account_ids):
     transaction.on_commit(lambda: queue_employee_push(ids), robust=True)
 
 
+def queue_push(account_ids):
+    """For changes saved without a model save (e.g. a queryset update): push these employees'
+    lists the same way the signals below do. No-op unless AIRA pushing is configured."""
+    if _enabled():
+        _queue(account_ids)
+
+
 def _shown_fields_changed(model, instance, fields):
     if not instance.pk:
         return False

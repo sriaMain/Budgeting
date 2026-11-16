@@ -6,6 +6,8 @@
 import React from 'react';
 import { useApiData } from '../../hooks/useApiData';
 import { PeriodSummaryCard } from './PeriodSummaryCard';
+import { Bar, Card, Line, LoadError, Skeleton, panelLink as link } from './panelParts';
+import { num } from '../../utils/projectFinance';
 import type { ProjectFinancialSummary } from '../../types/financials.types';
 import { formatDate as toDMY } from '../../utils/date';
 import { formatMoney } from '../../utils/format';
@@ -17,6 +19,8 @@ interface MilestoneLite { id: number; name: string; status: string; planned_end_
 interface Props {
     projectId: string;
     isFixed: boolean;
+    /** Internal project: cost breakdown and budget allocation instead of billing and profit. */
+    isInternal?: boolean;
     currency: string;
     money: ProjectMoney | null;
     summary: ProjectFinancialSummary | null;
@@ -27,47 +31,10 @@ interface Props {
     dateTo: string;
     tasks: { total: number; open: number; overdue: number; done: number; loading: boolean; error: boolean };
     onRetryTasks: () => void;
-    onGoTo: (tab: 'Milestones' | 'Invoices' | 'Tasks' | 'Financials') => void;
+    onGoTo: (tab: 'Milestones' | 'Invoices' | 'Tasks' | 'Financials' | 'Budget') => void;
 }
 
-const Card: React.FC<{ title: string; action?: React.ReactNode; children: React.ReactNode; className?: string }> = ({ title, action, children, className = '' }) => (
-    <section className={`rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 ${className}`}>
-        <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-[13px] font-semibold text-gray-900 dark:text-white">{title}</h3>
-            {action}
-        </div>
-        {children}
-    </section>
-);
-
-const Line: React.FC<{ label: string; value: React.ReactNode; strong?: boolean; tone?: string }> = ({ label, value, strong, tone }) => (
-    <div className="flex items-baseline justify-between gap-3 py-1 text-[13px]">
-        <dt className="text-gray-500 dark:text-gray-400">{label}</dt>
-        <dd className={`whitespace-nowrap tabular-nums ${strong ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-800 dark:text-gray-200'} ${tone ?? ''}`}>{value}</dd>
-    </div>
-);
-
-const Bar: React.FC<{ percent: number | null; tone: 'green' | 'amber' | 'risk' | 'blue'; label: string }> = ({ percent, tone, label }) => (
-    <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(100, Math.max(0, percent ?? 0)))}
-        className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-        <div className={`h-full rounded-full ${tone === 'green' ? 'bg-green-600' : tone === 'amber' ? 'bg-amber-500' : tone === 'risk' ? 'bg-red-600' : 'bg-blue-600'}`}
-            style={{ width: `${Math.min(100, Math.max(0, percent ?? 0))}%` }} />
-    </div>
-);
-
-const link = 'text-[12px] font-medium text-blue-600 hover:underline dark:text-blue-400';
-
-const Skeleton: React.FC<{ h: string }> = ({ h }) => <div className={`${h} animate-pulse rounded bg-gray-100 dark:bg-gray-800`} />;
-
-/** A failed request: say so (never show it as "nothing here") and offer a retry. */
-const LoadError: React.FC<{ what: string; onRetry: () => void }> = ({ what, onRetry }) => (
-    <div role="alert" className="text-[13px] text-gray-600 dark:text-gray-400">
-        Couldn’t load {what}. The server or database didn’t respond in time.{' '}
-        <button type="button" className={link} onClick={onRetry}>Try again</button>
-    </div>
-);
-
-export const ProjectOverviewPanel: React.FC<Props> = ({ projectId, isFixed, currency, money, summary, moneyLoading, moneyError, onRetryMoney, dateFrom, dateTo, tasks, onRetryTasks, onGoTo }) => {
+export const ProjectOverviewPanel: React.FC<Props> = ({ projectId, isFixed, isInternal = false, currency, money, summary, moneyLoading, moneyError, onRetryMoney, dateFrom, dateTo, tasks, onRetryTasks, onGoTo }) => {
     const fmt = (v: number) => formatMoney(v, currency);
     const hasDates = !!(dateFrom || dateTo);
     const milestonesReq = useApiData<MilestoneLite[]>(isFixed ? `/projects/${projectId}/milestones/` : null, {}, 'Failed to load milestones');
@@ -82,20 +49,27 @@ export const ProjectOverviewPanel: React.FC<Props> = ({ projectId, isFixed, curr
 
     const m = money;
     const invoicedPct = m ? pct(m.invoiced, m.plannedBilling) : null;
+    const s = summary && summary.engagement_type === 'fixed' ? summary : null;
+    const breakdown = s?.cost_breakdown;
+    const allocated = num(s?.allocated_to_milestones);
+    const approved = num(s?.approved_budget);
+    const progress = s?.milestone_progress;
 
     return (
         <div className="space-y-4">
             {hasDates && (
-                <PeriodSummaryCard projectId={projectId} currency={currency} dateFrom={dateFrom} dateTo={dateTo}
-                    action={<button type="button" className={link} onClick={() => onGoTo('Financials')}>Financials →</button>} />
+                <PeriodSummaryCard projectId={projectId} currency={currency} dateFrom={dateFrom} dateTo={dateTo} isInternal={isInternal}
+                    action={isInternal
+                        ? <button type="button" className={link} onClick={() => onGoTo('Budget')}>Budget →</button>
+                        : <button type="button" className={link} onClick={() => onGoTo('Financials')}>Financials →</button>} />
             )}
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                <Card title="Budget vs Actual Cost">
+                <Card title={isInternal ? 'Approved Budget vs Actual Cost' : 'Budget vs Actual Cost'}>
                     {moneyLoading || !m ? moneyPlaceholder : (
                         <>
                             <dl>
-                                <Line label="Budget" value={fmt(m.budget)} strong />
+                                <Line label={isInternal ? 'Approved budget' : 'Budget'} value={fmt(m.budget)} strong />
                                 <Line label="Resources" value={fmt(m.resourceCost)} />
                                 <Line label="Expenses & vendor bills" value={fmt(m.otherCost)} />
                                 <Line label="Actual cost" value={fmt(m.actualCost)} strong />
@@ -107,6 +81,36 @@ export const ProjectOverviewPanel: React.FC<Props> = ({ projectId, isFixed, curr
                     )}
                 </Card>
 
+                {isInternal ? (
+                    <>
+                        <Card title="Cost Breakdown" action={<button type="button" className={link} onClick={() => onGoTo('Budget')}>Budget →</button>}>
+                            {moneyLoading || !m || !s ? moneyPlaceholder : (
+                                <dl>
+                                    <Line label="Employees" value={fmt(num(breakdown?.employee_cost))} />
+                                    <Line label="Freelancers" value={fmt(num(breakdown?.freelancer_cost))} />
+                                    <Line label="Vendors / external" value={fmt(num(breakdown?.vendor_resource_cost))} />
+                                    <Line label="Expenses" value={fmt(num(s.expenses_amount))} />
+                                    <Line label="Vendor bills (paid)" value={fmt(num(s.bills_amount))} />
+                                    <Line label="Actual cost" value={fmt(m.actualCost)} strong />
+                                </dl>
+                            )}
+                        </Card>
+                        <Card title="Budget Allocation" action={<button type="button" className={link} onClick={() => onGoTo('Budget')}>Budget →</button>}>
+                            {moneyLoading || !m || !s ? moneyPlaceholder : (
+                                <>
+                                    <dl>
+                                        <Line label="Allocated to milestones" value={fmt(allocated)} strong />
+                                        <Line label="Not allocated" value={fmt(num(s.unallocated_budget))} tone={num(s.unallocated_budget) < 0 ? 'text-red-600 dark:text-red-400' : ''} />
+                                        <Line label="Milestones completed" value={progress ? `${progress.completed} of ${progress.total}` : '—'} />
+                                        <Line label="Average milestone progress" value={progress?.average_progress != null ? `${progress.average_progress}%` : '—'} />
+                                    </dl>
+                                    <Bar percent={pct(allocated, approved)} tone="violet" label="Approved budget allocated to milestones" />
+                                    <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">{percentText(pct(allocated, approved))} of the approved budget allocated</p>
+                                </>
+                            )}
+                        </Card>
+                    </>
+                ) : (<>
                 <Card title="Billing & Collections" action={<button type="button" className={link} onClick={() => onGoTo('Invoices')}>Invoices →</button>}>
                     {moneyLoading || !m ? moneyPlaceholder : (
                         <>
@@ -137,6 +141,7 @@ export const ProjectOverviewPanel: React.FC<Props> = ({ projectId, isFixed, curr
                         </dl>
                     )}
                 </Card>
+                </>)}
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

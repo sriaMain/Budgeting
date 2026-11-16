@@ -1,7 +1,9 @@
 /**
- * Project Details: compact header, six KPI cards, one filter toolbar and the tabs
- * (Overview, Tasks, Expenses, Resources, Invoices, Milestones*, Financials, Payments).
- * *Fixed Budget / Milestone projects only.
+ * Project Details: compact header, six KPI cards, one filter toolbar and the tabs.
+ *   Client projects: Overview, Tasks, Expenses, Resources, Invoices, Milestones*, Financials, Payments
+ *                    (*Fixed Budget / Milestone projects only).
+ *   Internal projects (no quotation): Overview, Tasks, Resources, Milestones, Expenses, Budget,
+ *                    Activity - no client billing (Invoices / Payments / Financials).
  *
  * The tab and every filter live in the URL (hooks/useProjectFilters), so they survive tab switches,
  * reloads and shared links; each tab sends the same filter names to its API
@@ -9,8 +11,8 @@
  * figures as Overview and Financials.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Link2, RefreshCw } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Download, Link2, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Layout } from '../components/Layout';
 import { MetricCard } from '../components/StatCard';
@@ -29,10 +31,14 @@ import { ProjectFilterBar, type FilterOption, type ProjectFilterOptions } from '
 import { ProjectOverviewPanel } from '../components/project/ProjectOverviewPanel';
 import { ProjectInvoicesPanel } from '../components/project/ProjectInvoicesPanel';
 import { ProjectPaymentsPanel } from '../components/project/ProjectPaymentsPanel';
+import type { TabExport } from '../components/project/tabExport';
+import { InternalProjectDrawer } from '../components/project/InternalProjectDrawer';
+import { InternalBudgetPanel } from '../components/project/InternalBudgetPanel';
+import { ProjectActivityPanel } from '../components/project/ProjectActivityPanel';
 import { useHelpdeskTasks } from '../hooks/useHelpdeskTasks';
 import { useApiData } from '../hooks/useApiData';
-import { PROJECT_TABS, type ProjectTab, useProjectFilters } from '../hooks/useProjectFilters';
-import type { ProjectFinancialSummary } from '../types/financials.types';
+import { type ProjectTab, tabsFor, useProjectFilters } from '../hooks/useProjectFilters';
+import type { FixedFinancialSummary, ProjectFinancialSummary } from '../types/financials.types';
 import { isTaskDone, isTaskOverdue } from '../utils/helpdeskTasks';
 import { DEFAULT_ENGAGEMENT_STYLE, DEFAULT_PROJECT_STATUS_STYLE, ENGAGEMENT_META, PROJECT_STATUS_STYLES } from '../utils/projectMeta';
 import { projectMoney } from '../utils/projectFinance';
@@ -77,16 +83,43 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
     const engagementType: 'fixed' | 'time_and_material' = project?.engagement_type || 'fixed';
     const isFixed = engagementType === 'fixed';
-    const filters = useProjectFilters(project ? isFixed : true);
+    // Internal project (no quotation / client billing) - its own tabs and money figures.
+    const isInternal = project?.project_category === 'internal';
+    const canEdit = userRole === 'admin' || userRole === 'manager';
+    const filters = useProjectFilters(project ? isFixed : true, isInternal);
     const { tab } = filters;
-    const tabs = PROJECT_TABS.filter((t) => t !== 'Milestones' || isFixed);
-    const currency = project?.budget?.currency || 'INR';
+    const tabs = tabsFor(isFixed, isInternal);
+    const currency = project?.budget?.currency || project?.currency || 'INR';
+
+    // Edit an internal project in its drawer (?edit=1 opens it - the Projects list's "Edit details").
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [editOpen, setEditOpen] = useState(() => searchParams.get('edit') === '1');
+    const closeEdit = () => {
+        setEditOpen(false);
+        if (searchParams.get('edit')) {
+            setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('edit'); return next; }, { replace: true });
+        }
+    };
 
     /* ---------------- drawers ---------------- */
     const [openInvoiceId, setOpenInvoiceId] = useState<number | null>(null);
     const [openBillId, setOpenBillId] = useState<number | null>(null);
     const [openExpenseId, setOpenExpenseId] = useState<number | null>(null);
     const [monthlyInvoiceOpen, setMonthlyInvoiceOpen] = useState(false);
+
+    /* ---------------- Excel export (More Actions) ---------------- */
+    // The shown tab registers its exporter (components/project/tabExport); tabs without one leave it null.
+    const [tabExport, setTabExport] = useState<TabExport | null>(null);
+    const [exporting, setExporting] = useState(false);
+    const runExport = async () => {
+        if (!tabExport || exporting) return;
+        setExporting(true);
+        try {
+            await tabExport.run();
+        } finally {
+            setExporting(false);
+        }
+    };
 
     const generateInvoice = () => {
         if (engagementType === 'time_and_material') {
@@ -100,6 +133,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
     /* ---------------- KPI inputs ---------------- */
     const money = summaryReq.data ? projectMoney(summaryReq.data) : summaryReq.staleData ? projectMoney(summaryReq.staleData) : null;
+    const summary = summaryReq.data ?? summaryReq.staleData ?? null;
+    const internalSummary: FixedFinancialSummary | null = isInternal && summary && summary.engagement_type === 'fixed' ? summary : null;
     const totalHours = Number(project?.budget?.billable_hours) || 0;
     const remainingHours = hmsToHours(project?.budget?.remaining_billable_hours);
     const taskConsumed = (Array.isArray(taskHoursReq.data) ? taskHoursReq.data[0]?.Tasks ?? [] : [])
@@ -185,7 +220,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
     const statusLabel = statusChoices.data?.status_choices?.find((c) => c.value === project.status)?.label
         ?? (project.status ? String(project.status).replace(/_/g, ' ') : '');
-    const engagement = ENGAGEMENT_META[engagementType];
+    const engagement = ENGAGEMENT_META[isInternal ? 'internal' : engagementType];
 
     return (
         <Layout userRole={userRole} currentPage={currentPage} onNavigate={onNavigate}>
@@ -193,18 +228,27 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                 <ProjectHeader
                     projectNo={project.project_no || projectId}
                     name={project.project_name}
-                    clientName={project.company_name}
+                    clientName={isInternal ? undefined : project.company_name}
+                    department={isInternal ? project.department : undefined}
+                    managerName={isInternal ? project.project_manager_name : undefined}
                     statusLabel={statusLabel}
                     statusClass={PROJECT_STATUS_STYLES[project.status] || DEFAULT_PROJECT_STATUS_STYLE}
                     typeLabel={engagement?.label ?? engagementType}
                     typeClass={engagement?.className ?? DEFAULT_ENGAGEMENT_STYLE}
                     startDate={project.start_date}
                     endDate={project.end_date}
-                    canEdit={userRole === 'admin' || userRole === 'manager'}
+                    canEdit={canEdit}
                     onBack={() => navigate('/projects')}
-                    onEdit={() => navigate(`/projects/edit/${project.project_no || projectId}`)}
+                    // Internal projects are edited in their own drawer; client projects in the quotation-based editor.
+                    onEdit={() => (isInternal ? setEditOpen(true) : navigate(`/projects/edit/${project.project_no || projectId}`))}
                     actions={[
-                        { label: 'Refresh data', icon: <RefreshCw />, onSelect: () => { refreshAll(); helpdeskTasks.refresh(); toast.success('Refreshed'); } },
+                        ...(tabExport ? [{
+                            label: exporting ? 'Exporting…' : tabExport.label,
+                            icon: <Download />,
+                            disabled: exporting || !tabExport.enabled,
+                            onSelect: () => { void runExport(); },
+                        }] : []),
+                        { label: 'Refresh data', icon: <RefreshCw />, separatorBefore: !!tabExport, onSelect: () => { refreshAll(); helpdeskTasks.refresh(); toast.success('Refreshed'); } },
                         {
                             label: 'Copy link to this view', icon: <Link2 />,
                             onSelect: () => {
@@ -223,6 +267,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                     currency={currency}
                     hours={{ total: totalHours, consumed: consumedHours, remaining: remainingHours, overrun }}
                     tasks={{ loading: helpdeskTasks.loading, error: !!helpdeskTasks.error, overdue: taskCounts.overdue, open: taskCounts.open }}
+                    internal={isInternal ? { allocated: Number(internalSummary?.allocated_to_milestones ?? 0) } : null}
                 />
 
                 <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
@@ -257,24 +302,28 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                     </div>
 
                     <div id="project-tab-panel" role="tabpanel" aria-labelledby={`project-tab-${tab}`} className="space-y-4 p-4">
-                        <ProjectFilterBar
-                            key={`${tab}|${JSON.stringify(filters.applied)}`}
-                            tab={tab}
-                            applied={filters.applied}
-                            options={filterOptions}
-                            activeCount={filters.activeCount}
-                            elsewhereCount={filters.elsewhereCount}
-                            onApply={filters.apply}
-                            onClearAll={filters.clearAll}
-                        />
+                        {filters.fields.length > 0 && (
+                            <ProjectFilterBar
+                                key={`${tab}|${JSON.stringify(filters.applied)}`}
+                                tab={tab}
+                                fields={filters.fields}
+                                applied={filters.applied}
+                                options={filterOptions}
+                                activeCount={filters.activeCount}
+                                elsewhereCount={filters.elsewhereCount}
+                                onApply={filters.apply}
+                                onClearAll={filters.clearAll}
+                            />
+                        )}
 
                         {tab === 'Overview' && (
                             <ProjectOverviewPanel
                                 projectId={projectId}
                                 isFixed={isFixed}
+                                isInternal={isInternal}
                                 currency={currency}
                                 money={money}
-                                summary={summaryReq.data ?? summaryReq.staleData ?? null}
+                                summary={summary}
                                 moneyLoading={summaryReq.loading && !money}
                                 moneyError={!!summaryReq.error && !money}
                                 onRetryMoney={summaryReq.reload}
@@ -320,6 +369,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 engagementType={engagementType}
                                 pageFilters={f}
                                 onChanged={refreshAll}
+                                registerExport={setTabExport}
+                                isInternal={isInternal}
                             />
                         )}
 
@@ -332,6 +383,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 onOpenInvoice={setOpenInvoiceId}
                                 onGenerateInvoice={generateInvoice}
                                 canGenerate
+                                registerExport={setTabExport}
                             />
                         )}
 
@@ -339,6 +391,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                             <MilestonesPanel
                                 key={reloadToken}
                                 projectId={projectId}
+                                isInternal={isInternal}
                                 currency={currency}
                                 userBudget={Number(project.budget?.cost_budget) || 0}
                                 quotationAmount={Number(project.contract_value) || 0}
@@ -348,7 +401,20 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                             />
                         )}
 
-                        {tab === 'Financials' && (
+                        {tab === 'Budget' && isInternal && (
+                            <InternalBudgetPanel
+                                summary={internalSummary}
+                                loading={summaryReq.loading}
+                                error={!!summaryReq.error}
+                                onRetry={summaryReq.reload}
+                                currency={currency}
+                                canEdit={canEdit}
+                                onEditBudget={() => setEditOpen(true)}
+                                onGoTo={filters.setTab}
+                            />
+                        )}
+
+                        {tab === 'Financials' && !isInternal && (
                             <FinancialSummaryPanel
                                 key={reloadToken}
                                 projectId={projectId}
@@ -357,6 +423,10 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 dateFrom={f.dateFrom}
                                 dateTo={f.dateTo}
                             />
+                        )}
+
+                        {tab === 'Activity' && (
+                            <ProjectActivityPanel key={filterKey} projectId={projectId} filters={f} reloadToken={reloadToken} />
                         )}
 
                         {tab === 'Payments' && (
@@ -382,6 +452,26 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                     projectId={projectId}
                     currency={currency}
                     onCreated={refreshAll}
+                />
+            )}
+            {isInternal && canEdit && (
+                <InternalProjectDrawer
+                    isOpen={editOpen}
+                    onClose={closeEdit}
+                    project={{
+                        project_no: Number(project.project_no || projectId),
+                        project_name: project.project_name,
+                        department: project.department || '',
+                        project_manager: project.project_manager ?? null,
+                        project_manager_name: project.project_manager_name,
+                        description: project.description || '',
+                        start_date: project.start_date,
+                        end_date: project.end_date,
+                        approved_budget: project.approved_budget,
+                        currency: project.currency || currency,
+                        status: project.status,
+                    }}
+                    onSaved={() => refreshAll()}
                 />
             )}
             {/* Invoice / bill / expense details open in drawers */}

@@ -24,6 +24,8 @@ export interface ProjectFilterOptions {
 
 interface Props {
     tab: ProjectTab;
+    /** The filters this tab shows for this project (defaults to the tab's usual set). */
+    fields?: FilterField[];
     applied: ProjectFilterValues;
     options: ProjectFilterOptions;
     activeCount: number;
@@ -33,10 +35,11 @@ interface Props {
 }
 
 const control = 'h-9 w-full rounded-md border border-gray-300 bg-white px-2.5 text-[13px] text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100';
-const label = 'mb-1 block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400';
+const label = 'mb-1 block whitespace-nowrap text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400';
 
 const SEARCH_HINT: Record<ProjectTab, string> = {
-    Overview: '', Financials: '',
+    Overview: '', Financials: '', Budget: '',
+    Activity: 'What happened or who did it',
     Tasks: 'Task, ID or assignee',
     Expenses: 'Reference, description or payee',
     Resources: 'Name or employee ID',
@@ -45,17 +48,19 @@ const SEARCH_HINT: Record<ProjectTab, string> = {
     Payments: 'Invoice / bill no. or reference',
 };
 
-export const ProjectFilterBar: React.FC<Props> = ({ tab, applied, options, activeCount, elsewhereCount, onApply, onClearAll }) => {
+export const ProjectFilterBar: React.FC<Props> = ({ tab, fields: fieldsProp, applied, options, activeCount, elsewhereCount, onApply, onClearAll }) => {
     const [draft, setDraft] = useState<ProjectFilterValues>(applied);
-    const fields = TAB_FIELDS[tab];
+    const fields = fieldsProp ?? TAB_FIELDS[tab];
     const uses = (f: FilterField) => fields.includes(f);
     const set = (f: FilterField) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setDraft((d) => ({ ...d, [f]: e.target.value }));
     const dateError = draft.dateFrom && draft.dateTo && draft.dateFrom > draft.dateTo ? 'From Date can’t be later than To Date.' : '';
     const dirty = fields.some((f) => draft[f] !== applied[f]);
     const apply = () => { if (!dateError) onApply(draft); };
 
+    // Widths are tuned so the busiest tab (Milestones: search, 2 dates, 4 selects and the buttons)
+    // fits on one line from about 1440px wide; narrower screens wrap.
     const select = (f: FilterField, title: string, opts: FilterOption[], all: string, extra?: FilterOption[]) => (
-        <div className="min-w-[9rem] flex-1 sm:max-w-[13rem]">
+        <div className="min-w-[8rem] flex-1 sm:max-w-[12rem]">
             <label htmlFor={`pf-${f}`} className={label}>{title}</label>
             <select id={`pf-${f}`} value={draft[f]} onChange={set(f)} className={control}>
                 <option value="">{all}</option>
@@ -72,9 +77,9 @@ export const ProjectFilterBar: React.FC<Props> = ({ tab, applied, options, activ
             onSubmit={(e) => { e.preventDefault(); apply(); }}
             className="rounded-lg border border-gray-200 bg-gray-50/60 p-3 dark:border-gray-800 dark:bg-gray-900/60"
         >
-            <div className="flex flex-wrap items-end gap-2.5">
+            <div className="flex flex-wrap items-end gap-2">
                 {uses('search') && (
-                    <div className="min-w-[12rem] flex-[2_1_14rem]">
+                    <div className="min-w-[10rem] flex-[2_1_11rem]">
                         <label htmlFor="pf-search" className={label}>Search</label>
                         <div className="relative">
                             <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -82,12 +87,12 @@ export const ProjectFilterBar: React.FC<Props> = ({ tab, applied, options, activ
                         </div>
                     </div>
                 )}
-                <div className="min-w-[8.5rem] flex-1 sm:max-w-[10rem]">
+                <div className="min-w-[8.5rem] flex-1 sm:max-w-[9.5rem]">
                     <label htmlFor="pf-from" className={label}>From Date</label>
                     <input id="pf-from" type="date" value={draft.dateFrom} max={draft.dateTo || undefined} onChange={set('dateFrom')}
                         aria-invalid={!!dateError} aria-describedby="pf-date-hint" className={`${control} ${dateError ? 'border-red-400 dark:border-red-500' : ''}`} />
                 </div>
-                <div className="min-w-[8.5rem] flex-1 sm:max-w-[10rem]">
+                <div className="min-w-[8.5rem] flex-1 sm:max-w-[9.5rem]">
                     <label htmlFor="pf-to" className={label}>To Date</label>
                     <input id="pf-to" type="date" value={draft.dateTo} min={draft.dateFrom || undefined} onChange={set('dateTo')}
                         aria-invalid={!!dateError} aria-describedby="pf-date-hint" className={`${control} ${dateError ? 'border-red-400 dark:border-red-500' : ''}`} />
@@ -99,7 +104,7 @@ export const ProjectFilterBar: React.FC<Props> = ({ tab, applied, options, activ
                 {uses('billingStatus') && select('billingStatus', 'Billing Status', options.billingStatuses, 'Any')}
                 {uses('paymentStatus') && select('paymentStatus', 'Payment Status', options.paymentStatuses, 'Any')}
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2">
                     <button type="submit" disabled={!!dateError}
                         className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md bg-blue-600 px-3.5 text-[13px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
                         <Filter size={14} aria-hidden="true" /> Apply Filters

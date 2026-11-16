@@ -15,6 +15,11 @@ export const DEFAULT_PROJECT_STATUS_STYLE =
 
 // Engagement model chosen when the project was created (Create Project modal)
 export const ENGAGEMENT_META: Record<string, { label: string; className: string }> = {
+  // Internal Project (project_category 'internal'): shown instead of the engagement type.
+  internal: {
+    label: 'Internal Project',
+    className: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/30',
+  },
   fixed: {
     label: 'Fixed Budget / Milestone',
     className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30',

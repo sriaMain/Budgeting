@@ -18,6 +18,30 @@ import type { PocOption, ResourceRow, ResourceType } from '../utils/resources';
 
 export type ResourceDrawerMode = { kind: 'add' } | { kind: 'edit' | 'view'; row: ResourceRow };
 
+/** A row of GET /projects/<id>/milestones/ (only the fields this drawer uses). */
+export interface MilestoneOption {
+    id: number;
+    name: string;
+    planned_start_date?: string | null;
+    created_at?: string | null;
+}
+
+/** Local YYYY-MM-DD of an ISO date-time (the day the milestone was created, in this time zone). */
+const isoDay = (value: string) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** A new assignment starts when its milestone does: the milestone's Planned Start, or - when
+ * that isn't set - the day the milestone was created. */
+const milestoneStart = (m: MilestoneOption | undefined): { date: string; from: 'planned' | 'created' } | null => {
+    if (!m) return null;
+    if (m.planned_start_date) return { date: m.planned_start_date, from: 'planned' };
+    const created = m.created_at ? isoDay(m.created_at) : '';
+    return created ? { date: created, from: 'created' } : null;
+};
+
 interface MasterRate {
     cost_rate: string | number | null;
     rate_unit: string | null;
@@ -29,7 +53,9 @@ interface Props {
     projectId: string;
     currency: string;
     isFixed: boolean;
-    milestones: { id: number; name: string }[];
+    /** Internal project: the milestone is optional (project-level resources). */
+    isInternal?: boolean;
+    milestones: MilestoneOption[];
     pocOptions: PocOption[];
     onClose: () => void;
     onSaved: () => void;
@@ -50,7 +76,7 @@ const errorBorder = 'border-red-400 dark:border-red-500';
 const Req = () => <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>;
 const FieldError = ({ text }: { text?: string }) => (text ? <p className="text-xs text-red-600 dark:text-red-400 mt-1">{text}</p> : null);
 
-const initialForm = (mode: ResourceDrawerMode | null, isFixed: boolean, milestones: { id: number }[]) => {
+const initialForm = (mode: ResourceDrawerMode | null, isFixed: boolean, milestones: MilestoneOption[]) => {
     if (mode && mode.kind !== 'add') {
         const a = mode.row;
         const rateXUnits = round2(num(a.cost_rate) * num(a.working_hours));
@@ -69,14 +95,18 @@ const initialForm = (mode: ResourceDrawerMode | null, isFixed: boolean, mileston
             startDate: a.start_date || todayIso(),
             endDate: a.end_date || '',
             status: a.status,
+            /** The status before a past end date switched it to Completed here (restored if the end date moves forward). */
+            statusBeforeAuto: '',
         };
     }
+    // A Fixed Budget resource always belongs to a milestone - preselected when there's only one,
+    // and then the start date comes from that milestone.
+    const only = isFixed && milestones.length === 1 ? milestones[0] : undefined;
     return {
         resourceType: 'employee' as ResourceType,
         resource: null as SearchableSelectOption | null,
         externalName: '',
-        // A Fixed Budget resource always belongs to a milestone - preselected when there's only one.
-        milestone: isFixed && milestones.length === 1 ? String(milestones[0].id) : '',
+        milestone: only ? String(only.id) : '',
         costRate: '',
         units: '',
         departmentFilter: '',
@@ -84,10 +114,26 @@ const initialForm = (mode: ResourceDrawerMode | null, isFixed: boolean, mileston
         costAmount: '',
         amountOverridden: false,
         allocation: '100',
-        startDate: todayIso(),
+        startDate: milestoneStart(only)?.date || todayIso(),
         endDate: '',
         status: 'active',
+        statusBeforeAuto: '',
     };
+};
+
+type ResourceForm = ReturnType<typeof initialForm>;
+
+/** An assignment whose end date has passed is Completed (the server applies the same rule -
+ * Project/status_automation.py). Moving the end date forward again restores the previous status. */
+const withEndDate = (f: ResourceForm, endDate: string): ResourceForm => {
+    const ended = !!endDate && endDate < todayIso();
+    if (ended && (f.status === 'active' || f.status === 'on_hold')) {
+        return { ...f, endDate, status: 'completed', statusBeforeAuto: f.status };
+    }
+    if (!ended && f.statusBeforeAuto && f.status === 'completed') {
+        return { ...f, endDate, status: f.statusBeforeAuto, statusBeforeAuto: '' };
+    }
+    return { ...f, endDate };
 };
 
 const uniqueSorted = (values: (string | undefined)[]) =>
@@ -157,7 +203,7 @@ const Detail: React.FC<{ label: string; children: React.ReactNode }> = ({ label,
 );
 
 export const ResourceFormDrawer: React.FC<Props> = ({
-    mode, projectId, currency, isFixed, milestones, pocOptions, onClose, onSaved, onEdit, onRemove,
+    mode, projectId, currency, isFixed, isInternal = false, milestones, pocOptions, onClose, onSaved, onEdit, onRemove,
 }) => {
     const [form, setForm] = useState(() => initialForm(mode, isFixed, milestones));
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -193,10 +239,27 @@ export const ResourceFormDrawer: React.FC<Props> = ({
     const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
     const changeType = (resourceType: ResourceType) => {
-        setForm({ ...initialForm({ kind: 'add' }, isFixed, milestones), milestone: form.milestone, resourceType });
+        // A new person, but the same milestone and assignment dates.
+        setForm(withEndDate({
+            ...initialForm({ kind: 'add' }, isFixed, milestones),
+            milestone: form.milestone, startDate: form.startDate, resourceType,
+        }, form.endDate));
         setMasterRate(null);
         setErrors({});
     };
+
+    // Adding: picking a milestone sets the start date from it (still editable). An existing
+    // assignment keeps its dates when its milestone is changed.
+    const changeMilestone = (value: string) => {
+        const start = kind === 'add' ? milestoneStart(milestones.find((m) => String(m.id) === value)) : null;
+        setForm((f) => (start
+            ? withEndDate({ ...f, milestone: value, startDate: start.date }, f.endDate && f.endDate < start.date ? '' : f.endDate)
+            : { ...f, milestone: value }));
+        setErrors((e) => ({ ...e, milestone: '', startDate: '', endDate: '' }));
+    };
+    const endPassed = !!form.endDate && form.endDate < todayIso();
+    const selectedStart = kind === 'add' ? milestoneStart(milestones.find((m) => String(m.id) === form.milestone)) : null;
+    const startFromMilestone = selectedStart && selectedStart.date === form.startDate ? selectedStart.from : null;
 
     const changeDepartment = (value: string) => setForm((f) => {
         const keepDesignation = !f.designationFilter
@@ -238,7 +301,8 @@ export const ResourceFormDrawer: React.FC<Props> = ({
         } else if (!form.resource) {
             e.resource = 'Select a resource.';
         }
-        if (isFixed && !form.milestone) {
+        // Internal projects may also staff the project itself (no milestone).
+        if (isFixed && !isInternal && !form.milestone) {
             e.milestone = milestones.length ? 'Select the milestone this resource works on.' : 'Add a milestone in the Milestones tab first.';
         }
         if (num(form.costRate) < 0) e.costRate = 'Cost rate cannot be negative.';
@@ -333,7 +397,9 @@ export const ResourceFormDrawer: React.FC<Props> = ({
                     <section aria-label="Assignment details">
                         <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">This project's assignment</h3>
                         <dl>
-                            {isFixed && <Detail label="Milestone">{a.milestone_name || <span className="text-amber-600 dark:text-amber-400">Not linked</span>}</Detail>}
+                            {isFixed && <Detail label="Milestone">{a.milestone_name || (isInternal
+                                ? <span className="text-gray-600 dark:text-gray-300">Project level</span>
+                                : <span className="text-amber-600 dark:text-amber-400">Not linked</span>)}</Detail>}
                             <Detail label="Assignment period">
                                 {toDMY(a.start_date, '—')} – {a.end_date ? toDMY(a.end_date, '—') : 'ongoing'}{days ? ` (${days} days)` : ''}
                             </Detail>
@@ -465,10 +531,12 @@ export const ResourceFormDrawer: React.FC<Props> = ({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {isFixed ? (
                         <div>
-                            <label htmlFor="res-milestone" className={labelClass}>Milestone<Req /></label>
-                            <select id="res-milestone" value={form.milestone} onChange={(e) => set({ milestone: e.target.value })}
+                            <label htmlFor="res-milestone" className={labelClass}>Milestone{!isInternal && <Req />}</label>
+                            <select id="res-milestone" value={form.milestone} onChange={(e) => changeMilestone(e.target.value)}
                                 className={`${inputClass} ${errors.milestone ? errorBorder : ''}`}>
-                                <option value="" disabled>Select milestone</option>
+                                {isInternal
+                                    ? <option value="">Project level (no milestone)</option>
+                                    : <option value="" disabled>Select milestone</option>}
                                 {milestones.map((m) => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
                             </select>
                             <FieldError text={errors.milestone} />
@@ -481,21 +549,34 @@ export const ResourceFormDrawer: React.FC<Props> = ({
                     )}
                     <div>
                         <label htmlFor="res-status" className={labelClass}>Status</label>
-                        <select id="res-status" value={form.status} onChange={(e) => set({ status: e.target.value })} className={inputClass}>
+                        <select id="res-status" value={form.status} onChange={(e) => set({ status: e.target.value, statusBeforeAuto: '' })}
+                            aria-describedby={endPassed ? 'res-status-hint' : undefined} className={inputClass}>
                             {STATUS_CHOICES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
+                        {endPassed && form.status !== 'removed' && (
+                            <p id="res-status-hint" className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                The end date has passed, so it’s saved as Completed.
+                            </p>
+                        )}
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                         <label htmlFor="res-start" className={labelClass}>Assignment Start Date<Req /></label>
-                        <input id="res-start" type="date" value={form.startDate} onChange={(e) => set({ startDate: e.target.value })} className={`${inputClass} ${errors.startDate ? errorBorder : ''}`} />
+                        <input id="res-start" type="date" value={form.startDate} onChange={(e) => set({ startDate: e.target.value })}
+                            aria-describedby={startFromMilestone ? 'res-start-hint' : undefined}
+                            className={`${inputClass} ${errors.startDate ? errorBorder : ''}`} />
+                        {startFromMilestone && !errors.startDate && (
+                            <p id="res-start-hint" className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                {startFromMilestone === 'planned' ? 'From the milestone’s planned start' : 'From the milestone’s created date (no planned start set)'}
+                            </p>
+                        )}
                         <FieldError text={errors.startDate} />
                     </div>
                     <div>
                         <label htmlFor="res-end" className={labelClass}>Assignment End Date<Req /></label>
-                        <input id="res-end" type="date" value={form.endDate} min={form.startDate || undefined} onChange={(e) => set({ endDate: e.target.value })} className={`${inputClass} ${errors.endDate ? errorBorder : ''}`} />
+                        <input id="res-end" type="date" value={form.endDate} min={form.startDate || undefined} onChange={(e) => { const v = e.target.value; setForm((f) => withEndDate(f, v)); }} className={`${inputClass} ${errors.endDate ? errorBorder : ''}`} />
                         <FieldError text={errors.endDate} />
                     </div>
                 </div>

@@ -172,10 +172,52 @@ export interface PeriodSummary {
     net_cash: number;
 }
 
+/** One milestone of an internal project (financial-summary `milestones`). */
+export interface InternalMilestoneRow {
+    id: number;
+    sequence: number;
+    name: string;
+    status: string;
+    status_display: string;
+    progress: number;
+    planned_start_date: string | null;
+    planned_end_date: string | null;
+    budget: number;
+    resource_cost: number;
+    resource_count: number;
+    expenses_amount: number;
+    bills_amount: number;
+    actual_cost: number;
+    remaining_budget: number;
+    used_percent: number | null;
+    is_over_budget: boolean;
+}
+
+export interface MilestoneProgress {
+    total: number;
+    completed: number;
+    in_progress: number;
+    not_started: number;
+    on_hold: number;
+    cancelled: number;
+    average_progress: number | null;
+}
+
 export interface FixedFinancialSummary {
     engagement_type: 'fixed';
-    contract_value: number;
+    /** 'internal' = an Internal Project (no quotation / client billing); its extra fields below. */
+    project_category?: 'client' | 'internal';
+    /** null for internal projects. */
+    contract_value: number | null;
     budget: number;
+    // Internal projects only:
+    approved_budget?: number;
+    utilization_percent?: number | null;
+    allocated_to_milestones?: number;
+    unallocated_budget?: number;
+    milestone_progress?: MilestoneProgress;
+    milestones?: InternalMilestoneRow[];
+    not_linked?: { billed_amount: number; received_amount: number; expenses_amount: number; resource_cost?: number };
     /** Assigned cost of the project's resources (Resources tab). */
     resource_cost: number;
     /** Expenses (not resource-cost categories) and paid vendor bills. */
@@ -187,12 +229,12 @@ export interface FixedFinancialSummary {
     outstanding_amount: number;
     remaining_budget: number;
     variance: number;
-    gross_margin: number;
+    gross_margin: number | null;
     margin_percent: number | null;
     is_over_budget: boolean;
     outgoing_payments: number;
     net_cash_position: number;
-    cost_breakdown: CostBreakdown;
+    cost_breakdown: CostBreakdown & { vendor_resource_cost?: number };
     invoice_breakdown: InvoiceBreakdownRow[];
     period?: PeriodSummary | null;
 }

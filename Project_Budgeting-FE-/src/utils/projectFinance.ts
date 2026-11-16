@@ -25,10 +25,12 @@ export interface ProjectMoney {
     marginPercent: number | null;
 }
 
-const n = (v: unknown) => {
+/** An API amount (number, numeric string or null) as a number; 0 when missing. */
+export const num = (v: unknown) => {
     const x = typeof v === 'number' ? v : parseFloat(String(v ?? 0));
     return Number.isFinite(x) ? x : 0;
 };
+const n = num;
 
 export const pct = (part: number, whole: number): number | null => (whole > 0 ? (part / whole) * 100 : null);
 

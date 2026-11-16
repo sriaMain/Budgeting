@@ -14,6 +14,8 @@ interface Props {
     dateFrom: string;
     dateTo: string;
     action?: React.ReactNode;
+    /** Internal project: costs only - no invoices, receipts or net cash. */
+    isInternal?: boolean;
 }
 
 const Line: React.FC<{ label: string; value: string; strong?: boolean }> = ({ label, value, strong }) => (
@@ -23,7 +25,7 @@ const Line: React.FC<{ label: string; value: string; strong?: boolean }> = ({ la
     </div>
 );
 
-export const PeriodSummaryCard: React.FC<Props> = ({ projectId, currency, dateFrom, dateTo, action }) => {
+export const PeriodSummaryCard: React.FC<Props> = ({ projectId, currency, dateFrom, dateTo, action, isInternal = false }) => {
     const { data, loading, error } = useApiData<ProjectFinancialSummary>(
         `/projects/${projectId}/financial-summary/`,
         { ...(dateFrom ? { date_from: dateFrom } : {}), ...(dateTo ? { date_to: dateTo } : {}) },
@@ -45,17 +47,19 @@ export const PeriodSummaryCard: React.FC<Props> = ({ projectId, currency, dateFr
                 <p role="alert" className="text-[13px] text-red-600 dark:text-red-400">{error}</p>
             ) : p ? (
                 <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2 lg:grid-cols-4">
-                    <Line label={`Invoiced (${p.invoice_count})`} value={fmt(Number(p.invoiced_amount))} strong />
-                    <Line label="Received" value={fmt(Number(p.received_amount))} />
+                    {!isInternal && <Line label={`Invoiced (${p.invoice_count})`} value={fmt(Number(p.invoiced_amount))} strong />}
+                    {!isInternal && <Line label="Received" value={fmt(Number(p.received_amount))} />}
                     <Line label={`Resource cost (${p.resource_count})`} value={fmt(Number(p.resource_cost))} />
                     <Line label="Expenses" value={fmt(Number(p.expenses_amount))} />
                     <Line label="Vendor bills paid" value={fmt(Number(p.bills_paid_amount))} />
                     <Line label="Actual cost" value={fmt(Number(p.actual_cost))} strong />
-                    <Line label="Net cash (received − bills paid)" value={fmt(Number(p.net_cash))} />
+                    {!isInternal && <Line label="Net cash (received − bills paid)" value={fmt(Number(p.net_cash))} />}
                 </dl>
             ) : null}
             <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
-                Invoices by invoice date (Cancelled excluded) · payments by payment date (confirmed receipts only) · expenses by expense date · resources whose assignment starts and ends within the dates. Project totals elsewhere on the page don’t change.
+                {isInternal
+                    ? 'Bill payments by payment date · expenses by expense date · resources whose assignment starts and ends within the dates. Project totals elsewhere on the page don’t change.'
+                    : 'Invoices by invoice date (Cancelled excluded) · payments by payment date (confirmed receipts only) · expenses by expense date · resources whose assignment starts and ends within the dates. Project totals elsewhere on the page don’t change.'}
             </p>
         </section>
     );

@@ -142,6 +142,8 @@ class HelpdeskProjectMilestonesView(ExternalApiView):
         project = Project.objects.filter(project_no=project_id).only('project_no', 'project_name').first()
         if project is None:
             return self._not_found("Project not found.")
+        from .status_automation import apply_status_rules
+        apply_status_rules(project)  # same statuses as the Milestones tab shows
 
         # Archived (soft-deleted) milestones are left out, as on Project Budgeting's own screens.
         qs = project.milestones.filter(is_active=True).order_by('sequence', 'id')
@@ -190,6 +192,8 @@ class HelpdeskProjectResourcesView(ExternalApiView):
         project = Project.objects.filter(project_no=project_id).only('project_no', 'project_name').first()
         if project is None:
             return self._not_found("Project not found.")
+        from .status_automation import apply_status_rules
+        apply_status_rules(project)  # ended assignments read as Completed, as on the Resources tab
 
         # Same rules as Project Budgeting's Resources tab and the AIRA API: deleted resources and
         # resources on an archived milestone are never returned; 'removed' ones only when asked for.

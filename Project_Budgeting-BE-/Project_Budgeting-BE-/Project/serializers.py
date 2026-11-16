@@ -533,6 +533,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     created_by_name = serializers.SerializerMethodField()
     updated_by_name = serializers.SerializerMethodField()
+    # Who works on it (Resources tab, removed ones left out): [{name, type}].
+    assigned_resources = serializers.SerializerMethodField()
 
     # Write-only escape hatch for Section 11's "unless explicitly allowed" -
     # never persisted, just relaxes the contract-value cap for this save.
@@ -581,9 +583,22 @@ class MilestoneSerializer(serializers.ModelSerializer):
             'updated_at',
             'created_by_name',
             'updated_by_name',
+            'assigned_resources',
             'override_budget_check',
         )
         read_only_fields = ('id', 'project', 'created_at', 'updated_at')
+
+    def get_assigned_resources(self, obj):
+        if not obj.pk:
+            return []
+        from hrms_integration.external_api import resource_identities, resource_identity
+        rows = list(obj.resource_assignments.filter(is_active=True).exclude(status='removed').order_by('start_date', 'id'))
+        identities = resource_identities(rows)
+        return [
+            {"name": resource_identity(a, identities)[1] or a.get_resource_type_display(),
+             "type": a.resource_type, "status": a.status}
+            for a in rows
+        ]
 
     def get_created_by_name(self, obj):
         return obj.created_by.get_full_name() if obj.created_by else None
@@ -599,9 +614,14 @@ class MilestoneSerializer(serializers.ModelSerializer):
         others = project.milestones.filter(is_active=True).exclude(pk=exclude_pk)
         errors = {}
 
+        # 0% needs no base: a project without a user budget / quotation can still have milestones
+        # (the form always sends both percentages, blank = 0). The stored amount is then left as it
+        # is (0 on a new milestone), so editing never wipes an older milestone's amount.
         if budget_percent is not None:
             base = Milestone.project_budget_base_for(project)
-            if not base:
+            if not base and not budget_percent:
+                pass
+            elif not base:
                 errors['budget_percent'] = "Project has no user budget to take a percentage of."
             else:
                 amount = (base * budget_percent / Decimal("100")).quantize(Decimal("0.01"))
@@ -615,7 +635,9 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
         if bill_percent is not None:
             base = Milestone.quotation_base_for(project)
-            if not base:
+            if not base and not bill_percent:
+                pass
+            elif not base:
                 errors['bill_percent'] = "Project has no quotation amount to take a percentage of."
             else:
                 amount = (base * bill_percent / Decimal("100")).quantize(Decimal("0.01"))
@@ -735,8 +757,10 @@ class ResourceAssignmentSerializer(serializers.ModelSerializer):
         milestone = data.get('milestone', getattr(self.instance, 'milestone', None))
         if milestone and project and milestone.project_id != project.pk:
             raise serializers.ValidationError({"milestone": "Milestone must belong to this project."})
-        # Fixed Budget resources are costed in their milestone's Actual Cost, so each one needs a milestone.
-        if project and project.engagement_type == 'fixed' and not milestone:
+        # Fixed Budget client projects cost each resource in its milestone's Actual Cost, so each one
+        # needs a milestone. Internal projects may also staff the project itself (no milestone) -
+        # still counted in the project's Actual Cost.
+        if project and project.engagement_type == 'fixed' and not project.is_internal and not milestone:
             raise serializers.ValidationError({"milestone": "Select the milestone this resource works on."})
         if resource_type == 'external':
             name = data.get('external_name', getattr(self.instance, 'external_name', ''))
@@ -777,6 +801,12 @@ class ResourceAssignmentSerializer(serializers.ModelSerializer):
                 if not Freelancer.objects.filter(pk=resource_id).exists():
                     raise serializers.ValidationError({"resource_id": "No freelancer found with this ID."})
 
+        # An assignment whose period is over is Completed (Project/status_automation.py).
+        from .status_automation import assignment_has_ended
+        if assignment_has_ended(data.get('end_date', getattr(self.instance, 'end_date', None)),
+                                data.get('status', getattr(self.instance, 'status', 'active'))):
+            data['status'] = 'completed'
+
         # One open assignment per person per milestone (or project level) for any period.
         status_value = data.get('status', getattr(self.instance, 'status', 'active'))
         if project and resource_type and status_value in ('active', 'on_hold'):
@@ -802,6 +832,10 @@ class ResourceAssignmentSerializer(serializers.ModelSerializer):
 
 class ProjectCreateSerializer(serializers.ModelSerializer):
     budget = ProjectBudgetSerializer(required=False)
+    # Internal projects only: the Approved Internal Budget (stored as ProjectBudget.total_budget).
+    approved_budget = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=False, write_only=True, min_value=Decimal("0"),
+    )
 
     class Meta:
         model = Project
@@ -810,6 +844,12 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
             'project_no',
             'project_name',
             'project_type',
+            # Client project (from a quotation) or Internal project (no quotation) - see Project.
+            'project_category',
+            'department',
+            'description',
+            'currency',
+            'approved_budget',
             'client',
             'start_date',
             'end_date',
@@ -903,6 +943,16 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "client": "This client is not yet approved for project creation."
             })
+
+        # =============================
+        # 🔹 INTERNAL PROJECT (project_category='internal') - its own rules; the client /
+        # quotation rules below are for client projects and are not changed.
+        # =============================
+        category = data.get('project_category') or getattr(self.instance, 'project_category', None) or 'client'
+        if self.instance is not None and 'project_category' in data and data['project_category'] != self.instance.project_category:
+            raise serializers.ValidationError({"project_category": "A project's category can't be changed."})
+        if category == 'internal':
+            return self._validate_internal(data)
 
         # =============================
         # 🔹 PROJECT FINANCIAL MANAGEMENT: engagement type
@@ -1053,7 +1103,72 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
 
         return data
 
+    def to_internal_value(self, data):
+        # An internal project's type is always 'internal' - the form needn't send it.
+        if self.instance is None and hasattr(data, 'get') and data.get('project_category') == 'internal' \
+                and not data.get('project_type'):
+            data = data.copy() if hasattr(data, 'copy') else dict(data)
+            data['project_type'] = 'internal'
+        return super().to_internal_value(data)
+
+    def _validate_internal(self, data):
+        """Internal project: no quotation, contract value or client billing; milestone-based
+        (engagement 'fixed'); needs a project manager and an approved budget. The department is
+        optional."""
+        creating = self.instance is None
+        errors = {}
+        if data.get('created_from_quotation') or getattr(self.instance, 'created_from_quotation_id', None):
+            errors['created_from_quotation'] = "Internal projects are not created from a quotation."
+        engagement = data.get('engagement_type')
+        if engagement and engagement != 'fixed':
+            errors['engagement_type'] = "Internal projects are milestone-based - Time & Material billing doesn't apply."
+        if 'department' in data:
+            data['department'] = (data.get('department') or '').strip()
+        if ('project_manager' in data or creating) and not data.get('project_manager'):
+            errors['project_manager'] = "Select the project manager."
+        if 'approved_budget' in data or creating:
+            budget = data.get('approved_budget')
+            if budget is None or budget <= 0:
+                errors['approved_budget'] = "Enter the approved internal budget (more than 0)."
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        if creating:
+            data['project_type'] = 'internal'
+            data['engagement_type'] = 'fixed'
+        data.pop('budget', None)  # the budget comes from approved_budget
+        return data
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.is_internal:
+            budget = getattr(instance, 'budget', None) if instance.pk else None
+            data['approved_budget'] = budget.total_budget if budget else None
+        return data
+
+    def update(self, instance, validated_data):
+        approved_budget = validated_data.pop('approved_budget', None)
+        project = super().update(instance, validated_data)
+        if project.is_internal:
+            budget, _ = ProjectBudget.objects.get_or_create(project=project)
+            if approved_budget is not None:
+                budget.total_budget = approved_budget
+            budget.use_quoted_amounts = False
+            budget.currency = project.currency
+            budget.save()
+        return project
+
     def create(self, validated_data):
+        approved_budget = validated_data.pop('approved_budget', None)
+        if validated_data.get('project_category') == 'internal':
+            validated_data.pop('budget', None)
+            project = Project.objects.create(**validated_data)
+            ProjectBudget.objects.create(
+                project=project, use_quoted_amounts=False, total_budget=approved_budget,
+                currency=project.currency,
+            )
+            return project
+
         budget_data = validated_data.pop('budget', None)
 
         project = Project.objects.create(**validated_data)
@@ -1104,6 +1219,8 @@ class ProjectListSerializer(serializers.ModelSerializer):
     profit_center_name = serializers.CharField(source='profit_center.name', read_only=True, default=None)
     gl_account_name = serializers.CharField(source='gl_account.name', read_only=True, default=None)
     gl_account_code = serializers.CharField(source='gl_account.code', read_only=True, default=None)
+    project_manager_name = serializers.SerializerMethodField()
+    approved_budget = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
@@ -1111,6 +1228,13 @@ class ProjectListSerializer(serializers.ModelSerializer):
             'project_no',
             'project_name',
             'project_type',
+            'project_category',
+            'department',
+            'description',
+            'currency',
+            'project_manager',
+            'project_manager_name',
+            'approved_budget',
             'status',
             'start_date',
             'end_date',
@@ -1137,6 +1261,21 @@ class ProjectListSerializer(serializers.ModelSerializer):
             'project_amount',
             'remaining_amount',
         )
+
+    def get_project_manager_name(self, obj):
+        pm = obj.project_manager
+        if not pm:
+            return None
+        return getattr(pm, 'display_name', None) or pm.get_full_name() or pm.username
+
+    def get_approved_budget(self, obj):
+        """Internal projects' Approved Internal Budget (None for client projects)."""
+        if not obj.is_internal:
+            return None
+        try:
+            return obj.budget.total_budget
+        except ObjectDoesNotExist:
+            return None
 
     def get_budget(self, obj):
         try:

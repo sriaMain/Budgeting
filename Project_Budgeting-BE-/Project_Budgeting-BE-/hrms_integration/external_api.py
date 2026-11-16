@@ -109,6 +109,8 @@ class ProjectAssignmentsView(AiraApiView):
         if employee is None:
             return self._not_found("Employee not found in Project Budgeting.")
 
+        from Project.status_automation import apply_status_rules
+        apply_status_rules()  # ended assignments read as Completed (cheap when nothing changed)
         return Response(_envelope("Project assignments retrieved.",
                                   employee_projects_data(employee, status_filter, page, page_size)))
 
@@ -156,6 +158,8 @@ class ResourceAssignmentsView(AiraApiView):
         status_filter = self._status_filter(params)
         page, page_size = self._paging(params)
 
+        from Project.status_automation import apply_status_rules
+        apply_status_rules()  # ended assignments read as Completed (cheap when nothing changed)
         qs = _assignments(status_filter)
         if resource_type:
             qs = qs.filter(resource_type=resource_type)

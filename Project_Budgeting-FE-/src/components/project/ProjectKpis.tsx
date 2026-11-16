@@ -16,6 +16,8 @@ interface Props {
     currency: string;
     hours: { total: number; consumed: number; remaining: number; overrun: number };
     tasks: { loading: boolean; error: boolean; overdue: number; open: number };
+    /** Internal project: the budget card is the Approved Internal Budget, with what's allocated to milestones. */
+    internal?: { allocated: number } | null;
 }
 
 const hm = (hours: number) => {
@@ -23,7 +25,7 @@ const hm = (hours: number) => {
     return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 };
 
-export const ProjectKpis: React.FC<Props> = ({ money, moneyLoading, moneyError, currency, hours, tasks }) => {
+export const ProjectKpis: React.FC<Props> = ({ money, moneyLoading, moneyError, currency, hours, tasks, internal }) => {
     const m = money;
     const fmt = (v: number) => formatMoney(v, currency);
     const unavailable = moneyError ? 'Couldn’t load figures' : undefined;
@@ -35,11 +37,13 @@ export const ProjectKpis: React.FC<Props> = ({ money, moneyLoading, moneyError, 
         <section aria-label="Project KPIs" className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
             <MetricCard
                 compact
-                label="Total Budget"
+                label={internal ? 'Approved Budget' : 'Total Budget'}
                 icon={<Wallet size={16} />}
                 loading={moneyLoading}
                 value={m ? fmt(m.budget) : '—'}
-                caption={unavailable ?? (m && m.budget > 0 ? `Planned billing ${fmt(m.plannedBilling)}` : 'No budget set')}
+                caption={unavailable ?? (internal
+                    ? `${fmt(internal.allocated)} allocated to milestones`
+                    : m && m.budget > 0 ? `Planned billing ${fmt(m.plannedBilling)}` : 'No budget set')}
             />
             <MetricCard
                 compact

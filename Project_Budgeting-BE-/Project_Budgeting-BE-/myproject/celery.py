@@ -13,6 +13,11 @@ app.conf.beat_schedule = {
         'task': 'Project.tasks.check_running_timers',
         'schedule': 60.0,  # Run every 60 seconds
     },
+    # Ended resource assignments -> Completed; milestones follow their resources.
+    'auto-update-resource-and-milestone-statuses': {
+        'task': 'Project.tasks.auto_update_statuses',
+        'schedule': 3600.0,  # hourly
+    },
     # Pull employees from AIRA HRMS (replaces the old Refresh button).
     'sync-hrms-employees': {
         'task': 'hrms_integration.tasks.sync_hrms_employees',

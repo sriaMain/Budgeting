@@ -2,15 +2,16 @@
  * ResourcesPanel - Project Details > Resources ("Resource Allocation"), for Fixed Budget and Time &
  * Material projects. Every row is an existing ResourceAssignment; people come from the existing
  * masters (AIRA HRMS employees, freelancers, vendors) and are never copied. Search, filters, sorting,
- * paging, totals, Excel export and import all run on the server (/projects/<id>/resources/?page=…,
- * …/export/, …/import/ - Project/resource_service.py), so the table, the export and the import agree.
+ * paging, totals and the Excel export all run on the server (/projects/<id>/resources/?page=…,
+ * …/export/ - Project/resource_service.py), so the table and the export agree. The export is offered
+ * in the page header's More Actions menu (registerExport).
  *
  * Resource cost = the assignment's specific cost amount, else cost rate × planned hours - never timers
  * or timesheets. It feeds the milestone / project Actual Cost server-side.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-hot-toast';
-import { Download, Eye, Pencil, Plus, Search, Trash2, Upload, Users } from 'lucide-react';
+import { Eye, Pencil, Plus, Search, Trash2, Users } from 'lucide-react';
 import axiosInstance from '../utils/axiosInstance';
 import { formatDate as toDMY } from '../utils/date';
 import type { ProjectFilterValues } from '../hooks/useProjectFilters';
@@ -19,8 +20,8 @@ import type { DataColumn, DataTableSort } from './DataTable';
 import { EmptyState } from './EmptyState';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ResourceFormDrawer } from './ResourceFormDrawer';
-import type { ResourceDrawerMode } from './ResourceFormDrawer';
-import { ResourceImportDrawer } from './ResourceImportDrawer';
+import type { MilestoneOption, ResourceDrawerMode } from './ResourceFormDrawer';
+import { type RegisterExport, useRegisterExport } from './project/tabExport';
 import {
     RESOURCE_TYPES, STATUS_BADGE, STATUS_OPTIONS, TYPE_BADGE, errorText, money, num, periodDays, saveDownload,
 } from '../utils/resources';
@@ -31,11 +32,15 @@ interface ResourcesPanelProps {
     currency?: string;
     /** Fixed Budget projects tie each resource to a milestone; T&M hours are per billing period. */
     engagementType?: 'fixed' | 'time_and_material';
-    /** After add / edit / remove / import, so the page can refresh cost figures. */
+    /** After add / edit / remove, so the page can refresh cost figures. */
     onChanged?: () => void;
     /** Project Details filter toolbar (search, status, milestone, resource, assignment period);
      * when given, it replaces this tab's own filter inputs (Resource Type stays here). */
     pageFilters?: ProjectFilterValues;
+    /** Offers this tab's Excel export to the page's More Actions menu. */
+    registerExport?: RegisterExport;
+    /** Internal project: resources may also work on the project itself (no milestone). */
+    isInternal?: boolean;
 }
 
 const PAGE_SIZE = 25;
@@ -44,7 +49,7 @@ const labelClass = 'mb-1 block text-xs font-medium text-gray-600 dark:text-gray-
 const secondaryButton = 'inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800';
 const iconButton = 'inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white';
 
-export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, currency: currencyProp = 'INR', engagementType = 'fixed', onChanged, pageFilters }) => {
+export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, currency: currencyProp = 'INR', engagementType = 'fixed', onChanged, pageFilters, registerExport, isInternal = false }) => {
     const isFixed = engagementType === 'fixed';
 
     /* ---------------- filters (all applied on the server) ---------------- */
@@ -112,7 +117,7 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
     const rows = useMemo(() => (error ? [] : data?.results ?? []), [data, error]);
     const currency = data?.currency || currencyProp;
 
-    const [milestones, setMilestones] = useState<{ id: number; name: string }[]>([]);
+    const [milestones, setMilestones] = useState<MilestoneOption[]>([]);
     const [pocOptions, setPocOptions] = useState<PocOption[]>([]);
     useEffect(() => {
         let cancelled = false;
@@ -120,7 +125,7 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
             .then((res) => { if (!cancelled) setPocOptions(Array.isArray(res.data) ? res.data : []); })
             .catch((err) => console.error('Failed to fetch resource options:', err));
         if (isFixed && projectId) {
-            axiosInstance.get<{ id: number; name: string }[]>(`/projects/${projectId}/milestones/`)
+            axiosInstance.get<MilestoneOption[]>(`/projects/${projectId}/milestones/`)
                 .then((res) => { if (!cancelled) setMilestones(Array.isArray(res.data) ? res.data : []); })
                 .catch((err) => console.error('Failed to fetch milestones:', err));
         }
@@ -163,9 +168,7 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
         setDrawer(mode);
         setDrawerKey((k) => k + 1);
     };
-    const [importOpen, setImportOpen] = useState(false);
     const [removing, setRemoving] = useState<ResourceRow | null>(null);
-    const [exporting, setExporting] = useState(false);
 
     const remove = async () => {
         if (!removing) return;
@@ -181,17 +184,16 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
     };
 
     const exportExcel = async () => {
-        setExporting(true);
+        const toastId = toast.loading('Preparing the resources Excel file…');
         try {
             const filters = Object.fromEntries(Object.entries(params).filter(([key]) => key !== 'page' && key !== 'page_size'));
             const res = await axiosInstance.get<Blob>(`/projects/${projectId}/resources/export/`, { params: filters, responseType: 'blob' });
-            toast.success(`Downloaded ${saveDownload(res, 'Resources.xlsx')}`);
+            toast.success(`Downloaded ${saveDownload(res, 'Resources.xlsx')}`, { id: toastId });
         } catch (err) {
-            toast.error(await errorText(err, 'Export failed'));
-        } finally {
-            setExporting(false);
+            toast.error(await errorText(err, 'Export failed'), { id: toastId });
         }
     };
+    useRegisterExport(registerExport, 'Export Resources (Excel)', !!data && !error && data.filtered.count > 0, exportExcel);
 
     /* ---------------- table ---------------- */
     const columns: DataColumn<ResourceRow>[] = [
@@ -232,7 +234,9 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
             key: 'milestone', header: 'Milestone', sortKey: 'milestone', width: '120px',
             cell: (a: ResourceRow) => a.milestone_name
                 ? <span className="line-clamp-2">{a.milestone_name}</span>
-                : <span className="text-amber-600 dark:text-amber-400" title="Edit this assignment and pick its milestone so its cost counts in that milestone">Not linked</span>,
+                : isInternal
+                    ? <span className="text-gray-500 dark:text-gray-400" title="Works on the project itself - counted in the project's Actual Cost">Project level</span>
+                    : <span className="text-amber-600 dark:text-amber-400" title="Edit this assignment and pick its milestone so its cost counts in that milestone">Not linked</span>,
         }] : []),
         {
             key: 'cost_rate', header: 'Cost Rate', sortKey: 'cost_rate', align: 'right', width: '120px',
@@ -308,20 +312,10 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                         ) : 'Loading…'}
                     </p>
                 </div>
-                <div className="grid w-full grid-cols-1 gap-2 min-[480px]:grid-cols-3 sm:flex sm:w-auto">
-                    <button type="button" onClick={exportExcel} disabled={exporting || !data} className={secondaryButton}>
-                        <Download size={16} aria-hidden="true" /> {exporting ? 'Exporting…' : 'Export Excel'}
-                    </button>
-                    {data?.can_import && (
-                        <button type="button" onClick={() => setImportOpen(true)} className={secondaryButton}>
-                            <Upload size={16} aria-hidden="true" /> Import Excel
-                        </button>
-                    )}
-                    <button type="button" onClick={() => openDrawer({ kind: 'add' })}
-                        className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900">
-                        <Plus size={16} aria-hidden="true" /> Add Resource
-                    </button>
-                </div>
+                <button type="button" onClick={() => openDrawer({ kind: 'add' })}
+                    className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 sm:w-auto dark:focus-visible:ring-offset-gray-900">
+                    <Plus size={16} aria-hidden="true" /> Add Resource
+                </button>
             </div>
 
             {/* Filters - with the page's filter toolbar only Resource Type is set here */}
@@ -467,20 +461,13 @@ export const ResourcesPanel: React.FC<ResourcesPanelProps> = ({ projectId, curre
                 projectId={projectId}
                 currency={currency}
                 isFixed={isFixed}
+                isInternal={isInternal}
                 milestones={milestones}
                 pocOptions={pocOptions}
                 onClose={() => setDrawer(null)}
                 onSaved={() => { setDrawer(null); refresh(); }}
                 onEdit={(row) => openDrawer({ kind: 'edit', row })}
                 onRemove={(row) => setRemoving(row)}
-            />
-
-            <ResourceImportDrawer
-                isOpen={importOpen}
-                onClose={() => setImportOpen(false)}
-                projectId={projectId}
-                currency={currency}
-                onImported={refresh}
             />
 
             <ConfirmDialog
