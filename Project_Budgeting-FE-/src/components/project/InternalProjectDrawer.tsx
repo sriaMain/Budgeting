@@ -115,6 +115,7 @@ const InternalProjectForm: React.FC<Omit<Props, 'isOpen'>> = ({ onClose, project
     const validate = () => {
         const e: Record<string, string> = {};
         if (!form.name.trim()) e.project_name = 'Enter the project name.';
+        if (!form.department) e.department = 'Select the department.';
         if (!form.manager) e.project_manager = 'Select the project manager.';
         if (!form.start) e.start_date = 'Start date is required.';
         if (!form.end) e.end_date = 'End date is required.';
@@ -220,14 +221,15 @@ const InternalProjectForm: React.FC<Omit<Props, 'isOpen'>> = ({ onClose, project
                             </p>
                         </div>
                         <div>
-                            <label htmlFor="ip-dept" className={drawerLabelClass}>Department</label>
-                            <select id="ip-dept" value={form.department} onChange={(e) => set({ department: e.target.value })} className={input('department')}>
-                                <option value="">{departments === null ? 'Loading departments…' : 'No department'}</option>
+                            <label htmlFor="ip-dept" className={drawerLabelClass}>Department<Req /></label>
+                            <select id="ip-dept" value={form.department} onChange={(e) => set({ department: e.target.value })}
+                                aria-invalid={!!errors.department || undefined} className={input('department')}>
+                                <option value="" disabled>{departments === null ? 'Loading departments…' : 'Select department'}</option>
                                 {departmentList.map((d) => <option key={d} value={d}>{d}</option>)}
                             </select>
                             <Err text={errors.department} />
                             {!errors.department && (
-                                <FieldHint>{departments !== null && departments.length === 0 ? 'Optional · AIRA HRMS has no departments yet' : 'Optional · from AIRA HRMS'}</FieldHint>
+                                <FieldHint>{departments !== null && departments.length === 0 ? 'AIRA HRMS has no departments yet - sync employees first' : 'From AIRA HRMS'}</FieldHint>
                             )}
                         </div>
                         <div>

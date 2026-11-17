@@ -1113,8 +1113,7 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
 
     def _validate_internal(self, data):
         """Internal project: no quotation, contract value or client billing; milestone-based
-        (engagement 'fixed'); needs a project manager and an approved budget. The department is
-        optional."""
+        (engagement 'fixed'); needs a department, a project manager and an approved budget."""
         creating = self.instance is None
         errors = {}
         if data.get('created_from_quotation') or getattr(self.instance, 'created_from_quotation_id', None):
@@ -1124,6 +1123,8 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
             errors['engagement_type'] = "Internal projects are milestone-based - Time & Material billing doesn't apply."
         if 'department' in data:
             data['department'] = (data.get('department') or '').strip()
+        if ('department' in data or creating) and not data.get('department'):
+            errors['department'] = "Select the department."
         if ('project_manager' in data or creating) and not data.get('project_manager'):
             errors['project_manager'] = "Select the project manager."
         if 'approved_budget' in data or creating:
@@ -1350,12 +1351,26 @@ class TaskSerializer(serializers.ModelSerializer):
     has_extra_hours_request = serializers.SerializerMethodField(read_only=True)
     # has_pending_extra_hours_request = serializers.SerializerMethodField(read_only=True)
     # has_approved_extra_hours_request = serializers.SerializerMethodField(read_only=True)
+    # Who it's assigned to, for lists: the AIRA HRMS name / employee ID when known, else the
+    # account or freelancer name.
+    assignee_name = serializers.SerializerMethodField(read_only=True)
+    assignee_code = serializers.SerializerMethodField(read_only=True)
+    # Time & Material tasks: allocated hours (required), timers, consumed time. Milestone-based
+    # (Fixed Budget / internal) tasks: no time tracking - allocated hours stay 0 (see validate).
+    allocated_hours = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, min_value=Decimal("0"))
+    time_tracked = serializers.SerializerMethodField(read_only=True)
+    project_engagement_type = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Task
         fields = [
             "id",
             "title",
+            "description",
+            "assignee_name",
+            "assignee_code",
+            "time_tracked",
+            "project_engagement_type",
             "status",
             "allocated_hours",
             "allocated_formatted",
@@ -1422,6 +1437,24 @@ class TaskSerializer(serializers.ModelSerializer):
         milestone = attrs.get("milestone", getattr(self.instance, "milestone", None))
         project = attrs.get("project", getattr(self.instance, "project", None))
         # Project's primary key is project_no (no `id` field), so compare on pk
+        # Description, start date and end date are required: on create, and an edit can't clear them.
+        # (Partial updates that don't send them - e.g. a status change - are left alone.)
+        required = {
+            "description": ("description", "Enter a description."),
+            "start_date": ("start_date", "Select a start date."),
+            "due_date": ("end_date", "Select an end date."),
+        }
+        missing = {}
+        for attr, (field, message) in required.items():
+            if self.instance is None or attr in attrs:
+                value = attrs.get(attr)
+                if value is None or (isinstance(value, str) and not value.strip()):
+                    missing[field] = message
+        if missing:
+            raise serializers.ValidationError(missing)
+        if isinstance(attrs.get("description"), str):
+            attrs["description"] = attrs["description"].strip()
+
         start_date = attrs.get("start_date", getattr(self.instance, "start_date", None))
         end_date = attrs.get("due_date", getattr(self.instance, "due_date", None))
         if start_date and end_date and end_date < start_date:
@@ -1431,6 +1464,16 @@ class TaskSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"milestone": "Milestone does not belong to this task's project."}
             )
+
+        # Allocated hours: required on Time & Material tasks; milestone-based tasks track no time.
+        tracked = project is None or project.engagement_type != 'fixed'
+        if self.instance is None:
+            if not tracked:
+                attrs["allocated_hours"] = Decimal("0.00")
+            elif attrs.get("allocated_hours") is None:
+                raise serializers.ValidationError({"allocated_hours": "Enter the allocated hours."})
+        elif not tracked and "allocated_hours" in attrs:
+            attrs.pop("allocated_hours")  # left as it is on an existing milestone-project task
 
         if "assigned_hrms_employee" in attrs:
             hrms_employee = attrs.get("assigned_hrms_employee")
@@ -1471,6 +1514,11 @@ class TaskSerializer(serializers.ModelSerializer):
         freelancer = validated_data.pop("freelancer", None)
         if has_freelancer and freelancer is not None:
             validated_data["assigned_to"] = None
+            validated_data["assigned_hrms_employee"] = None
+        elif "assigned_to" in validated_data and "assigned_hrms_employee" not in validated_data:
+            # Reassigned by account: keep the AIRA link in step so the old name isn't shown.
+            account = validated_data["assigned_to"]
+            validated_data["assigned_hrms_employee"] = getattr(account, "hrms_employee", None) if account else None
         with transaction.atomic():
             task = super().update(instance, validated_data)
             if has_freelancer:
@@ -1594,6 +1642,33 @@ class TaskSerializer(serializers.ModelSerializer):
             return None
         return {"id": assignment.freelancer_id, "name": assignment.freelancer.full_name}
 
+    def _hrms_for(self, obj):
+        hrms = getattr(obj, 'assigned_hrms_employee', None)
+        if hrms is None and obj.assigned_to_id:
+            hrms = getattr(obj.assigned_to, 'hrms_employee', None)
+        return hrms
+
+    def get_assignee_name(self, obj):
+        hrms = self._hrms_for(obj)
+        if hrms is not None and (hrms.full_name or '').strip():
+            return hrms.full_name.strip()
+        if obj.assigned_to_id:
+            user = obj.assigned_to
+            return getattr(user, 'display_name', None) or user.get_full_name() or user.username
+        freelancer = self.get_assigned_freelancer(obj)
+        return freelancer['name'] if freelancer else None
+
+    def get_assignee_code(self, obj):
+        hrms = self._hrms_for(obj)
+        return hrms.employee_id if hrms is not None else None
+
+    def get_time_tracked(self, obj):
+        from .models import task_time_tracked
+        return task_time_tracked(obj)
+
+    def get_project_engagement_type(self, obj):
+        return obj.project.engagement_type if obj.project_id else None
+
 
     def get_created_by(self, obj):
         return obj.created_by.username if obj.created_by else None
@@ -1648,6 +1723,8 @@ class TaskSerializer(serializers.ModelSerializer):
         return TaskExtraHoursRequest.objects.filter(task=obj, status='approved').exists()
 
     def get_needs_extra_hours(self, obj):
+        if not self.get_time_tracked(obj):
+            return False  # milestone-based projects: no hours to exceed
         try:
             allocated = float(obj.allocated_hours)
             consumed = float(obj.consumed_hours)

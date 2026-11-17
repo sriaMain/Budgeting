@@ -30,6 +30,8 @@ interface ProjectHealthCardProps {
   /** Pre-formatted values; missing ones read "Not set" so every card lines up. */
   totalBudget?: string;
   totalHours?: string;
+  /** false on milestone-based projects: no "Hours Allocated" (Total Budget takes the full row). */
+  showHours?: boolean;
   startDate?: string;
   endDate?: string;
   /** The project's real, editable status control. */
@@ -48,6 +50,7 @@ export const ProjectHealthCard: React.FC<ProjectHealthCardProps> = ({
   engagementType,
   totalBudget,
   totalHours,
+  showHours = true,
   startDate,
   endDate,
   statusControl,
@@ -56,9 +59,10 @@ export const ProjectHealthCard: React.FC<ProjectHealthCardProps> = ({
   const navigate = useNavigate();
   const meta = HEALTH_META[health];
   const engagement = engagementType ? ENGAGEMENT_META[engagementType] : undefined;
+  // Without the hours cell the budget spans both columns, so every card keeps two rows.
   const details: [string, string | undefined][] = [
     ['Total Budget', totalBudget],
-    ['Hours Allocated', totalHours],
+    ...(showHours ? [['Hours Allocated', totalHours] as [string, string | undefined]] : []),
     ['Start Date', startDate],
     ['End Date', endDate],
   ];
@@ -131,7 +135,7 @@ export const ProjectHealthCard: React.FC<ProjectHealthCardProps> = ({
 
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-gray-100 pt-2.5 dark:border-gray-800">
         {details.map(([label, value]) => (
-          <div key={label} className="min-w-0">
+          <div key={label} className={`min-w-0 ${!showHours && label === 'Total Budget' ? 'col-span-2' : ''}`}>
             <dt className="text-xs leading-4 text-gray-500 dark:text-gray-400">{label}</dt>
             <dd
               className={`truncate text-[13px] font-medium leading-[18px] tabular-nums ${value ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'}`}

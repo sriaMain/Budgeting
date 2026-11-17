@@ -6,7 +6,8 @@ from rest_framework.permissions import IsAuthenticated
 from urllib3 import request
 from .permissions import CanManageResources, is_resource_manager
 from .models import (Project, ProjectBudget, BudgetLine, Milestone, ResourceAssignment, Task, Timesheet,
-                      TimesheetEntry, TaskTimerLog, TaskExtraHoursRequest)
+                      TimesheetEntry, TaskTimerLog, TaskExtraHoursRequest, NO_TIME_TRACKING_MESSAGE,
+                      task_time_tracked)
 from .serializers import (ProjectCreateSerializer, ProjectBudgetSerializer, BudgetLineSerializer,
  MilestoneSerializer, ResourceAssignmentSerializer, TaskSerializer,
  TimesheetEntrySerializer, TimesheetSerializer, TaskTimerLogSerializer,
@@ -2350,9 +2351,12 @@ class StartTaskTimerAPIView(APIView):
         user = request.user
 
         try:
-            task = Task.objects.get(id=task_id)
+            task = Task.objects.select_related("project").get(id=task_id)
         except Task.DoesNotExist:
             return Response({"error": "Task not found"}, status=404)
+
+        if not task_time_tracked(task):
+            return Response({"error": NO_TIME_TRACKING_MESSAGE}, status=400)
 
         if task.assigned_to_id != user.id:
             return Response(
@@ -3083,7 +3087,10 @@ class RequestExtraHoursAPIView(APIView):
 
         try:
             # Validate task exists; return 404 instead of bubbling DoesNotExist
-            task = Task.objects.select_related("assigned_to").get(id=task_id)
+            task = Task.objects.select_related("assigned_to", "project").get(id=task_id)
+
+            if not task_time_tracked(task):
+                return Response({"error": NO_TIME_TRACKING_MESSAGE}, status=400)
 
             # Employee must be assigned
             if task.assigned_to != request.user:

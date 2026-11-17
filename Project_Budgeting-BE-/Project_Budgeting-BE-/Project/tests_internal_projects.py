@@ -74,19 +74,30 @@ class CreateAndEditTests(InternalProjectBase):
             self.assertEqual(self.api.post("/api/projects/", self.payload(project_name=f"P{i}"), format="json").status_code, 201)
 
     def test_required_fields(self):
-        resp = self.api.post("/api/projects/", self.payload(project_manager=None, approved_budget="0"), format="json")
+        resp = self.api.post("/api/projects/", self.payload(project_manager=None, approved_budget="0", department=""), format="json")
         self.assertEqual(resp.status_code, 400)
-        for field in ("project_manager", "approved_budget"):
+        for field in ("department", "project_manager", "approved_budget"):
             self.assertIn(field, str(resp.data))
-        self.assertNotIn("department", str(resp.data))
 
-    def test_department_is_optional(self):
-        resp = self.api.post("/api/projects/", self.payload(department=""), format="json")
-        self.assertEqual(resp.status_code, 201, resp.data)
+    def test_department_is_required(self):
+        for dept in ("", "   "):
+            resp = self.api.post("/api/projects/", self.payload(department=dept), format="json")
+            self.assertEqual(resp.status_code, 400)
+            self.assertIn("Select the department.", str(resp.data))
         payload = self.payload(project_name="No dept field")
         payload.pop("department")
-        self.assertEqual(self.api.post("/api/projects/", payload, format="json").status_code, 201)
-        self.assertEqual(Project.objects.get(project_name="No dept field").department, "")
+        self.assertEqual(self.api.post("/api/projects/", payload, format="json").status_code, 400)
+        self.assertFalse(Project.objects.filter(project_name="No dept field").exists())
+
+    def test_edit_cannot_clear_the_department(self):
+        p = self.create()
+        resp = self.api.put(f"/api/projects/{p.pk}/", {"department": ""}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Select the department.", str(resp.data))
+        p.refresh_from_db()
+        self.assertEqual(p.department, "Engineering")
+        # An edit that doesn't send the department leaves it alone.
+        self.assertEqual(self.api.put(f"/api/projects/{p.pk}/", {"description": "Phase 2"}, format="json").status_code, 200)
 
     def test_no_time_and_material_or_quotation_billing(self):
         resp = self.api.post("/api/projects/", self.payload(engagement_type="time_and_material",

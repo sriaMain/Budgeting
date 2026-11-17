@@ -873,6 +873,8 @@ class Task(models.Model):
 
     project = models.ForeignKey(Project, on_delete=models.SET_NULL, null=True, related_name='tasks')
     title = models.CharField(max_length=255)
+    # What the task is about (Add Task / Edit Task form).
+    description = models.TextField(blank=True, default='')
     assigned_to = models.ForeignKey(
         "accounts.Account",
         on_delete=models.SET_NULL,
@@ -936,6 +938,17 @@ class Task(models.Model):
     @property
     def remaining_hours(self):
         return max(self.allocated_hours - self.consumed_hours, 0)
+
+
+# Tasks on Time & Material projects carry allocated hours, timers and consumed time. Tasks on a
+# milestone-based (Fixed Budget / internal) project don't track time at all - their cost comes
+# from the project's Resources - so they have no allocated hours and no timers.
+NO_TIME_TRACKING_MESSAGE = "Time isn't tracked on milestone-based (Fixed Budget) project tasks."
+
+
+def task_time_tracked(task):
+    project = task.project if task.project_id else None
+    return project is None or project.engagement_type != 'fixed'
 
 
 class Timesheet(models.Model):

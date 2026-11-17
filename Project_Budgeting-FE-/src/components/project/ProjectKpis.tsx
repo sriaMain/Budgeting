@@ -1,7 +1,8 @@
 /**
- * The six Project Details KPI cards. Money comes from the backend financial summary (the same
+ * The Project Details KPI cards. Money comes from the backend financial summary (the same
  * figures as Overview and Financials), hours from the project budget, overdue tasks from the
- * helpdesk. Project-to-date: the filter toolbar never changes these.
+ * project's tasks. Project-to-date: the filter toolbar never changes these. The two hours cards
+ * are Time & Material only - milestone-based (Fixed Budget / internal) projects aren't run on hours.
  */
 import React from 'react';
 import { AlertTriangle, Clock, Hourglass, PiggyBank, Receipt, Wallet } from 'lucide-react';
@@ -15,7 +16,9 @@ interface Props {
     moneyError: boolean;
     currency: string;
     hours: { total: number; consumed: number; remaining: number; overrun: number };
-    tasks: { loading: boolean; error: boolean; overdue: number; open: number };
+    /** false on milestone-based projects: no Billable / Remaining Hours cards. */
+    showHours: boolean;
+    tasks:{ loading: boolean; error: boolean; overdue: number; open: number };
     /** Internal project: the budget card is the Approved Internal Budget, with what's allocated to milestones. */
     internal?: { allocated: number } | null;
 }
@@ -25,7 +28,7 @@ const hm = (hours: number) => {
     return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 };
 
-export const ProjectKpis: React.FC<Props> = ({ money, moneyLoading, moneyError, currency, hours, tasks, internal }) => {
+export const ProjectKpis: React.FC<Props> = ({ money, moneyLoading, moneyError, currency, hours, showHours, tasks, internal }) => {
     const m = money;
     const fmt = (v: number) => formatMoney(v, currency);
     const unavailable = moneyError ? 'Couldn’t load figures' : undefined;
@@ -34,7 +37,7 @@ export const ProjectKpis: React.FC<Props> = ({ money, moneyLoading, moneyError, 
     const over = m ? m.remainingBudget < 0 : false;
 
     return (
-        <section aria-label="Project KPIs" className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+        <section aria-label="Project KPIs" className={`grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 ${showHours ? 'md:grid-cols-3 xl:grid-cols-6' : 'xl:grid-cols-4'}`}>
             <MetricCard
                 compact
                 label={internal ? 'Approved Budget' : 'Total Budget'}
@@ -68,24 +71,28 @@ export const ProjectKpis: React.FC<Props> = ({ money, moneyLoading, moneyError, 
                         : m.budget > 0 ? `${percentText(m.budget > 0 ? (m.remainingBudget / m.budget) * 100 : null)} left` : '—'
                     : undefined)}
             />
-            <MetricCard
-                compact
-                label="Billable Hours"
-                icon={<Clock size={16} />}
-                value={hm(hours.total)}
-                caption={hours.total > 0 ? `${hm(hours.consumed)} consumed · ${percentText(hoursPct)}` : 'No billable hours set'}
-                progress={hoursPct != null ? { percent: hoursPct, tone: usedTone(hoursPct), label: 'Billable hours consumed' } : undefined}
-            />
-            <MetricCard
-                compact
-                label="Remaining Hours"
-                icon={<Hourglass size={16} />}
-                iconTone={hours.overrun > 0 ? 'risk' : 'blue'}
-                value={hm(hours.remaining)}
-                caption={hours.overrun > 0
-                    ? <span className="font-medium text-red-600 dark:text-red-400">Over by {hm(hours.overrun)}</span>
-                    : hours.total > 0 ? `${percentText((hours.remaining / hours.total) * 100)} left` : '—'}
-            />
+            {showHours && (
+                <MetricCard
+                    compact
+                    label="Billable Hours"
+                    icon={<Clock size={16} />}
+                    value={hm(hours.total)}
+                    caption={hours.total > 0 ? `${hm(hours.consumed)} consumed · ${percentText(hoursPct)}` : 'No billable hours set'}
+                    progress={hoursPct != null ? { percent: hoursPct, tone: usedTone(hoursPct), label: 'Billable hours consumed' } : undefined}
+                />
+            )}
+            {showHours && (
+                <MetricCard
+                    compact
+                    label="Remaining Hours"
+                    icon={<Hourglass size={16} />}
+                    iconTone={hours.overrun > 0 ? 'risk' : 'blue'}
+                    value={hm(hours.remaining)}
+                    caption={hours.overrun > 0
+                        ? <span className="font-medium text-red-600 dark:text-red-400">Over by {hm(hours.overrun)}</span>
+                        : hours.total > 0 ? `${percentText((hours.remaining / hours.total) * 100)} left` : '—'}
+                />
+            )}
             <MetricCard
                 compact
                 label="Overdue Tasks"
@@ -93,7 +100,7 @@ export const ProjectKpis: React.FC<Props> = ({ money, moneyLoading, moneyError, 
                 iconTone={tasks.overdue > 0 ? 'risk' : 'blue'}
                 loading={tasks.loading}
                 value={tasks.error ? '—' : tasks.overdue.toLocaleString('en-IN')}
-                caption={tasks.error ? 'Helpdesk unavailable' : tasks.overdue > 0
+                caption={tasks.error ? 'Couldn’t load tasks' : tasks.overdue > 0
                     ? <span className="font-medium text-red-600 dark:text-red-400">of {tasks.open} open {tasks.open === 1 ? 'task' : 'tasks'}</span>
                     : tasks.open > 0 ? `Nothing overdue · ${tasks.open} open` : 'No open tasks'}
             />

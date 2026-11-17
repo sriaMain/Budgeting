@@ -124,6 +124,10 @@ const projectHours = (project: Project) =>
 	// total_hours/quote hours were never set) over the raw total_hours field.
 	project.budget?.billable_hours != null ? Number(project.budget.billable_hours) : (project.budget?.total_hours || 0);
 
+// Hours only apply to Time & Material projects - milestone-based (Fixed Budget / internal) ones aren't run on hours.
+const tracksHours = (project: { engagement_type?: string; project_category?: string }) =>
+	project.engagement_type === 'time_and_material' && project.project_category !== 'internal';
+
 const formatHours = (hours: number) => `${hours.toLocaleString('en-IN', { maximumFractionDigits: 1 })}h`;
 
 const CONTROL = 'h-10 rounded-md border border-gray-300 bg-white text-sm text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200';
@@ -228,7 +232,7 @@ export default function ProjectsScreen(_props: { userRole?: string; currentPage?
 
 						totalProfit += profit;
 						totalBudget += budget;
-						totalHours += projectHours(p);
+						if (tracksHours(p)) totalHours += projectHours(p);
 
 						return {
 							id: p.project_no, // Use project_no as id
@@ -392,7 +396,7 @@ export default function ProjectsScreen(_props: { userRole?: string; currentPage?
 				<MetricCard compact loading={loading} label="Completed" value={completedProjectsCount.toLocaleString('en-IN')} icon={<CheckCircle2 size={16} />} />
 				<MetricCard compact loading={loading} className="min-[360px]:max-[479px]:col-span-2" label="Forecasted Profit (Budget)" value={formatMoney(kpiData.forecastedProfit, currency)} icon={<TrendingUp size={16} />} />
 				<MetricCard compact loading={loading} className="min-[360px]:max-[479px]:col-span-2" label="Total Budget" value={formatMoney(kpiData.totalBudget, currency)} icon={<Wallet size={16} />} />
-				<MetricCard compact loading={loading} label="Total Hours Allocated" value={formatHours(kpiData.totalHours)} icon={<PieChart size={16} />} />
+				<MetricCard compact loading={loading} label="Total Hours Allocated" value={formatHours(kpiData.totalHours)} caption="Time & Material projects" icon={<PieChart size={16} />} />
 			</section>
 
 			{/* Projects */}
@@ -444,6 +448,7 @@ export default function ProjectsScreen(_props: { userRole?: string; currentPage?
 											overBudget={remaining < 0}
 											totalBudget={project.budget ? formatMoney(project.budget.cost_budget, projectCurrency) : undefined}
 											totalHours={project.budget ? formatHours(projectHours(project)) : undefined}
+											showHours={tracksHours(project)}
 											startDate={project.start_date ? toDMY(project.start_date) : undefined}
 											endDate={project.end_date ? toDMY(project.end_date) : undefined}
 											statusControl={

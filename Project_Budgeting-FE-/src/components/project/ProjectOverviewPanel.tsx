@@ -181,10 +181,10 @@ export const ProjectOverviewPanel: React.FC<Props> = ({ projectId, isFixed, isIn
                     </Card>
                 )}
 
-                <Card title="Tasks (from the Help Desk)" action={<button type="button" className={link} onClick={() => onGoTo('Tasks')}>Tasks →</button>}>
+                <Card title="Tasks" action={<button type="button" className={link} onClick={() => onGoTo('Tasks')}>Tasks →</button>}>
                     {tasks.loading ? <Skeleton h="h-16" /> : tasks.error ? (
                         <div role="alert" className="text-[13px] text-gray-600 dark:text-gray-400">
-                            The Help Desk server couldn’t be reached.{' '}
+                            Couldn’t load the tasks.{' '}
                             <button type="button" className={link} onClick={onRetryTasks}>Try again</button>
                         </div>
                     ) : (

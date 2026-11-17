@@ -16,7 +16,7 @@ import { Download, Link2, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Layout } from '../components/Layout';
 import { MetricCard } from '../components/StatCard';
-import { HelpdeskTasksPanel } from '../components/HelpdeskTasksPanel';
+import { ProjectTasksPanel } from '../components/project/ProjectTasksPanel';
 import { ProjectCostEntriesPanel } from '../components/ProjectCostEntriesPanel';
 import { MilestonesPanel } from '../components/MilestonesPanel';
 import { ResourcesPanel } from '../components/ResourcesPanel';
@@ -35,11 +35,10 @@ import type { TabExport } from '../components/project/tabExport';
 import { InternalProjectDrawer } from '../components/project/InternalProjectDrawer';
 import { InternalBudgetPanel } from '../components/project/InternalBudgetPanel';
 import { ProjectActivityPanel } from '../components/project/ProjectActivityPanel';
-import { useHelpdeskTasks } from '../hooks/useHelpdeskTasks';
 import { useApiData } from '../hooks/useApiData';
 import { type ProjectTab, tabsFor, useProjectFilters } from '../hooks/useProjectFilters';
 import type { FixedFinancialSummary, ProjectFinancialSummary } from '../types/financials.types';
-import { isTaskDone, isTaskOverdue } from '../utils/helpdeskTasks';
+import { TASK_STATUS_LABEL, isTaskDone, isTaskOverdue, toHours, unwrapTasks } from '../utils/projectTasks';
 import { DEFAULT_ENGAGEMENT_STYLE, DEFAULT_PROJECT_STATUS_STYLE, ENGAGEMENT_META, PROJECT_STATUS_STYLES } from '../utils/projectMeta';
 import { projectMoney } from '../utils/projectFinance';
 
@@ -78,8 +77,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const statusChoices = useApiData<{ status_choices: FilterOption[] }>('project-status-choices/');
     const summaryReq = useApiData<ProjectFinancialSummary>(projectId ? `/projects/${projectId}/financial-summary/` : null, { _r: reloadToken }, 'Failed to load the financial summary');
     const optionsReq = useApiData<FilterOptionsResponse>(projectId ? `/projects/${projectId}/filter-options/` : null, { _r: reloadToken });
-    const taskHoursReq = useApiData<{ Tasks?: { consumed_hours?: number | string }[] }[]>(projectId ? `/tasks/${projectId}/tasks/` : null);
-    const helpdeskTasks = useHelpdeskTasks(projectId ? `/projects/${projectId}/helpdesk-tasks/` : undefined);
+    // The project's own tasks (Project Budgeting - not the helpdesk): Tasks tab, Overview, KPIs.
+    const tasksReq = useApiData<unknown>(projectId ? `/tasks/${projectId}/tasks/` : null, { _r: reloadToken }, 'Failed to load tasks');
 
     const engagementType: 'fixed' | 'time_and_material' = project?.engagement_type || 'fixed';
     const isFixed = engagementType === 'fixed';
@@ -137,11 +136,11 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     const internalSummary: FixedFinancialSummary | null = isInternal && summary && summary.engagement_type === 'fixed' ? summary : null;
     const totalHours = Number(project?.budget?.billable_hours) || 0;
     const remainingHours = hmsToHours(project?.budget?.remaining_billable_hours);
-    const taskConsumed = (Array.isArray(taskHoursReq.data) ? taskHoursReq.data[0]?.Tasks ?? [] : [])
-        .reduce((sum, t) => sum + (Number(t.consumed_hours) || 0), 0);
+    const tasks = useMemo(() => unwrapTasks(tasksReq.data ?? tasksReq.staleData), [tasksReq.data, tasksReq.staleData]);
+    const tasksLoading = tasksReq.loading && tasksReq.staleData === undefined;
+    const taskConsumed = tasks.reduce((sum, t) => sum + toHours(t.consumed_hours), 0);
     const overrun = totalHours > 0 ? Math.max(0, taskConsumed - totalHours) : 0;
     const consumedHours = overrun > 0 ? taskConsumed : Math.max(0, totalHours - remainingHours);
-    const tasks = helpdeskTasks.tasks;
     const taskCounts = {
         total: tasks.length,
         open: tasks.filter((t) => !isTaskDone(t)).length,
@@ -151,7 +150,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
 
     /* ---------------- filter options for the active tab ---------------- */
     const opts = optionsReq.data;
-    const taskStatuses = useMemo(() => [...new Set(tasks.map((t) => t.status).filter(Boolean))].map((s) => ({ value: s, label: s })), [tasks]);
+    const taskStatuses = Object.entries(TASK_STATUS_LABEL).map(([value, label]) => ({ value, label }));
     const statusByTab: Partial<Record<ProjectTab, FilterOption[]>> = {
         Tasks: taskStatuses,
         Expenses: opts?.statuses.expenses ?? [],
@@ -170,7 +169,6 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
     };
     const f = filters.effective;
     const filterKey = JSON.stringify(f);
-    const resourceMatch = f.resource ? opts?.resources.find((r) => r.value === f.resource) ?? null : null;
 
     /* ---------------- render ---------------- */
     if (projectReq.loading && !project) {
@@ -248,7 +246,7 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                             disabled: exporting || !tabExport.enabled,
                             onSelect: () => { void runExport(); },
                         }] : []),
-                        { label: 'Refresh data', icon: <RefreshCw />, separatorBefore: !!tabExport, onSelect: () => { refreshAll(); helpdeskTasks.refresh(); toast.success('Refreshed'); } },
+                        { label: 'Refresh data', icon: <RefreshCw />, separatorBefore: !!tabExport, onSelect: () => { refreshAll(); toast.success('Refreshed'); } },
                         {
                             label: 'Copy link to this view', icon: <Link2 />,
                             onSelect: () => {
@@ -266,7 +264,8 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                     moneyError={!!summaryReq.error && !money}
                     currency={currency}
                     hours={{ total: totalHours, consumed: consumedHours, remaining: remainingHours, overrun }}
-                    tasks={{ loading: helpdeskTasks.loading, error: !!helpdeskTasks.error, overdue: taskCounts.overdue, open: taskCounts.open }}
+                    showHours={!isFixed}
+                    tasks={{ loading: tasksLoading, error: !!tasksReq.error && tasks.length === 0, overdue: taskCounts.overdue, open: taskCounts.open }}
                     internal={isInternal ? { allocated: Number(internalSummary?.allocated_to_milestones ?? 0) } : null}
                 />
 
@@ -329,22 +328,25 @@ const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ userRole, curre
                                 onRetryMoney={summaryReq.reload}
                                 dateFrom={f.dateFrom}
                                 dateTo={f.dateTo}
-                                tasks={{ ...taskCounts, loading: helpdeskTasks.loading, error: !!helpdeskTasks.error }}
-                                onRetryTasks={helpdeskTasks.refresh}
+                                tasks={{ ...taskCounts, loading: tasksLoading, error: !!tasksReq.error && tasks.length === 0 }}
+                                onRetryTasks={tasksReq.reload}
                                 onGoTo={filters.setTab}
                             />
                         )}
 
                         {tab === 'Tasks' && (
-                            <HelpdeskTasksPanel
+                            <ProjectTasksPanel
+                                projectId={projectId}
+                                projectName={project.project_name}
                                 tasks={tasks}
-                                loading={helpdeskTasks.loading}
-                                error={helpdeskTasks.error}
-                                fetchedAt={helpdeskTasks.fetchedAt}
-                                onRefresh={helpdeskTasks.refresh}
+                                loading={tasksLoading}
+                                error={tasksReq.error}
+                                onReload={tasksReq.reload}
+                                canManage={canEdit}
+                                engagementType={engagementType}
                                 filters={f}
-                                resourceMatch={resourceMatch ? { type: resourceMatch.type, code: resourceMatch.code, label: resourceMatch.label } : null}
                                 onClearFilters={filters.clearAll}
+                                onChanged={refreshAll}
                             />
                         )}
 
