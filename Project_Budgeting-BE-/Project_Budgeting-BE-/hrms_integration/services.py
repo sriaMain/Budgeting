@@ -148,9 +148,13 @@ def _invalidate_user_caches(account):
 def _revoke(employee, reason, now):
     """Removes Budgeting access: account deactivated (blocks login and every
     JWT-authenticated request immediately) and its roles cleared, so access
-    is never silently restored if the account is re-enabled later."""
+    is never silently restored if the account is re-enabled later.
+
+    Superusers are managed outside HRMS (grant_access / _ensure_resource_account never link
+    one): a linked superuser account is left untouched - otherwise an AIRA employee-ID change
+    deactivates the superuser and nobody can sign in to fix it."""
     account = employee.account
-    if account is not None:
+    if account is not None and not account.is_superuser:
         account.is_active = False
         account.is_staff = False
         account.save(update_fields=['is_active', 'is_staff', 'modified_at'])
@@ -253,7 +257,7 @@ def sync_employees(triggered_by):
             # last Refresh.
             to_revoke = (
                 HrmsEmployee.objects.filter(is_active_in_hrms=False)
-                .filter(Q(is_eligible=True) | Q(account__is_active=True))
+                .filter(Q(is_eligible=True) | Q(account__is_active=True, account__is_superuser=False))
                 .select_related('account')
             )
             for employee in to_revoke:

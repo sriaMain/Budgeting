@@ -27,15 +27,26 @@ def _latest_sync():
 
 
 class HrmsEmployeeListView(APIView):
-    """The synced employee list plus the last Refresh result (for the "last refreshed" banner)."""
+    """The employees currently in AIRA HRMS plus the last Refresh result (for the "last
+    refreshed" banner).
+
+    Rows for people no longer in AIRA (left, or AIRA gave them a new employee ID) are kept for
+    the access history but left out; `?include_removed=true` returns them too.
+    `removed_count` says how many were left out.
+    """
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, HasPermissionCode]
     permission_code = "hrms.employees.view"
 
     def get(self, request):
+        include_removed = str(request.query_params.get("include_removed", "")).lower() in ("1", "true", "yes")
         employees = _employee_queryset()
+        removed_count = HrmsEmployee.objects.filter(is_active_in_hrms=False).count()
+        if not include_removed:
+            employees = employees.filter(is_active_in_hrms=True)
         return Response({
             "employees": HrmsEmployeeSerializer(employees, many=True).data,
+            "removed_count": removed_count,
             "last_sync": _latest_sync(),
         })
 

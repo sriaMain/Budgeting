@@ -21,6 +21,47 @@ import logging
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
+LOGIN_NAME_AMBIGUOUS = "More than one person has that name. Sign in with your username or email."
+
+
+def find_login_account(identifier):
+    """The account a login identifier (username, email or name) refers to.
+
+    Checked in order: exact username, exact email, name (first / last / "first last"), then the
+    first word as a first name. Within each step an account that can sign in (active, with a
+    password) wins over one that can't: the AIRA HRMS sync creates inactive, password-less
+    placeholder accounts for employees, and those often share a name with a real login - they
+    must never hide it. A name shared by several real logins is ambiguous (ask for username /
+    email). Returns None when nothing matches; an inactive account when that's all there is.
+    """
+    ident = (identifier or "").strip()
+    if not ident:
+        return None
+    words = ident.split()
+    name_q = Q(first_name__iexact=ident) | Q(last_name__iexact=ident)
+    if len(words) >= 2:
+        name_q |= Q(first_name__iexact=words[0], last_name__iexact=" ".join(words[1:]))
+    steps = [
+        (Q(username__iexact=ident), False),
+        (Q(email__iexact=ident), False),
+        (name_q, True),
+    ]
+    if len(words) >= 2:
+        steps.append((Q(first_name__iexact=words[0]), True))
+
+    fallback = None
+    for query, by_name in steps:
+        matches = list(Account.objects.filter(query).order_by("pk")[:50])
+        can_login = [a for a in matches if a.is_active and a.has_usable_password()]
+        if len(can_login) == 1 or (can_login and not by_name):
+            return can_login[0]
+        if can_login:
+            raise serializers.ValidationError({"error": LOGIN_NAME_AMBIGUOUS})
+        if fallback is None and matches:
+            fallback = matches[0]
+    return fallback
+
+
 class LoginSerializer(serializers.Serializer):
     identifier = serializers.CharField(required=True)
     password = serializers.CharField(write_only=True, required=True)
@@ -29,16 +70,8 @@ class LoginSerializer(serializers.Serializer):
         identifier = attrs.get("identifier").strip()
         password = attrs.get("password")
 
-        # ✅ Find user by email OR username OR full name
-        user = Account.objects.filter(
-            Q(email__iexact=identifier) |
-            Q(username__iexact=identifier) |
-            Q(first_name__iexact=identifier) |
-            Q(last_name__iexact=identifier) |
-            Q(first_name__iexact=identifier.split(" ")[0]) |
-            Q(first_name__iexact=identifier) |
-            Q(first_name__iexact=identifier)  # safe fallback
-        ).first()
+        # Username, email or name - a real login is preferred over HRMS placeholder accounts.
+        user = find_login_account(identifier)
 
         if not user:
             raise serializers.ValidationError({"error": "User not found."})
