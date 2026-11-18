@@ -1,5 +1,6 @@
 import { formatDate as toDMY, formatDateTime as toDMYTime, toDate } from '../utils/date';
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Plus, Search, Play, Pause, Square,
   ChevronLeft, ChevronRight, Calendar, ArrowLeft, X, Edit2,
@@ -644,6 +645,20 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
     }
   };
 
+  // ?taskId=<id> (the header search, task notifications) opens that task's details once.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedTaskId = Number(searchParams.get('taskId')) || 0;
+  useEffect(() => {
+    if (!linkedTaskId) return;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('taskId');
+      return next;
+    }, { replace: true });
+    fetchTaskDetails(linkedTaskId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedTaskId]);
+
   const fetchTimesheet = async (weekStart?: string) => {
     setIsLoadingTimesheet(true);
     setTimesheetError(null);
@@ -1040,7 +1055,7 @@ export const TaskManagement: React.FC<TaskManagementProps> = ({ userRole, curren
       fetchTasks();
     } catch (error) {
       console.error('Failed to delete task:', error);
-      toast.error('Failed to delete task');
+      toast.error((error as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to delete task');
     }
   };
 

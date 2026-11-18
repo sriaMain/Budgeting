@@ -2,16 +2,17 @@
  * Project Details > Tasks: the project's own tasks (Project Budgeting, not the helpdesk).
  * Add Task / Edit (AddTaskModal: title, description, milestone, a resource of that milestone,
  * hours, dates), Assign (AssignTaskModal: the milestone's resources) and, for admins / managers, a
- * consumed-time correction. Hours (allocated / consumed / remaining) are Time & Material only -
+ * consumed-time correction and Delete (DELETE /tasks/<id>/, refused while its timer runs). Hours (allocated / consumed / remaining) are Time & Material only -
  * milestone-based (Fixed Budget / internal) projects don't track time on tasks. The page's filter toolbar (search, due date range, status, resource, milestone)
  * filters the list; the data comes from the page (GET /tasks/<project_id>/tasks/).
  */
 import React, { useMemo, useState } from 'react';
-import { Check, Edit2, ListChecks, Pencil, Plus, UserPlus, X } from 'lucide-react';
+import { Check, Edit2, ListChecks, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import axiosInstance from '../../utils/axiosInstance';
 import { AddTaskModal } from '../AddTaskModal';
 import { AssignTaskModal } from '../AssignTaskModal';
+import { ConfirmDialog } from '../ConfirmDialog';
 import { ErrorState } from '../ErrorState';
 import { StatusBadge } from '../StatusBadge';
 import { formatDate as toDMY } from '../../utils/date';
@@ -28,7 +29,7 @@ interface Props {
     loading: boolean;
     error?: string;
     onReload: () => void;
-    /** Admin / manager: may correct consumed time. */
+    /** Admin / manager: may correct consumed time and delete tasks. */
     canManage: boolean;
     /** 'fixed' (milestone-based): no hours columns. */
     engagementType: string;
@@ -52,6 +53,7 @@ export const ProjectTasksPanel: React.FC<Props> = ({ projectId, projectName, tas
     const [addOpen, setAddOpen] = useState(false);
     const [editing, setEditing] = useState<ApiTask | null>(null);
     const [assigning, setAssigning] = useState<ApiTask | null>(null);
+    const [deleting, setDeleting] = useState<ApiTask | null>(null);
     const [editingConsumedId, setEditingConsumedId] = useState<number | null>(null);
     const [consumedInput, setConsumedInput] = useState('');
 
@@ -105,6 +107,26 @@ export const ProjectTasksPanel: React.FC<Props> = ({ projectId, projectName, tas
         }
     };
 
+    const deleteTask = async () => {
+        if (!deleting) return;
+        try {
+            await axiosInstance.delete(`tasks/${deleting.id}/`);
+            toast.success(`"${deleting.title}" deleted`);
+            setDeleting(null);
+            onReload();
+            onChanged();
+        } catch (err: unknown) {
+            toast.error((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to delete the task');
+        }
+    };
+
+    const deleteMessage = (task: ApiTask) => {
+        const logged = toHours(task.consumed_hours);
+        return timeTracked && logged > 0
+            ? `"${task.title}" and its ${formatHoursHM(logged)} of logged time will be permanently deleted. This can't be undone.`
+            : `"${task.title}" will be permanently deleted. This can't be undone.`;
+    };
+
     const closeAdd = () => { setAddOpen(false); setEditing(null); };
 
     return (
@@ -145,7 +167,7 @@ export const ProjectTasksPanel: React.FC<Props> = ({ projectId, projectName, tas
             ) : (
                 // relative: keeps sr-only header text inside this scroll box.
                 <div className="relative overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-                    <table className={`w-full ${timeTracked ? 'min-w-[1136px]' : 'min-w-[880px]'} table-fixed text-sm`}>
+                    <table className={`w-full ${timeTracked ? (canManage ? 'min-w-[1176px]' : 'min-w-[1136px]') : (canManage ? 'min-w-[920px]' : 'min-w-[880px]')} table-fixed text-sm`}>
                         <colgroup>
                             <col className="w-[200px]" />
                             <col />
@@ -155,7 +177,7 @@ export const ProjectTasksPanel: React.FC<Props> = ({ projectId, projectName, tas
                             {timeTracked && <col className="w-[112px]" />}
                             <col className="w-[104px]" />
                             {timeTracked && <col className="w-[112px]" />}
-                            <col className="w-[84px]" />
+                            <col className={canManage ? 'w-[124px]' : 'w-[96px]'} />
                         </colgroup>
                         <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
                             <tr className="h-11">
@@ -251,7 +273,7 @@ export const ProjectTasksPanel: React.FC<Props> = ({ projectId, projectName, tas
                                             {formatHoursHM(remaining)}
                                             {overBy > 0 && <div className="text-[11px] font-medium text-risk-600 dark:text-red-400">+{formatHoursHM(overBy)} over</div>}
                                         </td>}
-                                        <td className="px-4 py-3">
+                                        <td className="px-3 py-3">
                                             <div className="flex justify-end gap-1">
                                                 <button type="button" onClick={() => openEdit(task)} aria-label={`Edit task ${task.title}`} title="Edit task" className={iconBtn}>
                                                     <Pencil className="h-4 w-4" />
@@ -260,6 +282,12 @@ export const ProjectTasksPanel: React.FC<Props> = ({ projectId, projectName, tas
                                                     aria-label={`${who ? 'Reassign' : 'Assign'} task ${task.title}`} title={who ? 'Reassign task' : 'Assign task'} className={iconBtn}>
                                                     <UserPlus className="h-4 w-4" />
                                                 </button>
+                                                {canManage && (
+                                                    <button type="button" onClick={() => setDeleting(task)} aria-label={`Delete task ${task.title}`} title="Delete task"
+                                                        className={`${iconBtn} hover:!bg-red-50 hover:!text-red-600 dark:hover:!bg-red-500/10 dark:hover:!text-red-400`}>
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -295,6 +323,14 @@ export const ProjectTasksPanel: React.FC<Props> = ({ projectId, projectName, tas
                     task={{ id: String(assigning.id), title: assigning.title, assignee: assigneeOf(assigning) ?? undefined, project: Number(projectId), milestone: assigning.milestone ?? null, milestoneName: assigning.milestone_name ?? null }}
                 />
             )}
+            <ConfirmDialog
+                isOpen={!!deleting}
+                onClose={() => setDeleting(null)}
+                onConfirm={deleteTask}
+                title="Delete task?"
+                message={deleting ? deleteMessage(deleting) : ''}
+                confirmLabel="Delete task"
+            />
         </div>
     );
 };

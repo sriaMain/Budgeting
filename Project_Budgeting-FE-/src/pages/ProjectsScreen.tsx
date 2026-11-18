@@ -182,19 +182,6 @@ export default function ProjectsScreen(_props: { userRole?: string; currentPage?
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [searchQuery, filterStatus, appliedFilters]);
 
-	// The filters dialog closes on Escape.
-	useEffect(() => {
-		if (!isFilterModalOpen) return;
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') {
-				setAdvancedFilters(appliedFilters);
-				setIsFilterModalOpen(false);
-			}
-		};
-		document.addEventListener('keydown', onKey);
-		return () => document.removeEventListener('keydown', onKey);
-	}, [isFilterModalOpen, appliedFilters]);
-
 	const fetchStatusChoices = async () => {
 		try {
 			const response = await axiosInstance.get('project-status-choices/');

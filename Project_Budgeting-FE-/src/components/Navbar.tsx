@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Bell, BriefcaseBusiness, CheckSquare, LayoutDashboard, LogOut, Menu, Moon, Network, Search, Settings, ShieldCheck, Sun, Users, X } from 'lucide-react';
+import { BarChart3, Bell, BriefcaseBusiness, CheckSquare, LayoutDashboard, LogOut, Menu, Moon, Network, Settings, ShieldCheck, Sun, Users, X } from 'lucide-react';
 import { useAppDispatch } from '../hooks/useAppDispatch';
 import { useAppSelector } from '../hooks/useAppSelector';
 import { useTheme } from '../hooks/useTheme';
 import axiosInstance from '../utils/axiosInstance';
-import { listVendors } from '../services/vendorOnboarding';
-import { listFreelancers } from '../services/freelancerOnboarding';
+import { GlobalSearch } from './GlobalSearch';
 
 interface NavbarProps { userRole: 'admin' | 'user' | 'manager' | 'employee'; }
 type NavigationItem = { label: string; path: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number }>; roles: string[]; };
@@ -38,85 +37,6 @@ const BrandLogo: React.FC<{ className?: string }> = ({ className = 'w-[76px]' })
     </span>
   </span>
 );
-
-interface SearchResult {
-  type: 'Project' | 'Client' | 'Vendor' | 'Freelancer';
-  id: number | string;
-  label: string;
-  sublabel?: string;
-  path: string;
-}
-
-/** Debounced, multi-entity search across the app's existing list endpoints (Projects,
- * Vendors, Freelancers, Clients) — no dedicated global-search API exists, so this fans
- * out to each entity's own already-working search/list call and merges the results. */
-function useGlobalSearch() {
-  const [value, setValue] = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    const query = value.trim();
-    if (!query) {
-      setResults([]);
-      setOpen(false);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setOpen(true);
-    const timeoutId = setTimeout(async () => {
-      const [projectsRes, vendorsRes, freelancersRes, clientsRes] = await Promise.allSettled([
-        axiosInstance.get(`projects/?search=${encodeURIComponent(query)}`),
-        listVendors({ search: query }),
-        listFreelancers({ search: query }),
-        axiosInstance.get<{ id: number; company_name: string }[]>('/client/dropdown/'),
-      ]);
-
-      const next: SearchResult[] = [];
-
-      if (projectsRes.status === 'fulfilled') {
-        const companies = projectsRes.value.data?.Projects || [];
-        const projects = companies.flatMap((c: any) => c.project_details || []);
-        projects.slice(0, 5).forEach((p: any) => next.push({
-          type: 'Project', id: p.project_no, label: p.project_name, sublabel: p.status,
-          path: `/projects/${p.project_no}`,
-        }));
-      }
-      if (vendorsRes.status === 'fulfilled') {
-        vendorsRes.value.slice(0, 5).forEach((v) => next.push({
-          type: 'Vendor', id: v.id, label: v.name, sublabel: v.vendor_type_display,
-          path: `/vendors/${v.id}`,
-        }));
-      }
-      if (freelancersRes.status === 'fulfilled') {
-        freelancersRes.value.slice(0, 5).forEach((f) => next.push({
-          type: 'Freelancer', id: f.id, label: f.full_name, sublabel: f.professional_title || undefined,
-          path: `/freelancers/${f.id}`,
-        }));
-      }
-      if (clientsRes.status === 'fulfilled') {
-        const lowerQuery = query.toLowerCase();
-        (clientsRes.value.data || [])
-          .filter((c) => c.company_name.toLowerCase().includes(lowerQuery))
-          .slice(0, 5)
-          .forEach((c) => next.push({
-            type: 'Client', id: c.id, label: c.company_name,
-            path: `/contacts?clientId=${c.id}`,
-          }));
-      }
-
-      setResults(next);
-      setLoading(false);
-    }, 300);
-
-    return () => clearTimeout(timeoutId);
-  }, [value]);
-
-  return { value, setValue, results, loading, open, setOpen };
-}
 
 interface NotificationItem {
   id: number;
@@ -188,16 +108,9 @@ const timeSince = (dateStr: string): string => {
   return `${Math.floor(hours / 24)}d ago`;
 };
 
-const TYPE_BADGE: Record<SearchResult['type'], string> = {
-  Project: 'bg-blue-50 text-blue-700',
-  Client: 'bg-purple-50 text-purple-700',
-  Vendor: 'bg-amber-50 text-amber-700',
-  Freelancer: 'bg-teal-50 text-teal-700',
-};
-
 /**
- * Top header navigation — light chrome, underline-active nav, a working
- * multi-entity global search, and a right-side utility cluster (notifications
+ * Top header navigation — light chrome, underline-active nav, the global search
+ * (components/GlobalSearch.tsx), and a right-side utility cluster (notifications
  * / avatar), styled after a reference enterprise HR-platform header the user
  * pointed to. Shared by both `Layout` and `AppShell`, so every page gets this
  * header.
@@ -216,10 +129,7 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
   const username = useAppSelector((state) => state.auth.username);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const searchContainerRef = useRef<HTMLDivElement>(null);
   const activeNavItemRef = useRef<HTMLButtonElement | null>(null);
-  const search = useGlobalSearch();
   const notifications = useNotifications();
   const { theme, toggleTheme } = useTheme();
 
@@ -242,29 +152,6 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
     if (n.link) navigate(n.link);
   };
 
-  // Cmd/Ctrl+K focuses the search box, matching the shortcut hint shown in it.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-
-  // Close the results dropdown on an outside click.
-  useEffect(() => {
-    const onMouseDown = (e: MouseEvent) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
-        search.setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onMouseDown);
-    return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [search]);
-
   // The nav strip scrolls horizontally (hidden scrollbar) when there isn't
   // room for every item, e.g. Administration/Approvals get squeezed out on
   // medium-width screens. Without this, the active section's tab can end up
@@ -274,22 +161,6 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
   useEffect(() => {
     activeNavItemRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [location.pathname]);
-
-  const goToResult = (result: SearchResult) => {
-    navigate(result.path);
-    search.setValue('');
-    search.setOpen(false);
-  };
-
-  const submitSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (search.results[0]) {
-      goToResult(search.results[0]);
-    } else if (search.value.trim()) {
-      navigate(`/projects?q=${encodeURIComponent(search.value.trim())}`);
-      search.setOpen(false);
-    }
-  };
 
   const initials = (username || userRole).slice(0, 2).toUpperCase();
 
@@ -334,53 +205,7 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
 
       <div className="flex-1" />
 
-      <div ref={searchContainerRef} className="relative hidden xl:block w-64 shrink-0">
-        <form onSubmit={submitSearch} className="relative">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={search.value}
-            onChange={(e) => search.setValue(e.target.value)}
-            onFocus={() => { if (search.results.length || search.value.trim()) search.setOpen(true); }}
-            placeholder="Search projects, clients, vendors…"
-            className="w-full rounded-lg border border-gray-300 bg-gray-50 py-1.5 pl-9 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-600/40 focus:border-teal-600 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500"
-          />
-          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-500">
-            ⌘K
-          </span>
-        </form>
-
-        {search.open && (
-          <div className="absolute right-0 top-11 z-50 w-80 max-h-96 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900">
-            {search.loading ? (
-              <p className="p-4 text-sm text-gray-500 dark:text-gray-400">Searching…</p>
-            ) : search.results.length === 0 ? (
-              <p className="p-4 text-sm text-gray-500 dark:text-gray-400">No matches for "{search.value.trim()}".</p>
-            ) : (
-              <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-                {search.results.map((result) => (
-                  <li key={`${result.type}-${result.id}`}>
-                    <button
-                      type="button"
-                      onClick={() => goToResult(result)}
-                      className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium text-gray-900 dark:text-white">{result.label}</span>
-                        {result.sublabel && <span className="block truncate text-xs text-gray-500 dark:text-gray-400">{result.sublabel}</span>}
-                      </span>
-                      <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${TYPE_BADGE[result.type]}`}>
-                        {result.type}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </div>
+      <GlobalSearch userRole={userRole} shortcut className="w-56 shrink-0 xl:w-72" panelClassName="right-0 w-[26rem]" />
 
       <button
         type="button"
@@ -497,6 +322,7 @@ export const Navbar: React.FC<NavbarProps> = ({ userRole }) => {
             <X size={22} className="text-gray-700 dark:text-gray-300" />
           </button>
         </div>
+        <GlobalSearch userRole={userRole} onNavigate={() => setMobileMenuOpen(false)} className="mb-6" panelClassName="inset-x-0" />
         <nav aria-label="Mobile navigation" className="space-y-1">
           {items.map((item) => navLink(item, true))}
         </nav>

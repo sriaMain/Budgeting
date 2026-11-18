@@ -111,10 +111,7 @@ export function AddServiceModal({ isOpen, onClose, onServiceAdded }: AddServiceM
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50"
-        onClick={handleClose}
-      />
+      <div className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50" />
 
       {/* Modal */}
       <div className="flex min-h-full items-center justify-center p-4">

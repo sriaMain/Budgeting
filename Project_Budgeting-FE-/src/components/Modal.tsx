@@ -16,12 +16,13 @@ const sizeClasses: Record<NonNullable<ModalProps['size']>, string> = {
   xl: 'max-w-4xl',
 };
 
+/** Closes only from its own buttons (X / Cancel) - not on an outside click. */
 export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, size = 'md', children, footer }) => {
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50" />
 
       <div className="flex min-h-full items-center justify-center p-4">
         <div

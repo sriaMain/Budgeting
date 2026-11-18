@@ -76,7 +76,7 @@ export const ApprovalDrawer: React.FC<ApprovalDrawerProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-labelledby="approval-drawer-title">
-      <div className="absolute inset-0 bg-navy-900/40 dark:bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-navy-900/40 dark:bg-black/50" />
       <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col dark:bg-gray-900 dark:shadow-black/40">
         <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-800">
           <div>

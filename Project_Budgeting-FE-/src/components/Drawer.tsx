@@ -13,10 +13,6 @@ interface DrawerProps {
   size?: 'md' | 'lg' | 'xl';
 }
 
-// Open drawers, innermost last: Escape closes only the top one when drawers stack
-// (e.g. Record Payment opened from an invoice's drawer).
-const openDrawers: object[] = [];
-
 const sizeClasses: Record<NonNullable<DrawerProps['size']>, string> = {
   md: 'sm:max-w-md',
   lg: 'sm:max-w-2xl',
@@ -25,37 +21,24 @@ const sizeClasses: Record<NonNullable<DrawerProps['size']>, string> = {
 
 /**
  * Generic right-side slide-in panel (enterprise-artifacts/UI_BUILD_HANDOFF.md's "Drawer").
- * A11y pattern (role="dialog", aria-modal, focus handling, Escape-to-close) is cribbed from
+ * A11y pattern (role="dialog", aria-modal, focus handling) is cribbed from
  * ApprovalDrawer.tsx, but this component carries no business logic of its own - unlike
  * ApprovalDrawer, which is hard-coded to the approve/reject/request-changes workflow.
  * Full-screen on mobile (`w-full`), a fixed max-width panel from `sm:` up.
+ * Closes only from its own buttons (X / Cancel) - not on an outside click or Escape, so a
+ * stray click never throws away what was typed.
  */
 export const Drawer: React.FC<DrawerProps> = ({ isOpen, onClose, title, subtitle, children, footer, size = 'lg' }) => {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
-  const token = useRef({});
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  });
 
   useEffect(() => {
     if (!isOpen) return;
 
     previouslyFocused.current = document.activeElement as HTMLElement;
     closeButtonRef.current?.focus();
-    const self = token.current;
-    openDrawers.push(self);
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && openDrawers[openDrawers.length - 1] === self) onCloseRef.current();
-    };
-    document.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      const i = openDrawers.lastIndexOf(self);
-      if (i >= 0) openDrawers.splice(i, 1);
       previouslyFocused.current?.focus?.();
     };
   }, [isOpen]);
@@ -64,7 +47,7 @@ export const Drawer: React.FC<DrawerProps> = ({ isOpen, onClose, title, subtitle
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
-      <div className="absolute inset-0 bg-navy-900/40 dark:bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-navy-900/40 dark:bg-black/50" />
       <div className={`relative w-full ${sizeClasses[size]} bg-white h-full shadow-2xl flex flex-col dark:bg-gray-900 dark:shadow-black/40`}>
         <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
           <div className="min-w-0">

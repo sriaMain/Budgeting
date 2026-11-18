@@ -2,6 +2,7 @@
 
 
 from django.urls import path, include
+from .global_search import GlobalSearchAPIView
 from .views import (ProjectAPIView, ProjectBudgetAPIView, BudgetLineListCreateAPIView, BudgetLineDetailAPIView,
   BudgetLineSummaryAPIView, MilestoneListCreateAPIView, MilestoneDetailAPIView, MilestoneCreateInvoiceAPIView,
   ResourceAssignmentListCreateAPIView, ResourceAssignmentDetailAPIView, ProjectGenerateTMInvoiceAPIView,
@@ -58,6 +59,7 @@ urlpatterns = [
     path('tasks/', TaskAPIView.as_view(), name='task-list-create'),
     path('services/users/', ServiceUsersAPIView.as_view(), name='service-users-list'),
     path('tasks/<int:task_id>/', TaskAPIView.as_view(), name='task-detail'),
+    path('search/', GlobalSearchAPIView.as_view(), name='global-search'),
     path('timesheet/', TimesheetAPIView.as_view(), name='timesheet-list-create'),
     path('timesheet/entry/', TimesheetEntryAPIView.as_view(), name='timesheet-entry-list-create'),
     path('timesheet/submit/', SubmitTimesheetAPIView.as_view(), name='submit-timesheet'),

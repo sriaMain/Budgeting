@@ -85,6 +85,15 @@ const URL_KEY: Record<FilterField, string> = {
 const urlKey = (field: FilterField, tab: ProjectTab) =>
     PER_TAB.includes(field) ? `${tab.toLowerCase()}_${URL_KEY[field]}` : URL_KEY[field];
 
+/** Link to one tab of a project, with that tab's search box filled in (e.g. from the header search). */
+export function projectTabPath(projectId: string | number, tab: ProjectTab, search = ''): string {
+    const params = new URLSearchParams();
+    if (tab !== 'Overview') params.set('tab', tab);
+    if (search && TAB_FIELDS[tab].includes('search')) params.set(urlKey('search', tab), search);
+    const qs = params.toString();
+    return `/projects/${projectId}${qs ? `?${qs}` : ''}`;
+}
+
 /** The ?tab= value as one of this project's tabs (old values from earlier versions mapped). */
 export function normaliseTab(raw: string | null, isFixed: boolean, isInternal = false): ProjectTab {
     if (!raw) return 'Overview';

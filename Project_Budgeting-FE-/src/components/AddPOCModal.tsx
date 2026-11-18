@@ -136,7 +136,7 @@ export function AddPOCModal({ companyId, companyName, defaultCountry, poc, onSav
 
     return (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-            <div className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50" onClick={handleClose} />
+            <div className="fixed inset-0 bg-black/20 backdrop-blur-sm transition-all dark:bg-black/50" />
 
             <div className="flex min-h-full items-center justify-center p-4">
                 <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg transform transition-all dark:bg-gray-900 dark:shadow-black/40" onClick={(e) => e.stopPropagation()}>

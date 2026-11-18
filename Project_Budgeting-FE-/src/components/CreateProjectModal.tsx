@@ -317,19 +317,10 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
         }
     };
 
-    const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (e.target === e.currentTarget) {
-            onClose();
-        }
-    };
-
     return (
         <>
             {/* Backdrop */}
-            <div
-                className="fixed inset-0 br-10 bg-opacity-50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-                onClick={handleBackdropClick}
-            >
+            <div className="fixed inset-0 br-10 bg-opacity-50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                 {/* Modal */}
                 <div
                     className="bg-white dark:bg-gray-900 rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"

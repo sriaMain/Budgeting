@@ -688,10 +688,7 @@ export const BudgetLinesPanel: React.FC<BudgetLinesPanelProps> = ({ projectId, c
             {/* Add new GL Account -- writes into the same core.GLAccount
                 Chart-of-Accounts table used everywhere else in the app. */}
             {isGlAccountModalOpen && (
-                <div
-                    className="fixed inset-0 bg-black/30 dark:bg-black/50 z-50 flex items-center justify-center p-4"
-                    onClick={() => setIsGlAccountModalOpen(false)}
-                >
+                <div className="fixed inset-0 bg-black/30 dark:bg-black/50 z-50 flex items-center justify-center p-4">
                     <div
                         className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-sm p-5"
                         onClick={(e) => e.stopPropagation()}

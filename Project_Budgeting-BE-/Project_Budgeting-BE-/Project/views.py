@@ -1970,19 +1970,30 @@ class TaskAPIView(APIView):
         }, status=200)
 
     def delete(self, request, task_id):
-            try:
-                task = Task.objects.get(id=task_id)
-            except Task.DoesNotExist:
-                return Response(
-                    {"error": "Task not found"},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-
-            task.delete()
+        """Admins / managers only. Deleting also removes the task's timer logs, extra-hours
+        requests and freelancer task assignment; refused while its timer is running."""
+        try:
+            task = Task.objects.get(id=task_id)
+        except Task.DoesNotExist:
             return Response(
-                {"message": "Task deleted successfully"},
-                status=status.HTTP_204_NO_CONTENT
+                {"error": "Task not found"},
+                status=status.HTTP_404_NOT_FOUND
             )
+
+        user = request.user
+        if not (user.is_superuser or user.roles.filter(role_name__in=["Admin", "Manager", "Project Manager"]).exists()):
+            return Response(
+                {"error": "Only admins and managers can delete tasks."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        if TaskTimerLog.objects.filter(task=task, is_active=True).exists():
+            return Response(
+                {"error": "This task's timer is running. Stop the timer before deleting the task."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        task.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 class ServiceUsersAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
