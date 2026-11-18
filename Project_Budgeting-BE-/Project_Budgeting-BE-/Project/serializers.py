@@ -1124,7 +1124,7 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
         if 'department' in data:
             data['department'] = (data.get('department') or '').strip()
         if ('department' in data or creating) and not data.get('department'):
-            errors['department'] = "Select the department."
+            errors['department'] = "Enter the department."
         if ('project_manager' in data or creating) and not data.get('project_manager'):
             errors['project_manager'] = "Select the project manager."
         if 'approved_budget' in data or creating:

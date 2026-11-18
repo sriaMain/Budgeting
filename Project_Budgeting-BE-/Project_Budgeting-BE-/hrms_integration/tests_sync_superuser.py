@@ -45,13 +45,15 @@ class SyncNeverDeactivatesSuperuserTests(TestCase):
         self.superuser.refresh_from_db()
         self.assertEqual((self.superuser.is_active, self.superuser.is_staff, self.superuser.is_superuser), (True, True, True))
         self.assertEqual(list(self.superuser.roles.all()), [self.admin_role])
+        # Same email -> same person: the record now carries the new ID (tests_sync_id_change).
         self.old_record.refresh_from_db()
-        self.assertFalse(self.old_record.is_active_in_hrms)
+        self.assertEqual((self.old_record.employee_id, self.old_record.is_active_in_hrms, self.old_record.account_id),
+                         ("09000037", True, self.superuser.pk))
         # Ordinary employees who leave AIRA still lose access.
         self.staff.refresh_from_db()
         self.assertFalse(self.staff.is_active)
         self.assertEqual(self.staff.roles.count(), 0)
-        self.assertEqual(run.access_revoked_count, 2)  # Emp One + the superuser's old record (marked ineligible only)
+        self.assertEqual(run.access_revoked_count, 1)  # Emp One only
 
         # Later syncs leave the superuser alone and don't count it again.
         run = self.sync(aira(("09000037", "Boss Person", "boss@example.com")))

@@ -115,7 +115,7 @@ const InternalProjectForm: React.FC<Omit<Props, 'isOpen'>> = ({ onClose, project
     const validate = () => {
         const e: Record<string, string> = {};
         if (!form.name.trim()) e.project_name = 'Enter the project name.';
-        if (!form.department) e.department = 'Select the department.';
+        if (!form.department.trim()) e.department = 'Enter the department.';
         if (!form.manager) e.project_manager = 'Select the project manager.';
         if (!form.start) e.start_date = 'Start date is required.';
         if (!form.end) e.end_date = 'End date is required.';
@@ -130,7 +130,7 @@ const InternalProjectForm: React.FC<Omit<Props, 'isOpen'>> = ({ onClose, project
         if (Object.keys(e).length) return;
         const payload = {
             project_name: form.name.trim(),
-            department: form.department,
+            department: form.department.trim(),
             project_manager: form.manager?.id ?? null,
             description: form.description.trim(),
             start_date: form.start,
@@ -222,14 +222,18 @@ const InternalProjectForm: React.FC<Omit<Props, 'isOpen'>> = ({ onClose, project
                         </div>
                         <div>
                             <label htmlFor="ip-dept" className={drawerLabelClass}>Department<Req /></label>
-                            <select id="ip-dept" value={form.department} onChange={(e) => set({ department: e.target.value })}
-                                aria-invalid={!!errors.department || undefined} className={input('department')}>
-                                <option value="" disabled>{departments === null ? 'Loading departments…' : 'Select department'}</option>
-                                {departmentList.map((d) => <option key={d} value={d}>{d}</option>)}
-                            </select>
+                            {/* Type or pick: AIRA's employee feed often carries no department, so a list alone
+                                could leave nothing to choose (and Department is required). */}
+                            <input id="ip-dept" type="text" list="ip-dept-options" value={form.department} autoComplete="off"
+                                onChange={(e) => set({ department: e.target.value })}
+                                placeholder={departmentList.length ? 'Type or pick a department' : 'Type the department'}
+                                aria-invalid={!!errors.department || undefined} className={input('department')} />
+                            <datalist id="ip-dept-options">
+                                {departmentList.map((d) => <option key={d} value={d} />)}
+                            </datalist>
                             <Err text={errors.department} />
                             {!errors.department && (
-                                <FieldHint>{departments !== null && departments.length === 0 ? 'AIRA HRMS has no departments yet - sync employees first' : 'From AIRA HRMS'}</FieldHint>
+                                <FieldHint>{departments === null ? 'Loading suggestions…' : departments.length ? 'Suggestions from AIRA HRMS and earlier projects' : 'AIRA HRMS sends no departments - type it in'}</FieldHint>
                             )}
                         </div>
                         <div>
@@ -242,6 +246,7 @@ const InternalProjectForm: React.FC<Omit<Props, 'isOpen'>> = ({ onClose, project
                                 emptyMessage="No active employees found"
                             />
                             <Err text={errors.project_manager} />
+                            {!errors.project_manager && <FieldHint>Employees currently in AIRA HRMS</FieldHint>}
                         </div>
                         <div className="sm:col-span-2">
                             <label htmlFor="ip-desc" className={drawerLabelClass}>Project Description</label>

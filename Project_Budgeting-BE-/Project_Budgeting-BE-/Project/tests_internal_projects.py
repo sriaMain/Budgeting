@@ -83,7 +83,7 @@ class CreateAndEditTests(InternalProjectBase):
         for dept in ("", "   "):
             resp = self.api.post("/api/projects/", self.payload(department=dept), format="json")
             self.assertEqual(resp.status_code, 400)
-            self.assertIn("Select the department.", str(resp.data))
+            self.assertIn("Enter the department.", str(resp.data))
         payload = self.payload(project_name="No dept field")
         payload.pop("department")
         self.assertEqual(self.api.post("/api/projects/", payload, format="json").status_code, 400)
@@ -93,7 +93,7 @@ class CreateAndEditTests(InternalProjectBase):
         p = self.create()
         resp = self.api.put(f"/api/projects/{p.pk}/", {"department": ""}, format="json")
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("Select the department.", str(resp.data))
+        self.assertIn("Enter the department.", str(resp.data))
         p.refresh_from_db()
         self.assertEqual(p.department, "Engineering")
         # An edit that doesn't send the department leaves it alone.

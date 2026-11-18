@@ -400,13 +400,15 @@ class ProjectPOCOptionsAPIView(APIView):
         employees = employee_accounts().prefetch_related("modules").order_by("first_name", "last_name")
         if employees_from_hrms():
             employees = employees.select_related("hrms_employee")
+        employee_options = []
         for account in employees:
             hrms = getattr(account, "hrms_employee", None) if employees_from_hrms() else None
             modules = ", ".join(m.product_service_name for m in account.modules.all())
-            options.append({
+            employee_options.append({
                 "id": account.id,
                 "type": "employee",
-                "name": account.display_name,
+                # The AIRA name, as Administration > HRMS Employees shows it.
+                "name": (hrms.full_name if hrms and hrms.full_name else account.display_name) or account.username,
                 # AIRA designation when known, else the Budgeting modules as before.
                 "subtitle": (hrms.designation if hrms and hrms.designation else modules),
                 # AIRA HRMS department / designation - lets resource pickers filter employees.
@@ -418,6 +420,7 @@ class ProjectPOCOptionsAPIView(APIView):
                 "default_cost_rate": account.charges_per_hour,
                 "rate_unit": "hourly" if account.charges_per_hour is not None else None,
             })
+        options += sorted(employee_options, key=lambda o: o["name"].lower())
 
         vendors = Vendor.objects.filter(status="approved").order_by("name")
         for vendor in vendors:

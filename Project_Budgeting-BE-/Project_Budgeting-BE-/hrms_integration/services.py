@@ -10,6 +10,7 @@ Rules (from the HRMS integration contract):
 import logging
 import secrets
 import string
+from collections import Counter
 from datetime import timedelta
 
 from django.conf import settings
@@ -150,9 +151,9 @@ def _revoke(employee, reason, now):
     JWT-authenticated request immediately) and its roles cleared, so access
     is never silently restored if the account is re-enabled later.
 
-    Superusers are managed outside HRMS (grant_access / _ensure_resource_account never link
-    one): a linked superuser account is left untouched - otherwise an AIRA employee-ID change
-    deactivates the superuser and nobody can sign in to fix it."""
+    Superusers are managed outside HRMS (grant_access refuses one): a linked superuser account
+    is left untouched - otherwise an AIRA employee-ID change deactivates the superuser and
+    nobody can sign in to fix it."""
     account = employee.account
     if account is not None and not account.is_superuser:
         account.is_active = False
@@ -218,14 +219,24 @@ def sync_employees(triggered_by):
             )
 
         now = timezone.now()
+        email_counts = Counter(f['email'] for f in incoming.values() if f['email'])
         with transaction.atomic():
             existing = {e.employee_id: e for e in HrmsEmployee.objects.select_for_update(of=('self',)).select_related('account')}
 
             for employee_id, fields in incoming.items():
                 employee = existing.get(employee_id)
                 if employee is None:
+                    employee = _renumbered_record(fields, existing, incoming, email_counts)
+                    if employee is not None:
+                        # AIRA changed this person's employee ID: same record, new ID.
+                        logger.info("HRMS employee %s is now %s in AIRA", employee.employee_id, employee_id)
+                        existing.pop(employee.employee_id, None)
+                        employee.employee_id = employee_id
+                        employee.save(update_fields=['employee_id', 'updated_at'])
+                        existing[employee_id] = employee
+                if employee is None:
                     employee = HrmsEmployee.objects.create(employee_id=employee_id, last_seen_at=now, **fields)
-                    _ensure_resource_account(employee)
+                    _ensure_resource_account(employee, current_ids=incoming)
                     run.created_count += 1
                     continue
 
@@ -245,7 +256,7 @@ def sync_employees(triggered_by):
                 employee.save(update_fields=changed + ['last_seen_at', 'updated_at'])
                 if changed and employee.account_id:
                     _sync_account_profile(employee)
-                _ensure_resource_account(employee)
+                _ensure_resource_account(employee, current_ids=incoming)
 
             newly_missing = HrmsEmployee.objects.filter(is_active_in_hrms=True).exclude(
                 employee_id__in=incoming.keys()
@@ -291,25 +302,33 @@ def sync_employees(triggered_by):
     return run
 
 
-def _ensure_resource_account(employee):
+def _ensure_resource_account(employee, current_ids=None):
     """Gives an active AIRA employee a linked Account so they can be picked as a project
-    resource / expense payee straight away - no "Grant access" step.
+    resource / expense payee / project manager straight away - no "Grant access" step.
 
-    Reuses the Account with the same email when there is one; otherwise creates one with
-    NO login (inactive, unusable password, no roles, nothing emailed). Superuser accounts
-    and accounts already linked to another HRMS employee are left alone.
+    Reuses the Account with the same email when there is one - also when that account is still
+    linked to a record AIRA no longer lists (the person was given a new employee ID, or left and
+    came back): the link moves to this current record. `current_ids` (a full sync's AIRA IDs)
+    lets a record that is about to be marked removed count as gone already. A superuser account
+    is linked like any other (HRMS never deactivates one: see _revoke / grant_access). Otherwise
+    creates one with NO login (inactive, unusable password, no roles, nothing emailed). An
+    account linked to another CURRENT employee is left alone.
     """
     if employee.account_id or not employee.is_active_in_hrms:
         return
     account = None
     if employee.email:
         account = Account.objects.filter(email__iexact=employee.email).first()
-        if account is not None and (
-            account.is_superuser
-            or HrmsEmployee.objects.filter(account=account).exclude(pk=employee.pk).exists()
-        ):
-            logger.warning("HRMS employee %s: email belongs to an account that can't be linked", employee.employee_id)
-            return
+        holder = HrmsEmployee.objects.filter(account=account).exclude(pk=employee.pk).first() if account else None
+        if holder is not None:
+            gone = not holder.is_active_in_hrms or (current_ids is not None and holder.employee_id not in current_ids)
+            if not gone:
+                logger.warning("HRMS employee %s: email belongs to an account linked to another current employee",
+                               employee.employee_id)
+                return
+            logger.info("HRMS employee %s: account moved over from removed record %s", employee.employee_id, holder.employee_id)
+            holder.account = None
+            holder.save(update_fields=['account', 'updated_at'])
     if account is None:
         if employee.first_name:
             first_name, last_name = employee.first_name, employee.last_name
@@ -328,6 +347,21 @@ def _ensure_resource_account(employee):
         _invalidate_user_caches(account)
     employee.account = account
     employee.save(update_fields=['account', 'updated_at'])
+    _sync_account_profile(employee)  # a reused account takes AIRA's name / position
+
+
+def _renumbered_record(fields, existing, incoming, email_counts):
+    """The local record that an unknown AIRA employee ID replaces: AIRA gave the person a new ID.
+    Same email (used by no other AIRA record) as exactly one local record whose own ID AIRA no
+    longer lists - preferring the one that was still current. Keeping that record under the new
+    ID keeps the person's account, roles and access instead of revoking them as "gone"."""
+    email = fields['email']
+    if not email or email_counts[email] != 1:
+        return None
+    matches = [e for e in existing.values() if e.employee_id not in incoming and (e.email or '').lower() == email]
+    if len(matches) > 1:
+        matches = [e for e in matches if e.is_active_in_hrms]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _unique_username(email):
